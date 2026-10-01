@@ -230,6 +230,7 @@ Die Weichen stehen an drei Stellen, und nur dort gehört Plattformwissen hin:
 | `apps/client/src/link-platform.ts` | Interface, Adressen, Routen, DNS (`LinkBackend`) — Linux, macOS, Windows |
 | `apps/tray/src/backend.ts` | Tray-Icon |
 | `apps/tray/src/window.ts` | Das Fenster hinter dem Icon |
+| `apps/tray/src/prompt.ts` | Der Update-Dialog (D13) |
 | `planInstall()` in `apps/client/src/install.ts` | Dienst, Autostart, Dateiorte |
 
 Die Engine fragt die Weiche, statt selbst zu entscheiden — `resolverAddress()`
@@ -738,7 +739,19 @@ Was daran festliegt:
   Tooltip, Menü (mit „Install update now", außer wo diese Kopie sich nicht
   selbst aktualisiert) und die Unterzeile der Karte. Gewählt, weil alle drei
   Plattformen sie schon zeichnen — es ist eine reine View-Änderung ohne
-  Toolkit-Code. Eine Desktop-Benachrichtigung gibt es nicht.
+  Toolkit-Code.
+- **Und einmal je Version als Dialog mit „Install now"** (`prompt.ts`):
+  unter Linux eine Desktop-Benachrichtigung mit Aktion über D-Bus (GNOME und
+  KDE zeichnen einen Knopf, mako führt beim Klick die Standardaktion aus — die
+  ist dieselbe), unter macOS `osascript`, unter Windows eine MessageBox über
+  PowerShell. Die beiden Letzten laufen **als eigener Prozess**, nicht über
+  die FFI des Trays: ein modaler Dialog im Tray-Thread hielte Icon und
+  Steuersocket an, solange er dasteht, und ein Angebot steht womöglich
+  stundenlang. Der Text geht **über die Umgebung** hinein, nie ins Skript —
+  er trägt eine Version, die von einem Server kam. Welche Version installiert
+  wird, entscheidet auch hier der Daemon; der Dialog sagt nur „jetzt".
+  Geprüft ist unter Linux, dass der Benachrichtigungsdienst die Aktionen
+  annimmt; macOS und Windows nur als Befehlszeilen.
 - **Das Tray beendet sich, wenn der Daemon eine andere Version meldet**
   (`Status.daemon.version`), mit Status 75 — Neustart bringt die neue Fassung.
   Es ist dieselbe Datei, aber ein eigener Prozess, und liefe sonst mit altem

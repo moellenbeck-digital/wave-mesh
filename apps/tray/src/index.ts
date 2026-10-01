@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import { DaemonClient, defaultSocketPath, isDevVersion, type Status, VERSION } from "@wave/ipc";
 import { createTrayBackend, type TrayBackend, UnsupportedPlatform } from "./backend.ts";
+import { createUpdatePrompt, promptText } from "./prompt.ts";
 import { actionForId, iconFor, menuFor, tooltipFor, type Unreachable } from "./view.ts";
 import { createTrayWindow, NoWindowBackend, type TrayWindow } from "./window.ts";
 import { windowView } from "./window-view.ts";
@@ -81,6 +82,24 @@ export async function runTray(options: TrayOptions = {}): Promise<void> {
     }
   };
 
+  // The popup that offers an update (D13). Asked once per version and tray:
+  // a dialog that came back every second, or after every "Later", would be
+  // something people learn to click away unread. The menu keeps the button.
+  const prompt = await createUpdatePrompt();
+  const offered = new Set<string>();
+  const offerUpdate = (next: Status | null): void => {
+    const update = next?.daemon?.update;
+    if (!prompt || !update?.available || offered.has(update.available)) return;
+    const text = promptText(update, next?.daemon?.version ?? VERSION);
+    if (!text) return;
+    offered.add(update.available);
+    void prompt.ask(text).then(async (install) => {
+      // Which version is the daemon's decision, not this dialog's: it may have
+      // found a newer one in the meantime, and that is the one to install.
+      if (install) await client?.request({ command: "update", install: true }, 15 * 60 * 1000);
+    });
+  };
+
   const tray: TrayBackend = await createTrayBackend({
     onActivate: (id) => void activate(id),
     // A click shows the overlay, and a second click puts it away again -- it
@@ -110,6 +129,7 @@ export async function runTray(options: TrayOptions = {}): Promise<void> {
       process.exit(75);
     }
     status = next;
+    offerUpdate(next);
     window?.update(windowView(next, device));
     tray.update({
       state: iconFor(next),

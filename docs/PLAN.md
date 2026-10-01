@@ -1357,8 +1357,10 @@ gemessen, nicht an einem Timer — eine Fassung, die immer wieder abstürzt, rol
 beim nächsten Start zurück. Nicht abgedeckt ist eine Fassung, die abstürzt,
 bevor sie den Zustand liest; dafür bräuchte es einen Wächter außerhalb des
 Binarys. Das Tray nennt ein anstehendes Update in Tooltip, Menü und
-Kartenzeile und bietet „Install update now" an; es beendet sich, sobald der
-Daemon eine andere Version meldet. Eine Desktop-Benachrichtigung gibt es nicht.
+Kartenzeile und bietet „Install update now" an, und einmal je Version als
+Dialog mit demselben Knopf (Linux: Benachrichtigung mit Aktion, macOS:
+`osascript`, Windows: MessageBox über PowerShell); es beendet sich, sobald der
+Daemon eine andere Version meldet.
 Geprüft ist das gegen einen nachgebauten GitHub und ein echtes tar.gz; der
 erste Lauf mit echtem Tag und echtem Secret steht aus, ebenso alles unter
 Windows (Neustart über einen losgelösten `schtasks /run`, Rückfall über
