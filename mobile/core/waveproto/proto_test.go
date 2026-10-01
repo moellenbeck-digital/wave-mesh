@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/internal/fixture"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveproto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/internal/fixture"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveproto"
 )
 
 func signedFromFixture(t *testing.T) (waveproto.SignedNetmap, string) {

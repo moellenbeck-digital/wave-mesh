@@ -20,11 +20,11 @@ images:
   # Eine feste Version, nie `latest`: ein Rollout soll eine Entscheidung sein
   # und nicht die Nebenwirkung eines Neustarts. Die mitlaufenden Tags (X.Y, X,
   # latest, insiders, develop) gibt es dafür trotzdem -- siehe CLAUDE.md.
-  - name: ghcr.io/pinguin45orga/wave-mesh/control
+  - name: ghcr.io/moellenbeck-digital/wave-mesh/control
     newTag: "0.1.0-insiders.9"
-  - name: ghcr.io/pinguin45orga/wave-mesh/web
+  - name: ghcr.io/moellenbeck-digital/wave-mesh/web
     newTag: "0.1.0-insiders.9"
-  - name: ghcr.io/pinguin45orga/wave-mesh/relay
+  - name: ghcr.io/moellenbeck-digital/wave-mesh/relay
     newTag: "0.1.0-insiders.9"
 
 configMapGenerator:

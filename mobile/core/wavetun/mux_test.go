@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavetun"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavetun"
 )
 
 // memoryLink stands in for the descriptor a phone hands over. Everything above

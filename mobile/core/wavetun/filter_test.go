@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavetun"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavetun"
 )
 
 // The port half of a wave's policy on a phone (M7, stage two). The same three

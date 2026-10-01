@@ -10,7 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavedisco"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavedisco"
 )
 
 // Client is a connection to a relay, used for peers no direct path reaches.

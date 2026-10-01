@@ -19,11 +19,11 @@ resources:
   - ../../base
 
 images:
-  - name: ghcr.io/pinguin45orga/wave-mesh/control
+  - name: ghcr.io/moellenbeck-digital/wave-mesh/control
     newTag: develop
-  - name: ghcr.io/pinguin45orga/wave-mesh/web
+  - name: ghcr.io/moellenbeck-digital/wave-mesh/web
     newTag: develop
-  - name: ghcr.io/pinguin45orga/wave-mesh/relay
+  - name: ghcr.io/moellenbeck-digital/wave-mesh/relay
     newTag: develop
 
 configMapGenerator:

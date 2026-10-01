@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveoverlap"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveoverlap"
 )
 
 func TestDisjointWavesDoNotConflict(t *testing.T) {

@@ -1977,10 +1977,10 @@ GitHub Container Registry:
 
 | Dienst | Image | Dockerfile |
 |---|---|---|
-| Control | `ghcr.io/pinguin45orga/wave-mesh/control` | `apps/control/Dockerfile` |
-| Relay | `ghcr.io/pinguin45orga/wave-mesh/relay` | `apps/relay/Dockerfile` |
-| Web | `ghcr.io/pinguin45orga/wave-mesh/web` | `apps/web/Dockerfile` |
-| Connector | `ghcr.io/pinguin45orga/wave-mesh/connector` | `apps/connector/Dockerfile` |
+| Control | `ghcr.io/moellenbeck-digital/wave-mesh/control` | `apps/control/Dockerfile` |
+| Relay | `ghcr.io/moellenbeck-digital/wave-mesh/relay` | `apps/relay/Dockerfile` |
+| Web | `ghcr.io/moellenbeck-digital/wave-mesh/web` | `apps/web/Dockerfile` |
+| Connector | `ghcr.io/moellenbeck-digital/wave-mesh/connector` | `apps/connector/Dockerfile` |
 
 Der Build-Kontext ist **das Repo-Wurzelverzeichnis**, nicht das App-Verzeichnis
 — alle vier hängen an den Workspace-Paketen und stehen nicht für sich. Das

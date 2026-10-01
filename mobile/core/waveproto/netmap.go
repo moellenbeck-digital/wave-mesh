@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
 )
 
 // Endpoint is a UDP address as it appears on the wire.

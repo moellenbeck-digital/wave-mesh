@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavemagic"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavemagic"
 )
 
 // PeerView is one peer as a user interface shows it.

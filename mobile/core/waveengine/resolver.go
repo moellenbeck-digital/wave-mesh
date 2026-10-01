@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavedns"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavedns"
 )
 
 // resolver is the one resolver on the device: a suffix table over every wave,

@@ -4,8 +4,8 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/internal/fixture"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavestun"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/internal/fixture"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavestun"
 )
 
 // The response is built by the STUN server this project runs, so the phone is

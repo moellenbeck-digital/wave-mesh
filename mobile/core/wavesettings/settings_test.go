@@ -3,7 +3,7 @@ package wavesettings_test
 import (
 	"testing"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavesettings"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavesettings"
 )
 
 func twoWaves() []wavesettings.Wave {

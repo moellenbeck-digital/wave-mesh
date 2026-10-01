@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
 )
 
 // NonceLength is XChaCha20-Poly1305's, which is what makes a random nonce safe

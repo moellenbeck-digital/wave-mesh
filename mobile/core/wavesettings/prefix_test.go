@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavesettings"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavesettings"
 )
 
 func addressesOf(settings wavesettings.Settings, family string) []string {

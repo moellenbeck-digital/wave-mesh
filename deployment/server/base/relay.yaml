@@ -46,7 +46,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: relay
-          image: ghcr.io/pinguin45orga/wave-mesh/relay
+          image: ghcr.io/moellenbeck-digital/wave-mesh/relay
           ports:
             - { name: stun, containerPort: 3478, protocol: UDP }
             - { name: relay, containerPort: 3479, protocol: TCP }

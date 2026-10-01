@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavetun"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavetun"
 )
 
 // tunLink is a real TUN device, wrapped as the Link the multiplexer expects.

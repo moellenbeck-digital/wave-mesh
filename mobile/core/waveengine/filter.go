@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/netip"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveproto"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavetun"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveproto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavetun"
 )
 
 // filterFrom turns a netmap's packetFilter into the multiplexer's rules, or

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavedisco"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveproto"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavestun"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavedisco"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveproto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavestun"
 )
 
 // maxDatagram is one WireGuard packet at the largest MTU this ever configures,

@@ -12,8 +12,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waverelay"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waverelay"
 )
 
 // fakeRelay accepts anyone -- the challenge is not what is under test -- and

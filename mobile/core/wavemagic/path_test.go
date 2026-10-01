@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavemagic"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavemagic"
 )
 
 var now = time.Unix(1_790_000_000, 0)

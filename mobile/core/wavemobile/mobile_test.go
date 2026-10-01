@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveengine"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavemobile"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveengine"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavemobile"
 )
 
 type recordingCallbacks struct {

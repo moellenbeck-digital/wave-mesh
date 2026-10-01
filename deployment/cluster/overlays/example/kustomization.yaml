@@ -17,7 +17,7 @@ resources:
   - ../../base
 
 images:
-  - name: ghcr.io/pinguin45orga/wave-mesh/connector
+  - name: ghcr.io/moellenbeck-digital/wave-mesh/connector
     newTag: "0.1.0-insiders.9"
 
 configMapGenerator:

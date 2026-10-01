@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/internal/fixture"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavedns"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/internal/fixture"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavedns"
 )
 
 func queryFor(name string, recordType int) []byte {

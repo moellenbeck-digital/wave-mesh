@@ -1,4 +1,4 @@
-module github.com/pinguin45orga/wave-mesh/mobile/core
+module github.com/moellenbeck-digital/wave-mesh/mobile/core
 
 go 1.27.1
 

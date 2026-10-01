@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/internal/fixture"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/internal/fixture"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
 )
 
 func TestCanonicalJSONMatchesTypeScript(t *testing.T) {

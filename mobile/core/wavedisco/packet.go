@@ -7,8 +7,8 @@ import (
 	"errors"
 	"net/netip"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveproto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveproto"
 )
 
 // Wire format:

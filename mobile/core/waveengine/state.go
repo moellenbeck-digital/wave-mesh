@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
 )
 
 // StateVersion is the shape of what the platform stores for us. It follows the

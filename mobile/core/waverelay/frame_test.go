@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/internal/fixture"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waverelay"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/internal/fixture"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waverelay"
 )
 
 func TestDecodesAFrameEncodedByTypeScript(t *testing.T) {

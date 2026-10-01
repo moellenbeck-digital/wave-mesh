@@ -62,7 +62,7 @@ spec:
         # Datenbank noch nicht, scheitert er und wird wiederholt -- ein
         # `Init:Error` in den ersten Sekunden ist deshalb kein Fehlerbild.
         - name: migrate
-          image: ghcr.io/pinguin45orga/wave-mesh/control
+          image: ghcr.io/moellenbeck-digital/wave-mesh/control
           command: ["bun", "apps/control/src/db/migrate.ts"]
           envFrom:
             - configMapRef:
@@ -78,7 +78,7 @@ spec:
             limits: { memory: 256Mi }
       containers:
         - name: control
-          image: ghcr.io/pinguin45orga/wave-mesh/control
+          image: ghcr.io/moellenbeck-digital/wave-mesh/control
           ports:
             - { name: http, containerPort: 8080 }
           envFrom:

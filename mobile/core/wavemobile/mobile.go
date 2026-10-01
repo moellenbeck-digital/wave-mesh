@@ -20,9 +20,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveengine"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavesettings"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavetun"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveengine"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavesettings"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavetun"
 )
 
 // Callbacks is what the platform implements: NEPacketTunnelProvider on iOS,

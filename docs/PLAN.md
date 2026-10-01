@@ -842,7 +842,7 @@ daneben liegen.
 **Der Weg eines Updates:**
 
 1. **Der Server löst den Kanal auf.** Er fragt die Releases von
-   `WAVE_UPDATE_REPO` (Vorgabe `pinguin45orga/wave-mesh`) ab, höchstens alle
+   `WAVE_UPDATE_REPO` (Vorgabe `moellenbeck-digital/wave-mesh`) ab, höchstens alle
    zehn Minuten und im Speicher gehalten, holt je Kanal das neueste
    `manifest.json` samt Signatur und prüft sie. Diese Prüfung ist ein Filter
    gegen Müll, kein Schutz — geschützt wird auf dem Gerät. Ohne

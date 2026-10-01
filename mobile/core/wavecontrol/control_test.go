@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/internal/fixture"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecontrol"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/internal/fixture"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecontrol"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
 )
 
 // maxClockSkew is the server's window, repeated here because this test is the

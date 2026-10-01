@@ -71,7 +71,7 @@ case "$1" in
     # a mystery in Xcode, and this is the only part of the phone side that can
     # be checked on a machine that is not one.
     ( cd "$core" && go tool gobind -lang=go,java,objc -outdir="$(mktemp -d)" \
-        github.com/pinguin45orga/wave-mesh/mobile/core/wavemobile )
+        github.com/moellenbeck-digital/wave-mesh/mobile/core/wavemobile )
     echo "core ok"
     ;;
 

@@ -14,15 +14,15 @@ import (
 
 	"golang.zx2c4.com/wireguard/device"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecontrol"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavedns"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavemagic"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveoverlap"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveproto"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waverelay"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavesettings"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavetun"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecontrol"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavedns"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavemagic"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveoverlap"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveproto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waverelay"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavesettings"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavetun"
 )
 
 // keepaliveSeconds keeps NAT state alive on paths that would otherwise time out.

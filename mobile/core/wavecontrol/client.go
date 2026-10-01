@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
-	"github.com/pinguin45orga/wave-mesh/mobile/core/waveproto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveproto"
 )
 
 // Identity is everything one enrolment needs to prove who it is.

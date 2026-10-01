@@ -51,7 +51,7 @@ spec:
       # tragen den Tunnel aus dem Cluster heraus. Genau dafür gibt es sie.
       containers:
         - name: daemon
-          image: ghcr.io/pinguin45orga/wave-mesh/connector
+          image: ghcr.io/moellenbeck-digital/wave-mesh/connector
           command: ["bun", "apps/client/src/cli.ts", "daemon"]
           envFrom:
             - configMapRef:
@@ -92,7 +92,7 @@ spec:
             limits: { memory: 512Mi }
 
         - name: connector
-          image: ghcr.io/pinguin45orga/wave-mesh/connector
+          image: ghcr.io/moellenbeck-digital/wave-mesh/connector
           command: ["bun", "apps/connector/src/main.ts"]
           envFrom:
             - configMapRef:
@@ -111,7 +111,7 @@ spec:
             limits: { memory: 256Mi }
 
         - name: operator
-          image: ghcr.io/pinguin45orga/wave-mesh/connector
+          image: ghcr.io/moellenbeck-digital/wave-mesh/connector
           command: ["bun", "apps/operator/src/main.ts"]
           envFrom:
             - configMapRef:

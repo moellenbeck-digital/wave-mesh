@@ -5,7 +5,7 @@ package waverelay
 import (
 	"errors"
 
-	"github.com/pinguin45orga/wave-mesh/mobile/core/wavecrypto"
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
 )
 
 // MaxPayload bounds a single frame. The relay enforces the same number.
