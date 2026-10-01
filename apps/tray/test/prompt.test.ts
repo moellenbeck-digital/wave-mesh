@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { UpdateStatus } from "@wave/ipc";
 import {
   macosDialog,
@@ -6,8 +9,10 @@ import {
   type Notifications,
   parseMacosAnswer,
   parseWindowsAnswer,
+  promptEnv,
   promptText,
   windowsDialog,
+  writePromptIcon,
 } from "../src/prompt.ts";
 
 const update = (overrides: Partial<UpdateStatus> = {}): UpdateStatus => ({
@@ -44,10 +49,46 @@ describe("what the popup says", () => {
   });
 });
 
+const icon = writePromptIcon(mkdtempSync(join(tmpdir(), "wave-prompt-test-")));
+
+describe("the icon", () => {
+  test("is the wave mark as a PNG and as an .ico", () => {
+    const png = readFileSync(icon.png);
+    expect(Array.from(png.subarray(1, 4))).toEqual([0x50, 0x4e, 0x47]);
+    expect(png.readUInt32BE(16)).toBe(128);
+    const ico = readFileSync(icon.ico);
+    expect([ico.readUInt16LE(2), ico.readUInt16LE(4)]).toEqual([1, 4]);
+    // The last entry is 256 px, which the format writes as 0.
+    expect(ico[6 + 16 * 3]).toBe(0);
+  });
+
+  test("reaches the dialogs through the environment, and only when there is one", () => {
+    const text = { title: "t", body: "b" };
+    expect(promptEnv(text, icon)).toMatchObject({ WAVE_PROMPT_ICON: icon.png, WAVE_PROMPT_ICO: icon.ico });
+    expect(promptEnv(text, null)).not.toHaveProperty("WAVE_PROMPT_ICON");
+  });
+
+  test("replaces the stock symbol on macOS, which stays the fallback", () => {
+    // osascript shows no dialog at all when the icon file is missing.
+    expect(macosDialog(icon).at(-1)).toContain(
+      'with icon (POSIX file (system attribute "WAVE_PROMPT_ICON"))',
+    );
+    expect(macosDialog(null).at(-1)).toContain("with icon note");
+  });
+
+  test("is the image and the title bar icon of the Windows dialog", () => {
+    const script = windowsDialog().at(-1) ?? "";
+    expect(script).toContain("Image]::FromFile($env:WAVE_PROMPT_ICON)");
+    expect(script).toContain("Icon($env:WAVE_PROMPT_ICO)");
+    // Without an icon, or should the form fail, the MessageBox still asks.
+    expect(script).toContain("MessageBox]::Show(");
+  });
+});
+
 describe("the dialogs on macOS and Windows", () => {
   test("take their text from the environment, never from the script", () => {
     // The version comes from a server; it must not be able to become code.
-    for (const argv of [macosDialog(), windowsDialog()]) {
+    for (const argv of [macosDialog(icon), windowsDialog()]) {
       const script = argv.at(-1) ?? "";
       expect(script).toContain("WAVE_PROMPT_BODY");
       expect(script).toContain("WAVE_PROMPT_TITLE");
@@ -69,10 +110,10 @@ describe("the notification on Linux", () => {
   /** A notification server that remembers what it was asked and answers on cue. */
   function fakeServer() {
     const listeners: Record<string, (id: number, value: never) => void> = {};
-    const shown: Array<{ actions: string[]; expireTimeout: number }> = [];
+    const shown: Array<{ appIcon: string; actions: string[]; expireTimeout: number }> = [];
     const notifications: Notifications = {
-      Notify: async (_app, _replaces, _icon, _summary, _body, actions, _hints, expireTimeout) => {
-        shown.push({ actions, expireTimeout });
+      Notify: async (_app, _replaces, appIcon, _summary, _body, actions, _hints, expireTimeout) => {
+        shown.push({ appIcon, actions, expireTimeout });
         return shown.length;
       },
       on: (event: string, listener: (id: number, value: never) => void) => {
@@ -87,7 +128,7 @@ describe("the notification on Linux", () => {
 
   test("installs on the button and on a click on the notification itself", async () => {
     const server = fakeServer();
-    const prompt = new NotificationPrompt(server.notifications);
+    const prompt = new NotificationPrompt(server.notifications, () => icon);
 
     const byButton = prompt.ask(text);
     await Bun.sleep(0);
@@ -103,7 +144,7 @@ describe("the notification on Linux", () => {
 
   test("does not install when it is closed, and never expires on its own", async () => {
     const server = fakeServer();
-    const prompt = new NotificationPrompt(server.notifications);
+    const prompt = new NotificationPrompt(server.notifications, () => icon);
     const answer = prompt.ask(text);
     await Bun.sleep(0);
     expect(server.shown[0]?.expireTimeout).toBe(0);
@@ -112,9 +153,18 @@ describe("the notification on Linux", () => {
     expect(await answer).toBe(false);
   });
 
+  test("shows the wave mark, and a theme icon only when there is none", async () => {
+    const server = fakeServer();
+    void new NotificationPrompt(server.notifications, () => icon).ask(text);
+    void new NotificationPrompt(server.notifications, () => null).ask(text);
+    await Bun.sleep(0);
+    expect(server.shown[0]?.appIcon).toBe(`file://${icon.png}`);
+    expect(server.shown[1]?.appIcon).toBe("system-software-update");
+  });
+
   test("ignores the answers to other notifications", async () => {
     const server = fakeServer();
-    const prompt = new NotificationPrompt(server.notifications);
+    const prompt = new NotificationPrompt(server.notifications, () => icon);
     const answer = prompt.ask(text);
     await Bun.sleep(0);
     server.emit("ActionInvoked", 99, "install");

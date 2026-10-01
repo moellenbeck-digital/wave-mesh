@@ -1,4 +1,10 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { UpdateStatus } from "@wave/ipc";
+import { BRAND_COLOUR, markPixmap } from "./icon.ts";
+import { icoFromPngs, pngFromPixmap } from "./png.ts";
 
 /**
  * The popup that offers an update with a button to install it (D13).
@@ -22,6 +28,9 @@ import type { UpdateStatus } from "@wave/ipc";
  * The text goes in through the environment, never spliced into a script: it
  * carries a version string the daemon got from a server, and quoting rules
  * for AppleScript and PowerShell are not where that should be decided.
+ *
+ * Every one of them carries the wave mark, not a stock symbol: a dialog that
+ * asks to install something as root should say whose it is at a glance.
  */
 export interface UpdatePrompt {
   /** Resolves true when the person chose to install, false on anything else. */
@@ -55,6 +64,55 @@ function formatTime(iso: string, now: Date): string {
   return at.toDateString() === now.toDateString() ? time : `${at.toLocaleDateString()} ${time}`;
 }
 
+/**
+ * The mark as files, because none of the three takes pixels: osascript and
+ * the notification server read a path, WinForms an .ico for the title bar and
+ * an image for the dialog. Drawn in the brand colour, not a state colour --
+ * this is the application speaking, not the tunnel.
+ */
+export interface PromptIcon {
+  png: string;
+  ico: string;
+}
+
+/** Large enough for a Retina dialog; the notification server scales it down. */
+const PROMPT_ICON_SIZE = 128;
+
+export function writePromptIcon(dir: string): PromptIcon {
+  const png = join(dir, "wave.png");
+  const ico = join(dir, "wave.ico");
+  writeFileSync(png, pngFromPixmap(markPixmap(BRAND_COLOUR, PROMPT_ICON_SIZE)));
+  writeFileSync(
+    ico,
+    icoFromPngs(
+      [16, 32, 48, 256].map((size) => ({ size, png: pngFromPixmap(markPixmap(BRAND_COLOUR, size)) })),
+    ),
+  );
+  return { png, ico };
+}
+
+let written: PromptIcon | null | undefined;
+
+/**
+ * Written once per tray, into a directory of its own: mkdtemp makes it 0700
+ * with a name nobody could have planted a symlink under, which a fixed path in
+ * a shared /tmp would not be. Gone again when the tray exits. Null when it
+ * cannot be written -- then the dialogs fall back to a stock symbol, because
+ * osascript refuses to show a dialog at all whose icon file is missing.
+ */
+function promptIcon(): PromptIcon | null {
+  if (written !== undefined) return written;
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "wave-prompt-"));
+    process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+    written = writePromptIcon(dir);
+  } catch (error) {
+    console.error(`could not write the dialog icon: ${error instanceof Error ? error.message : error}`);
+    written = null;
+  }
+  return written;
+}
+
 const INSTALL = "Install now";
 const LATER = "Later";
 
@@ -62,12 +120,16 @@ const LATER = "Later";
  * The osascript invocation. "Later" is the cancel button, so Escape means
  * later; the dialog gives up after an hour so a forgotten one does not stand
  * on the screen for ever -- the menu still has the same button.
+ *
+ * `with icon` takes a PNG as well as an .icns, checked on macOS 26 -- a file
+ * that is no image fails with "Datei enthält kein Symbol" (-50), the PNG shows.
  */
-export function macosDialog(): string[] {
+export function macosDialog(icon: PromptIcon | null): string[] {
+  const symbol = icon ? '(POSIX file (system attribute "WAVE_PROMPT_ICON"))' : "note";
   const script =
     'display dialog (system attribute "WAVE_PROMPT_BODY") with title (system attribute "WAVE_PROMPT_TITLE") ' +
     `buttons {"${LATER}", "${INSTALL}"} default button "${INSTALL}" cancel button "${LATER}" ` +
-    "with icon note giving up after 3600";
+    `with icon ${symbol} giving up after 3600`;
   return ["osascript", "-e", script];
 }
 
@@ -76,35 +138,82 @@ export const parseMacosAnswer = (stdout: string): boolean =>
   stdout.includes(`button returned:${INSTALL}`) && !stdout.includes("gave up:true");
 
 /**
- * The PowerShell invocation. A MessageBox has Yes and No and nothing else, so
- * the text asks a question. DefaultDesktopOnly brings it to the front -- the
- * tray never has the foreground, and a dialog behind every window is one
+ * The PowerShell invocation: a small WinForms dialog rather than a MessageBox,
+ * because a MessageBox shows one of four system symbols and nothing else, and
+ * has no title bar icon at all. TopMost and Activate bring it to the front --
+ * the tray never has the foreground, and a dialog behind every window is one
  * nobody sees.
+ *
+ * Should the form fail -- it is unrun on real hardware, like everything on
+ * Windows here -- the catch shows the old MessageBox, so the offer still
+ * reaches someone. Both answer with a DialogResult; closing the form with its
+ * X is Cancel, which reads as Later.
  */
 export function windowsDialog(): string[] {
-  const script =
-    "Add-Type -AssemblyName System.Windows.Forms; " +
-    "[System.Windows.Forms.MessageBox]::Show($env:WAVE_PROMPT_BODY, $env:WAVE_PROMPT_TITLE, " +
-    "'YesNo', 'Information', 'Button1', 'DefaultDesktopOnly')";
+  const script = [
+    "Add-Type -AssemblyName System.Windows.Forms, System.Drawing",
+    "try {",
+    "  if (-not $env:WAVE_PROMPT_ICON) { throw 'no icon' }",
+    "  [System.Windows.Forms.Application]::EnableVisualStyles()",
+    "  $f = New-Object System.Windows.Forms.Form",
+    "  $f.Text = $env:WAVE_PROMPT_TITLE",
+    "  $f.Icon = New-Object System.Drawing.Icon($env:WAVE_PROMPT_ICO)",
+    "  $f.Font = [System.Drawing.SystemFonts]::MessageBoxFont",
+    "  $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false",
+    "  $f.StartPosition = 'CenterScreen'; $f.TopMost = $true; $f.ShowInTaskbar = $true",
+    "  $p = New-Object System.Windows.Forms.PictureBox",
+    "  $p.Image = [System.Drawing.Image]::FromFile($env:WAVE_PROMPT_ICON)",
+    "  $p.SizeMode = 'Zoom'; $p.SetBounds(20, 20, 48, 48)",
+    "  $l = New-Object System.Windows.Forms.Label",
+    "  $l.Text = $env:WAVE_PROMPT_BODY; $l.AutoSize = $true",
+    "  $l.MaximumSize = New-Object System.Drawing.Size(340, 0)",
+    "  $l.Location = New-Object System.Drawing.Point(84, 20)",
+    "  $f.Controls.AddRange(@($p, $l))",
+    "  $y = [Math]::Max(68, 20 + $l.PreferredSize.Height) + 20",
+    "  $yes = New-Object System.Windows.Forms.Button",
+    `  $yes.Text = '${INSTALL}'; $yes.DialogResult = 'Yes'; $yes.SetBounds(228, $y, 104, 28)`,
+    "  $no = New-Object System.Windows.Forms.Button",
+    `  $no.Text = '${LATER}'; $no.DialogResult = 'No'; $no.SetBounds(340, $y, 84, 28)`,
+    "  $f.Controls.AddRange(@($yes, $no))",
+    "  $f.AcceptButton = $yes; $f.CancelButton = $no",
+    "  $f.ClientSize = New-Object System.Drawing.Size(444, ($y + 48))",
+    "  $f.Add_Shown({ $f.Activate() })",
+    "  $f.ShowDialog()",
+    "} catch {",
+    "  [System.Windows.Forms.MessageBox]::Show($env:WAVE_PROMPT_BODY, $env:WAVE_PROMPT_TITLE, " +
+      "'YesNo', 'Information', 'Button1', 'DefaultDesktopOnly')",
+    "}",
+  ].join("\n");
   return ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script];
 }
 
-/** MessageBox.Show returns the DialogResult by name, in English whatever the locale. */
+/** ShowDialog and MessageBox.Show return the DialogResult by name, in English whatever the locale. */
 export const parseWindowsAnswer = (stdout: string): boolean => stdout.trim() === "Yes";
+
+/** What a dialog process gets to read; the icon variables only when there is an icon. */
+export function promptEnv(text: PromptText, icon: PromptIcon | null): Record<string, string> {
+  const env: Record<string, string> = { WAVE_PROMPT_TITLE: text.title, WAVE_PROMPT_BODY: text.body };
+  if (icon) {
+    env.WAVE_PROMPT_ICON = icon.png;
+    env.WAVE_PROMPT_ICO = icon.ico;
+  }
+  return env;
+}
 
 /** Runs a dialog as a child process and reads its answer. */
 class ProcessPrompt implements UpdatePrompt {
   constructor(
-    private readonly command: () => string[],
+    private readonly command: (icon: PromptIcon | null) => string[],
     private readonly parse: (stdout: string) => boolean,
   ) {}
 
   async ask(text: PromptText): Promise<boolean> {
     try {
-      const proc = Bun.spawn(this.command(), {
+      const icon = promptIcon();
+      const proc = Bun.spawn(this.command(icon), {
         stdout: "pipe",
         stderr: "ignore",
-        env: { ...process.env, WAVE_PROMPT_TITLE: text.title, WAVE_PROMPT_BODY: text.body },
+        env: { ...process.env, ...promptEnv(text, icon) },
       });
       const [stdout] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
       return this.parse(stdout);
@@ -142,7 +251,10 @@ export interface Notifications {
 export class NotificationPrompt implements UpdatePrompt {
   private readonly waiting = new Map<number, (install: boolean) => void>();
 
-  constructor(private readonly notifications: Notifications) {
+  constructor(
+    private readonly notifications: Notifications,
+    private readonly icon: () => PromptIcon | null = promptIcon,
+  ) {
     notifications.on("ActionInvoked", (id, action) =>
       this.settle(id, action === "install" || action === "default"),
     );
@@ -160,10 +272,13 @@ export class NotificationPrompt implements UpdatePrompt {
     try {
       // Never expires (0): it is an offer, and one that disappears after five
       // seconds is one nobody gets to act on.
+      // app_icon takes a file:// URI as well as a theme name; the theme name
+      // is only the fallback, for when the mark could not be written.
+      const icon = this.icon();
       const id = await this.notifications.Notify(
         "wave",
         0,
-        "system-software-update",
+        icon ? pathToFileURL(icon.png).href : "system-software-update",
         text.title,
         text.body,
         ["default", INSTALL, "install", INSTALL],

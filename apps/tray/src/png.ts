@@ -43,6 +43,30 @@ export function pngFromPixmap(pixmap: { width: number; height: number; data: Uin
   ]);
 }
 
+/**
+ * PNGs packed into an .ico, which every browser and Windows since Vista read.
+ * One image per size, each drawn at that size rather than scaled, for the same
+ * reason the tray draws its own sizes. Smallest first.
+ */
+export function icoFromPngs(images: Array<{ size: number; png: Uint8Array }>): Uint8Array {
+  const header = new Uint8Array(6 + 16 * images.length);
+  const view = new DataView(header.buffer);
+  view.setUint16(2, 1, true); // type: icon
+  view.setUint16(4, images.length, true);
+  let offset = header.length;
+  images.forEach(({ size, png }, i) => {
+    const entry = 6 + 16 * i;
+    header[entry] = size >= 256 ? 0 : size; // width; 0 means 256
+    header[entry + 1] = size >= 256 ? 0 : size;
+    view.setUint16(entry + 4, 1, true); // colour planes
+    view.setUint16(entry + 6, 32, true); // bits per pixel
+    view.setUint32(entry + 8, png.length, true);
+    view.setUint32(entry + 12, offset, true);
+    offset += png.length;
+  });
+  return concat([header, ...images.map((image) => image.png)]);
+}
+
 function chunk(type: string, body: Uint8Array): Uint8Array {
   const out = new Uint8Array(12 + body.length);
   const view = new DataView(out.buffer);

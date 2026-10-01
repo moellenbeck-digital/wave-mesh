@@ -743,8 +743,8 @@ Was daran festliegt:
 - **Und einmal je Version als Dialog mit „Install now"** (`prompt.ts`):
   unter Linux eine Desktop-Benachrichtigung mit Aktion über D-Bus (GNOME und
   KDE zeichnen einen Knopf, mako führt beim Klick die Standardaktion aus — die
-  ist dieselbe), unter macOS `osascript`, unter Windows eine MessageBox über
-  PowerShell. Die beiden Letzten laufen **als eigener Prozess**, nicht über
+  ist dieselbe), unter macOS `osascript`, unter Windows ein kleines
+  WinForms-Fenster über PowerShell. Die beiden Letzten laufen **als eigener Prozess**, nicht über
   die FFI des Trays: ein modaler Dialog im Tray-Thread hielte Icon und
   Steuersocket an, solange er dasteht, und ein Angebot steht womöglich
   stundenlang. Der Text geht **über die Umgebung** hinein, nie ins Skript —
@@ -752,6 +752,18 @@ Was daran festliegt:
   wird, entscheidet auch hier der Daemon; der Dialog sagt nur „jetzt".
   Geprüft ist unter Linux, dass der Benachrichtigungsdienst die Aktionen
   annimmt; macOS und Windows nur als Befehlszeilen.
+- **Der Dialog trägt immer das wave-Zeichen**, nie ein Systemsymbol — er
+  fragt, ob als root etwas installiert werden darf, und soll auf einen Blick
+  sagen, wessen Frage das ist. Keiner der drei nimmt Pixel, also schreibt
+  `promptIcon()` das Zeichen einmal je Tray als PNG und `.ico` in ein eigenes
+  `mkdtemp`-Verzeichnis (0700, kein vorhersagbarer Name in einem geteilten
+  `/tmp`), und der Pfad geht wie der Text über die Umgebung hinein. Drei
+  Dinge daran: `display dialog … with icon` nimmt ein PNG (unter macOS 26
+  nachgesehen), verweigert aber **den ganzen Dialog**, wenn die Datei fehlt —
+  deshalb fällt er ohne Datei auf `note` zurück statt auf nichts. Eine
+  MessageBox kann kein eigenes Symbol, also ist es unter Windows ein Formular,
+  und weil das dort ungefahren ist, zeigt sein `catch` die alte MessageBox.
+  Unter Linux geht die Datei als `file://`-URI in `app_icon`.
 - **Das Tray beendet sich, wenn der Daemon eine andere Version meldet**
   (`Status.daemon.version`), mit Status 75 — Neustart bringt die neue Fassung.
   Es ist dieselbe Datei, aber ein eigener Prozess, und liefe sonst mit altem
