@@ -6,7 +6,24 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.3.0-develop.1 ist nichts hinzugekommen.*
+*Seit v0.3.0 ist nichts hinzugekommen.*
+
+---
+
+## ✅ Stable v0.3.0 (01.10.2026)
+
+*Enthält alles aus v0.3.0-develop.1.*
+
+### Neue Funktionen (gegenüber v0.2.0)
+
+- **Der Update-Dialog trägt das wave-Zeichen** statt eines Systemsymbols —
+  unter macOS im Dialog, unter Windows im Fenster und in seiner Titelleiste,
+  unter Linux in der Benachrichtigung. Unter Windows ist der Dialog ein eigenes
+  kleines Fenster mit „Install now" und „Later" statt einer Ja/Nein-Abfrage.
+  *(seit develop.1)*
+
+> Geräte mit v0.2.0 bekommen diese Version von selbst angeboten — und sehen
+> dabei den Update-Dialog zum ersten Mal, noch in seiner alten Form.
 
 ---
 
