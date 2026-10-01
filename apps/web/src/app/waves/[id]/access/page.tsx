@@ -21,7 +21,12 @@ export default async function AccessPage({ params }: { params: Promise<{ id: str
   const unenforced = acl.policy ? acl.devices.filter((device) => !device.enforced) : [];
 
   return (
-    <div className="mx-auto w-full">
+    // Breiter als die Spalte des Layouts, bis an die Kanten der Kopfzeile
+    // (max-w-7xl, px-6): Graph und Leiste nebeneinander brauchen mehr als
+    // max-w-5xl, und eine Leiste unter dem Graphen liegt außer Sicht, sobald
+    // man eine Karte antippt. Die ganze Seite, nicht nur die Karte, damit
+    // Kopf, Graph und Verlauf an denselben Kanten stehen.
+    <div className="relative left-1/2 w-[min(77rem,calc(100vw-3rem))] -translate-x-1/2">
       <a href="/" className="text-caption text-slate">
         ← Übersicht
       </a>

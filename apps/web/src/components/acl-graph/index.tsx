@@ -382,7 +382,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="overflow-hidden rounded-lg border border-line">
           {ui.confirm ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-line border-b bg-[#0f6e6e0f] px-4 py-3 text-accent-strong text-body-sm">
@@ -458,7 +458,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
         </div>
 
         <aside
-          className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 rounded-lg border border-line p-5"
+          className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 rounded-lg border border-line p-5 xl:sticky xl:top-20"
           aria-live="polite"
         >
           {panel}
