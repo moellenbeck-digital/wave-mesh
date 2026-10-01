@@ -1,6 +1,6 @@
 {
   "name": "wave-mesh",
-  "version": "0.3.0",
+  "version": "0.4.0-develop.1",
   "license": "Elastic-2.0",
   "author": "Robin Lenz <email@robin-lenz.de>",
   "private": true,
