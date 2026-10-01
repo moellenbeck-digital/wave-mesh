@@ -6,7 +6,52 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.1.0 ist nichts hinzugekommen.*
+*Seit v0.2.0-develop.1 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.2.0-develop.1 (01.10.2026)
+
+*Installierte Clients halten sich ab jetzt selbst aktuell.*
+
+### ✨ Clients aktualisieren sich selbst
+
+Bisher blieb ein installiertes Gerät auf seiner Version stehen, bis jemand ein
+neues Archiv holte und `wave install` noch einmal ausführte. Jetzt bietet der
+Control-Server seinen Geräten neue Releases an, und der Dienst installiert sie
+nach einer zufälligen Wartezeit von bis zu vier Stunden selbst. Erreicht die
+neue Fassung danach binnen fünf Minuten keinen Server, kehrt das Gerät von
+allein zur alten zurück und nimmt diese Version nie wieder.
+
+Installiert wird nur, was mit dem Release-Schlüssel signiert ist, den das
+Programm mitbringt — der Control-Server reicht Releases nur weiter und kann
+nichts unterschieben. Ältere Versionen werden nie installiert.
+
+```bash
+wave version                     # welche Fassung, und ob eine neuere ansteht
+wave update                      # die neuere jetzt statt später
+wave update --channel insiders   # ein anderer Kanal, sofern der Server ihn anbietet
+wave update --auto-update off    # nur noch anzeigen
+```
+
+Das Tray-Icon nennt ein anstehendes Update im Tooltip, im Menü (mit „Install
+update now") und im Fenster.
+
+### Für Betreiber
+
+- **Welche Kanäle ein Server anbietet**, legt `WAVE_UPDATE_CHANNELS` fest:
+  `stable`, `insiders`, `develop`, mehrere mit Komma, der erste ist die
+  Vorgabe. Ungesetzt ist es `stable`. Ein Gerät kann sich einen anderen aus der
+  Liste wünschen, keinen darüber hinaus.
+- **Ohne `WAVE_GITHUB_TOKEN` wird nichts angeboten.** Nötig ist ein
+  Fine-grained Token nur für dieses Repository mit „Contents: read"; er bleibt
+  auf dem Server.
+- **`wave-admin devices` zeigt jetzt die Version jedes Geräts** und seinen
+  Kanal. Geräte mit älteren Clients stehen dort als „version unknown".
+- Eine neue Datenbankmigration läuft beim Rollout von selbst mit.
+
+> Der erste Client mit dieser Funktion muss noch einmal von Hand installiert
+> werden; ab dann geht es von allein.
 
 ---
 
