@@ -139,7 +139,20 @@ function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove:
         <div className="flex min-w-0 items-center gap-2.5">{identity}</div>
       )}
 
-      <div className="text-caption text-slate">{osName(node.os)}</div>
+      {/* Unter dem System, weil beides beschreibt, was auf dem Gerät läuft.
+          Ein Client von vor den Updates sagt seine Version nie; dann steht
+          dort, dass sie unbekannt ist, statt einer geratenen. */}
+      <div className="text-caption text-slate">
+        <div>{osName(node.os)}</div>
+        <div
+          className="font-mono"
+          title={node.updateChannel ? `Update-Kanal: ${node.updateChannel}` : undefined}
+        >
+          {node.clientVersion
+            ? `v${node.clientVersion}${node.updateChannel ? ` · ${node.updateChannel}` : ""}`
+            : "Version unbekannt"}
+        </div>
+      </div>
 
       <div className="min-w-0 font-mono text-caption text-slate">
         <div className="truncate text-ink">{node.ipv4}</div>

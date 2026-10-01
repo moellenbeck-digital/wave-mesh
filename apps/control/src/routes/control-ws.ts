@@ -93,6 +93,15 @@ export class NetmapHub {
     }
   }
 
+  /**
+   * Something a browser shows changed without a netmap to go with it -- a
+   * device saying which version it runs. The feed compares what it would
+   * send, so a call that changed nothing visible costs one query and no push.
+   */
+  touched(waveId: string): void {
+    this.listener?.(waveId);
+  }
+
   connectionCount(waveId: string): number {
     return this.byWave.get(waveId)?.size ?? 0;
   }
@@ -278,6 +287,10 @@ export function controlWebsocket({ db, hub, nonces, releases }: ControlWsDeps) {
                 updateChannel: releases?.assign(wish) ?? null,
               })
               .where(eq(nodes.id, node.id));
+            // The hello comes after the connection was counted, and with it
+            // after the device list was last pushed -- without this the page
+            // would show the old version until something else changed.
+            hub.touched(node.waveId);
             if (releases) connection.send({ type: "update", ...releases.offerFor(wish) });
             return;
           }

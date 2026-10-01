@@ -103,6 +103,9 @@ export interface Node {
   lastSeenAt: string | null;
   keyExpiresAt: string | null;
   online: boolean;
+  /** The client build it last reported, and its update channel (D13); null if it never said. */
+  clientVersion: string | null;
+  updateChannel: string | null;
   /** What this node answers for besides itself -- a connector's services. */
   services: Service[];
 }

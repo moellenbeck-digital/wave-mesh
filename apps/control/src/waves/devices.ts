@@ -24,6 +24,13 @@ export interface DeviceView {
   keyExpiresAt: Date | null;
   /** Holds a control connection right now -- not "was here recently". */
   online: boolean;
+  /**
+   * The build it said it runs in its last `hello`, and the update channel the
+   * server gave it (D13). Null for a client from before self-updates, which
+   * never says -- shown as unknown rather than guessed.
+   */
+  clientVersion: string | null;
+  updateChannel: string | null;
   services: { name: string; ipv4: string; ipv6: string; url: string }[];
 }
 
@@ -51,6 +58,8 @@ export async function listDevices(
       createdAt: nodes.createdAt,
       lastSeenAt: nodes.lastSeenAt,
       keyExpiresAt: nodes.keyExpiresAt,
+      clientVersion: nodes.clientVersion,
+      updateChannel: nodes.updateChannel,
     })
     .from(nodes)
     .where(eq(nodes.waveId, waveId))

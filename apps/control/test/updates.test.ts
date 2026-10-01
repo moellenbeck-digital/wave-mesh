@@ -310,7 +310,7 @@ describe("offers over the control socket", () => {
       body: form,
       headers: { cookie: jar.header() },
     });
-    return { sign };
+    return { sign, jar };
   }
 
   function connect(base: string, sign: (method: string, path: string) => string) {
@@ -337,7 +337,7 @@ describe("offers over the control socket", () => {
     const { feed: releases } = feed([release("0.2.0"), release("0.3.0-insiders.1")]);
     await releases.refresh();
     const { db, base } = await startServer(releases);
-    const { sign } = await enrolled(base);
+    const { sign, jar } = await enrolled(base);
 
     const { socket, messages } = connect(base, sign);
     await waitFor(() => messages.find((m) => m.type === "netmap"));
@@ -353,6 +353,15 @@ describe("offers over the control socket", () => {
     expect(rows[0]?.clientVersion).toBe("0.1.0");
     expect(rows[0]?.clientPlatform).toBe("linux-amd64");
     expect(rows[0]?.updateChannel).toBe("insiders");
+
+    // And the browser sees it in the device list, next to the system.
+    const me = (await (await fetch(`${base}/api/me`, { headers: { cookie: jar.header() } })).json()) as {
+      waves: { id: string }[];
+    };
+    const list = (await (
+      await fetch(`${base}/api/waves/${me.waves[0]?.id}/nodes`, { headers: { cookie: jar.header() } })
+    ).json()) as { nodes: Array<{ clientVersion: string | null; updateChannel: string | null }> };
+    expect(list.nodes[0]).toMatchObject({ clientVersion: "0.1.0", updateChannel: "insiders" });
   });
 
   test("sends nothing to a client that never said hello", async () => {

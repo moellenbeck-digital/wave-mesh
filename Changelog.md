@@ -6,7 +6,23 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.2.0-develop.1 ist nichts hinzugekommen.*
+*Seit v0.2.0-develop.2 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.2.0-develop.2 (01.10.2026)
+
+*Die Weboberfläche zeigt, welche Version auf jedem Gerät läuft.*
+
+### ✨ Client-Version in der Geräteliste
+
+In der Geräteliste steht jetzt unter dem Betriebssystem, welche Version des
+Clients ein Gerät fährt und welchem Update-Kanal es folgt — etwa
+`v0.2.0-develop.1 · develop`. So ist auf einen Blick zu sehen, wer zurückhängt.
+Die Anzeige folgt live: meldet sich ein Gerät nach einem Update mit der neuen
+Version, ändert sie sich ohne Neuladen. Geräte mit Clients von vor den
+Selbst-Updates melden ihre Version nicht und stehen dort als „Version
+unbekannt".
 
 ---
 
