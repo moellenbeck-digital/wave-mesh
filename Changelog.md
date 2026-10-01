@@ -6,7 +6,19 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.4.0-develop.1 ist nichts hinzugekommen.*
+*Seit v0.4.0-develop.2 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.4.0-develop.2 (01.10.2026)
+
+### Verbesserungen
+
+- **Die Leiste zum Bearbeiten steht rechts neben dem Graphen**, nicht mehr
+  darunter: wer eine Karte oder einen Pfeil antippt, sieht sofort, was sich
+  dort einstellen lässt. Die Zugriffsseite ist dafür so breit wie die
+  Kopfzeile; auf schmaleren Bildschirmen rutscht die Leiste weiter unter den
+  Graphen.
 
 ---
 
