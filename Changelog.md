@@ -6,7 +6,39 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.1.0-insiders.9 ist nichts hinzugekommen.*
+*Seit v0.1.0 ist nichts hinzugekommen.*
+
+---
+
+## ✅ Stable v0.1.0 (01.10.2026)
+
+*Die erste stabile Version: sie enthält alles aus v0.1.0-insiders.1 bis
+v0.1.0-insiders.9 und dazu die Änderung unten.*
+
+### 📦 Neues Zuhause: moellenbeck-digital
+
+wave-mesh liegt jetzt im Repository `moellenbeck-digital/wave-mesh`. Die Images
+kommen ab dieser Version aus `ghcr.io/moellenbeck-digital/wave-mesh/*`; wer sie
+bisher unter `ghcr.io/pinguin45orga/wave-mesh/*` bezogen hat, stellt die
+Adresse um. An bestehenden Anmeldungen, Geräten und Adressen ändert sich
+nichts.
+
+### Das Wichtigste aus den Vorschau-Versionen
+
+- **Zugriffsregeln:** Eine Policy legt fest, wer wen erreicht — nach Personen,
+  Gruppen, Rollen, Diensten oder Tags, mit Ports und Richtung. Ohne Policy
+  erreicht weiterhin jedes Gerät jedes andere. *(seit insiders.5)*
+- **Verlauf:** Jede Änderung an einem Wave wird mit Zeit und Person
+  festgehalten. *(seit insiders.5)*
+- **Neuer Name und eigenes Icon:** Aus wave-net wurde wave-mesh, mit eigenem
+  Zeichen im Tray und im Browser-Tab. *(seit insiders.7 und insiders.9)*
+- **Neue Lizenz:** Elastic License 2.0 statt MIT. *(seit insiders.9)*
+- **Schonender fürs Netz:** Keine wachsenden Adresslisten mehr, die Heimrouter
+  volllaufen ließen, und deutlich weniger Anfragen an Adressen, die nie
+  antworten. *(seit insiders.1 und insiders.6)*
+- **Robuster nach Ruhezustand und WLAN-Aussetzern:** Die Relay-Verbindung baut
+  sich selbst neu auf, und der Verkehr kehrt auf den direkten Weg zurück.
+  *(seit insiders.2)*
 
 ---
 
@@ -49,7 +81,7 @@ Der Seitenkopf der Oberfläche zeigte noch „wavenet“; jetzt steht dort
 
 ### ✨ Neuer Name: wave-mesh
 
-Das Projekt heißt jetzt **wave-mesh** statt wave-mesh — in der Oberfläche, in
+Das Projekt heißt jetzt **wave-mesh** statt wave-net — in der Oberfläche, in
 der Beschreibung des Dienstes auf dem Gerät und im Repository. Die Images
 liegen ab dieser Version unter `ghcr.io/pinguin45orga/wave-mesh/*`. An
 bestehenden Anmeldungen, Geräten und Adressen ändert sich nichts.
