@@ -6,7 +6,28 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.2.0-develop.3 ist nichts hinzugekommen.*
+*Seit v0.2.0-develop.4 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.2.0-develop.4 (01.10.2026)
+
+*Ein neues Update meldet sich jetzt mit einem Dialog.*
+
+### ✨ Update-Dialog mit „Install now"
+
+Steht eine neue Version bereit, erscheint einmal ein Dialog, der beide
+Versionen nennt, sagt, wann sich das Gerät sonst selbst aktualisiert, und mit
+einem Klick sofort installiert. Unter Linux ist das eine Desktop-Benachrichtigung
+mit dem Knopf „Install now" — wo der Benachrichtigungsdienst keine Knöpfe kennt,
+genügt ein Klick auf die Meldung —, unter macOS ein Dialog mit „Later" und
+„Install now", unter Windows eine Meldung mit Ja und Nein.
+
+Nach „Later" kommt der Dialog für diese Version nicht wieder; der Eintrag
+„Install update now" im Menü des Tray-Icons bleibt.
+
+> Zu sehen ist der Dialog ab dem ersten Update *nach* dieser Version: er muss
+> im Tray stecken, das das Angebot bekommt.
 
 ---
 
