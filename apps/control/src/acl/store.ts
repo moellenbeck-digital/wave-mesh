@@ -96,11 +96,15 @@ export async function setTags(
 export async function aclSubjects(
   db: Database,
   waveId: string,
-): Promise<{ nodes: (AclNode & Enforcement & { hostname: string })[]; services: AclService[] }> {
+): Promise<{
+  nodes: (AclNode & Enforcement & { hostname: string; ipv4: string })[];
+  services: (AclService & { ipv4: string })[];
+}> {
   const nodeRows = await db
     .select({
       id: nodes.id,
       hostname: nodes.hostname,
+      ipv4: nodes.ipv4,
       email: users.email,
       role: waveMembers.role,
       tags: nodes.tags,
@@ -116,7 +120,7 @@ export async function aclSubjects(
     .where(and(eq(nodes.waveId, waveId), eq(nodes.approved, true)));
 
   const serviceRows = await db
-    .select({ name: waveServices.name, viaNodeId: waveServices.viaNodeId })
+    .select({ name: waveServices.name, viaNodeId: waveServices.viaNodeId, ipv4: waveServices.ipv4 })
     .from(waveServices)
     .where(eq(waveServices.waveId, waveId));
 

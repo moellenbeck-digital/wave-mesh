@@ -3,6 +3,7 @@ import { type Context, Hono } from "hono";
 import { html, raw } from "hono/html";
 import { describeReach, enforcementText } from "../acl/describe.ts";
 import { compilePolicy } from "../acl/evaluate.ts";
+import { previewPolicy } from "../acl/preview.ts";
 import { aclSubjects, getPolicy, invalidTags, removePolicy, setPolicy, setTags } from "../acl/store.ts";
 import { checkPolicy } from "../acl/validate.ts";
 import { audit, listAudit, userActor } from "../audit.ts";
@@ -359,18 +360,32 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       .map((node) => ({
         id: node.id,
         hostname: node.hostname,
+        ipv4: node.ipv4,
+        // Whose it is and in which role: what `user:` and `role:` match, as
+        // long as the device wears no tag.
+        email: node.email,
+        role: node.role,
         tags: node.tags,
         // Only meaningful under a policy; without one there is nothing to hold.
         ports: stored ? enforcementText(node) : null,
         enforced: node.filterEnforced === true,
       }));
-    if (!stored) return { policy: null, version: 0, updatedAt: null, reach: [] as string[], devices };
+    // Members too, not only the owners of devices: a rule for someone whose
+    // laptop is not enrolled yet is written all the same.
+    const members = (await listMembers(db, waveId))
+      .filter((member) => member.email !== null)
+      .map((member) => ({ email: member.email as string, role: member.role }));
+    const services = subjects.services
+      .map((service) => ({ name: service.name, ipv4: service.ipv4 }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const base = { devices, members, services };
+    if (!stored) return { policy: null, version: 0, updatedAt: null, reach: [] as string[], ...base };
     return {
       policy: stored.document,
       version: stored.version,
       updatedAt: stored.updatedAt.toISOString(),
       reach: describeReach(compilePolicy(stored.document, subjects.nodes, subjects.services), subjects.nodes),
-      devices,
+      ...base,
     };
   }
 
@@ -408,6 +423,32 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     // it gone now, not within thirty seconds.
     await hub?.broadcast(waveId);
     return c.json({ ...(await reachOf(waveId)), warnings: check.warnings });
+  });
+
+  /**
+   * A draft, judged without saving it: the policy (or null for the full mesh),
+   * the devices' tags as the page would set them, and the selectors it draws.
+   * A POST because it carries a body, not because it changes anything -- and
+   * guarded like the PUT beside it, because the answer says who is in the wave.
+   */
+  app.post("/api/waves/:id/acl/preview", async (c) => {
+    const waveId = c.req.param("id");
+    const auth = await authorize(c, waveId, "manage");
+    if (auth instanceof Response) return auth;
+    if (!isJson(c)) return c.json({ error: "expected application/json" }, 415);
+
+    const body = (await c.req.json().catch(() => undefined)) as
+      | { policy?: unknown; tags?: unknown; selectors?: unknown }
+      | undefined;
+    if (!body || typeof body !== "object") return c.json({ error: "not JSON" }, 400);
+    const tags: Record<string, string[]> = {};
+    if (body.tags && typeof body.tags === "object") {
+      for (const [id, list] of Object.entries(body.tags as Record<string, unknown>)) {
+        if (Array.isArray(list)) tags[id] = list.map(String);
+      }
+    }
+    const selectors = Array.isArray(body.selectors) ? body.selectors.map(String) : [];
+    return c.json(previewPolicy(body.policy ?? null, await aclSubjects(db, waveId), tags, selectors));
   });
 
   app.delete("/api/waves/:id/acl", async (c) => {

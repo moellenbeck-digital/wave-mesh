@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
-import { PolicyEditor, TagList } from "@/components/acl-editor";
+import { PolicyEditor } from "@/components/acl-editor";
+import { AclGraph } from "@/components/acl-graph";
 import { fetchAcl, fetchAudit, fetchMe } from "@/lib/control";
 import { formatDate } from "@/lib/format";
 
@@ -20,7 +21,7 @@ export default async function AccessPage({ params }: { params: Promise<{ id: str
   const unenforced = acl.policy ? acl.devices.filter((device) => !device.enforced) : [];
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto w-full">
       <a href="/" className="text-caption text-slate">
         ← Übersicht
       </a>
@@ -31,50 +32,32 @@ export default async function AccessPage({ params }: { params: Promise<{ id: str
           : "Es gibt keine Policy: jedes Gerät erreicht jedes andere, auf allen Ports."}
       </p>
 
-      <section className="wc-card animate-slide-up relative mt-8 rounded-lg p-8">
+      <section className="wc-card animate-slide-up relative mt-8 rounded-lg p-6 md:p-8">
         <div className="absolute top-0 right-0 left-0 h-1 rounded-t-lg bg-accent" />
-        <h2 className="wc-section-title">Geräte und Tags</h2>
-        {/* Tags vor der Policy: eine Regel für tag:nas trifft erst, wenn ein
-            Gerät den Tag trägt. Ein getaggtes Gerät zählt für die Policy nicht
-            mehr als Gerät seines Besitzers -- genau das, was ein Connector
-            braucht, der mit dessen Schlüssel angemeldet ist. */}
-        <p className="mb-4 text-caption text-slate">
-          Mehrere Tags durch Leerzeichen getrennt, jeder in der Form{" "}
-          <code className="font-mono">tag:name</code>. Ein getaggtes Gerät gilt für die Policy nicht mehr als
-          Gerät seines Besitzers.
-        </p>
-        <TagList waveId={id} devices={acl.devices} />
-      </section>
+        <h2 className="wc-section-title">Wer wen erreicht</h2>
+        {/* Policy und Tags zusammen: eine Regel für tag:nas trifft erst, wenn
+            ein Gerät den Tag trägt, und ein getaggtes Gerät zählt nicht mehr
+            als Gerät seines Besitzers. Beides getrennt zu bearbeiten hieße,
+            die Hälfte der Wirkung nicht zu sehen. */}
+        <AclGraph waveId={id} view={acl} />
 
-      <section className="wc-card animate-slide-up relative mt-8 rounded-lg p-8">
-        <div className="absolute top-0 right-0 left-0 h-1 rounded-t-lg bg-accent" />
-        <h2 className="wc-section-title">Policy</h2>
-        <p className="mb-4 text-caption text-slate">
-          Quellen und Ziele: <code className="font-mono">*</code>,{" "}
-          <code className="font-mono">user:&lt;email&gt;</code>,{" "}
-          <code className="font-mono">group:&lt;name&gt;</code>,{" "}
-          <code className="font-mono">role:owner|admin|member</code>,{" "}
-          <code className="font-mono">tag:&lt;name&gt;</code>, als Ziel auch{" "}
-          <code className="font-mono">svc:&lt;name&gt;</code>.
-        </p>
-        <p className="mb-4 text-caption text-slate">
-          Ports: <code className="font-mono">22</code>, <code className="font-mono">5000-5001</code> oder{" "}
-          <code className="font-mono">tcp:445</code>. Ohne <code className="font-mono">ports</code> gelten
-          alle.
-        </p>
-        <PolicyEditor waveId={id} policy={acl.policy} />
-
-        {acl.policy ? (
-          <>
-            <h3 className="wc-section-title mt-8">Wer wen erreicht</h3>
-            <pre
-              className="overflow-x-auto rounded-lg p-4 font-mono text-caption text-navy"
-              style={{ backgroundColor: "#0f27440a" }}
-            >
-              {acl.reach.map((line) => line.trim()).join("\n")}
-            </pre>
-          </>
-        ) : null}
+        {/* Der Ausweg für alles, was der Graph nicht zeichnet, und für den,
+            der ein Dokument lieber tippt. Nach jedem Speichern neu, damit es
+            nie einen älteren Stand zurückschreibt. */}
+        <details className="mt-8">
+          <summary className="cursor-pointer text-body-sm text-navy">Als JSON bearbeiten</summary>
+          <p className="mt-4 mb-4 text-caption text-slate">
+            Quellen und Ziele: <code className="font-mono">*</code>,{" "}
+            <code className="font-mono">user:&lt;email&gt;</code>,{" "}
+            <code className="font-mono">group:&lt;name&gt;</code>,{" "}
+            <code className="font-mono">role:owner|admin|member</code>,{" "}
+            <code className="font-mono">tag:&lt;name&gt;</code>, als Ziel auch{" "}
+            <code className="font-mono">svc:&lt;name&gt;</code>. Ports: <code className="font-mono">22</code>,{" "}
+            <code className="font-mono">5000-5001</code> oder <code className="font-mono">tcp:445</code>. Tags
+            stehen nicht darin, sie hängen am Gerät.
+          </p>
+          <PolicyEditor key={acl.version} waveId={id} policy={acl.policy} />
+        </details>
 
         {/* Wer welche Peers sieht, hält die Netzkarte auf jedem Gerät. Die
             Ports hält jedes Gerät selbst -- und eines, das es nicht kann oder

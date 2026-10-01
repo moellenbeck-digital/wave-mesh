@@ -1024,9 +1024,26 @@ bun apps/control/src/admin.ts audit      <wave> [--limit N]    # wer was wann ge
 ```
 
 Im Browser steht dasselbe auf `/waves/<id>/access`, verlinkt aus der Wave-Karte
-für Eigentümer und Admins: Tags je Gerät, die Policy als JSON mit Fehlern und
-Hinweisen, wer danach wen erreicht, welche Geräte ihre Ports nicht halten, und
-der Verlauf.
+für Eigentümer und Admins — als **Graph** (`components/acl-graph`): jede Karte
+ist ein Selektor, jeder Pfeil eine Regel, Ports hängen an der Kante, Gruppen
+und Tags werden dort angelegt und gefüllt. Darunter, wer danach wen erreicht,
+welche Geräte ihre Ports nicht halten, die Policy als JSON zum Aufklappen und
+der Verlauf. Drei Dinge daran:
+
+- **Ausgewertet wird nie im Browser.** Jeder Entwurf — Policy *und* Tags —
+  geht an `POST /api/waves/:id/acl/preview` (`acl/preview.ts`), und dort
+  rechnet dieselbe `compilePolicy()`, die die Netzkarten baut. Gespeichert wird
+  dabei nichts. Ein zweites `covers()` im Frontend wäre eine zweite Antwort,
+  und eine Seite, die etwas anderes verspricht als die Geräte tun, sieht nicht
+  kaputt aus.
+- **Der erste Pfeil im vollen Mesh schaltet die Policy ein** und fragt vorher:
+  ab dann gilt nur, was ein Pfeil erlaubt. Einen Knopf „alle Verbindungen
+  entfernen" gibt es deshalb nicht.
+- **Eine Regel mit mehreren Quellen und Zielen wird zu einem Pfeil je Paar**
+  und beim Speichern nach Quelle und Ports wieder zusammengefasst. Gleiche
+  Bedeutung, nicht unbedingt gleiche Form — wer die Form pflegt, nimmt das
+  JSON. Gespeichert werden erst die Tags, dann die Policy; die Lage der Karten
+  merkt sich nur der Browser.
 
 ```json
 {
@@ -1041,9 +1058,9 @@ der Verlauf.
 Selektoren sind `*`, `user:<email>`, `group:<name>`, `role:owner|admin|member`,
 `tag:<name>` und — nur als Ziel — `svc:<name>`. Ports sind `*`, `22`,
 `5000-5001`, wahlweise mit `tcp:`/`udp:`; ohne `ports` alle. Dieselbe API gibt
-es für die Oberfläche: `GET/PUT/DELETE /api/waves/:id/acl` und
-`PUT /api/waves/:id/nodes/:nodeId/tags`, nur für Eigentümer und Admins, nur als
-`application/json`.
+es für die Oberfläche: `GET/PUT/DELETE /api/waves/:id/acl`,
+`POST /api/waves/:id/acl/preview` und `PUT /api/waves/:id/nodes/:nodeId/tags`,
+nur für Eigentümer und Admins, nur als `application/json`.
 
 **Durchgesetzt wird zweistufig, und die erste Stufe ist der Schutz:**
 

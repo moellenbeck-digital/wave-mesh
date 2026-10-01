@@ -167,6 +167,10 @@ export async function fetchDeviceRequest(id: string): Promise<DeviceRequest | nu
 export interface AclDevice {
   id: string;
   hostname: string;
+  ipv4: string;
+  /** Whose it is and in which role -- what `user:` and `role:` match while it wears no tag. */
+  email: string | null;
+  role: Wave["role"];
   tags: string[];
   /** In words, or null while there is no policy to enforce. */
   ports: string | null;
@@ -182,6 +186,18 @@ export interface AclView {
   /** One line per device: who it reaches, on which ports. */
   reach: string[];
   devices: AclDevice[];
+  /** Everyone a `user:` rule can name, devices or not. */
+  members: { email: string; role: Wave["role"] }[];
+  services: { name: string; ipv4: string }[];
+}
+
+/** A draft judged by the control server without saving it (`/acl/preview`). */
+export interface AclPreview {
+  errors: string[];
+  warnings: string[];
+  /** Null without a policy, or while it does not hold. */
+  reach: { from: string; to: string; ports: string }[] | null;
+  covers: Record<string, { nodes: string[]; services: string[] }>;
 }
 
 export interface AuditEntry {

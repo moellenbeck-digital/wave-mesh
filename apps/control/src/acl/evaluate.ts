@@ -38,7 +38,7 @@ export interface CompiledPolicy {
  * A tagged device is its tags: `user:`, `group:` and `role:` never match it,
  * only `tag:` and `*` do. See the note on AclPolicy for why.
  */
-function covers(selector: string, node: AclNode, groups: Record<string, string[]>): boolean {
+export function covers(selector: string, node: AclNode, groups: Record<string, string[]>): boolean {
   if (selector === "*") return true;
   if (selector.startsWith("tag:")) return node.tags.includes(selector);
   if (node.tags.length > 0) return false;

@@ -4,6 +4,7 @@ import type { AclPolicy, Netmap } from "@wave/proto";
 import { eq } from "drizzle-orm";
 import { describeEnforcement, describeReach } from "../src/acl/describe.ts";
 import { type AclNode, type AclService, compilePolicy, visibleTo } from "../src/acl/evaluate.ts";
+import { previewPolicy } from "../src/acl/preview.ts";
 import { invalidTags, removePolicy, setPolicy, setTags } from "../src/acl/store.ts";
 import { checkPolicy } from "../src/acl/validate.ts";
 import { createApp } from "../src/app.ts";
@@ -335,6 +336,67 @@ describe("the netmap under a policy", () => {
   });
 });
 
+describe("previewing a draft", () => {
+  const subjects = {
+    nodes: [
+      { ...robin("laptop"), hostname: "laptop" },
+      { ...robin("phone"), hostname: "phone" },
+      { ...tagged("nas", "tag:nas"), hostname: "nas" },
+    ],
+    services: [{ name: "grafana", viaNodeId: "nas" }],
+  };
+
+  test("draft tags change what a selector covers and who reaches whom", () => {
+    const policy = { acls: [{ src: ["user:robin@example.com"], dst: ["tag:nas"], ports: ["445"] }] };
+    const before = previewPolicy(policy, subjects, {}, ["user:robin@example.com", "tag:nas"]);
+    expect(before.covers["user:robin@example.com"]?.nodes).toEqual(["laptop", "phone"]);
+    expect(before.reach).toEqual([
+      { from: "laptop", to: "nas", ports: "445" },
+      { from: "phone", to: "nas", ports: "445" },
+    ]);
+
+    // Tagging the phone takes it out of robin's devices, without saving anything.
+    const after = previewPolicy(policy, subjects, { phone: ["tag:nas"] }, [
+      "user:robin@example.com",
+      "tag:nas",
+    ]);
+    expect(after.covers["user:robin@example.com"]?.nodes).toEqual(["laptop"]);
+    expect(after.covers["tag:nas"]?.nodes).toEqual(["phone", "nas"]);
+    expect(after.reach).toEqual([
+      { from: "laptop", to: "nas", ports: "445" },
+      { from: "laptop", to: "phone", ports: "445" },
+    ]);
+    expect(subjects.nodes[1]?.tags).toEqual([]);
+  });
+
+  test("a draft that does not hold says why, and still says what the selectors cover", () => {
+    const res = previewPolicy(
+      { acls: [{ src: ["group:family"], dst: ["*"] }] },
+      subjects,
+      { laptop: ["nas"] },
+      ["*", "not-a-selector"],
+    );
+    expect(res.errors).toEqual([
+      "laptop: not a tag: nas",
+      "acls.0: group:family is not defined under groups",
+    ]);
+    expect(res.reach).toBeNull();
+    expect(res.covers["*"]).toEqual({ nodes: ["laptop", "phone", "nas"], services: ["grafana"] });
+    expect(res.covers["not-a-selector"]).toBeUndefined();
+  });
+
+  test("groups count from the draft, and the full mesh compiles nothing", () => {
+    const groups = { groups: { "group:family": ["robin@example.com"] }, acls: [] };
+    expect(previewPolicy(groups, subjects, {}, ["group:family"]).covers["group:family"]?.nodes).toEqual([
+      "laptop",
+      "phone",
+    ]);
+    const mesh = previewPolicy(null, subjects, {}, ["svc:grafana"]);
+    expect(mesh.reach).toBeNull();
+    expect(mesh.covers["svc:grafana"]).toEqual({ nodes: [], services: ["grafana"] });
+  });
+});
+
 describe("the policy over HTTP", () => {
   let db: Database;
   let close: () => Promise<void>;
@@ -391,6 +453,36 @@ describe("the policy over HTTP", () => {
       headers: { cookie: owner.header() },
     });
     expect(removed.status).toBe(200);
+  });
+
+  test("a preview judges the draft and writes nothing", async () => {
+    const { owner, waveId } = await owned();
+    const preview = (jar: CookieJar, body: unknown) =>
+      app.request(`/api/waves/${waveId}/acl/preview`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { cookie: jar.header(), "content-type": "application/json" },
+      });
+
+    const res = await preview(owner, {
+      policy: { acls: [{ src: ["role:owner"], dst: ["tag:nas"] }] },
+      selectors: ["role:owner"],
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { errors: string[]; warnings: string[]; reach: unknown[] };
+    expect(body.errors).toEqual([]);
+    expect(body.warnings).toEqual(["no device wears tag:nas (yet)"]);
+    expect(body.reach).toEqual([]);
+
+    const read = await app.request(`/api/waves/${waveId}/acl`, { headers: { cookie: owner.header() } });
+    const view = (await read.json()) as { policy: unknown; members: { email: string; role: string }[] };
+    expect(view.policy).toBeNull();
+    expect(view.members).toEqual([{ email: "robin@example.com", role: "owner" }]);
+
+    const member = await signIn("guest@example.com");
+    const [guest] = await db.select().from(users).where(eq(users.email, "guest@example.com"));
+    await addMember(db, waveId, guest?.id ?? "", "member");
+    expect((await preview(member, { policy: null })).status).toBe(403);
   });
 
   test("a policy it cannot mean is refused with the reasons", async () => {

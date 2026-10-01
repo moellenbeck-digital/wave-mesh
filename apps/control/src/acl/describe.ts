@@ -31,7 +31,7 @@ export function describeEnforcement(devices: (Enforcement & { hostname: string }
     .map((device) => `  ${device.hostname}: ${enforcementText(device)}`);
 }
 
-const portText = (ranges: PortRange[]): string => {
+export const portText = (ranges: PortRange[]): string => {
   const parts = ranges.map((range) => {
     const span =
       range.from === 1 && range.to === 65535
