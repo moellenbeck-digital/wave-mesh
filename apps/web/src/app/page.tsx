@@ -25,16 +25,10 @@ export default async function DashboardPage({
 
   return (
     <>
-      <div className="mb-12">
-        <h1 className="animate-fade-in font-display text-display-md text-navy">Dein Netz</h1>
-        <p
-          className="animate-fade-in mt-3 max-w-xl text-body-lg text-slate"
-          style={{ animationDelay: "0.1s" }}
-        >
-          Jedes angemeldete Gerät erhält eine feste Adresse und eine signierte Netzkarte. Verbindungen
-          entstehen direkt zwischen den Geräten, ein Relay nur dann, wenn es nicht anders geht.
-        </p>
-      </div>
+      {/* Keine sichtbare Einleitung: die Wave-Karten sind die Seite und stehen
+          ganz oben. Die Überschrift bleibt für Screenreader, damit die Seite
+          eine hat. */}
+      <h1 className="sr-only">Dein Netz</h1>
 
       {joined ? (
         <p className="wc-alert-success mb-6" role="status">
@@ -70,13 +64,7 @@ export default async function DashboardPage({
         <DeviceFeed>
           <div className="flex flex-col gap-6">
             {waves.map(({ wave, nodes, membership }, index) => (
-              <WaveCard
-                key={wave.id}
-                wave={wave}
-                nodes={nodes}
-                membership={membership}
-                delay={0.2 + index * 0.1}
-              />
+              <WaveCard key={wave.id} wave={wave} nodes={nodes} membership={membership} delay={index * 0.1} />
             ))}
           </div>
         </DeviceFeed>
