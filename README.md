@@ -91,6 +91,19 @@ die Tunnel laufen weiter. In eine Pipe oder ein `$(...)` schreibt `wave status`
 stattdessen einen einzigen Stand und endet, damit kein Skript daran hängen
 bleibt; `--once` erzwingt das auch auf dem Terminal.
 
+Der Dienst aktualisiert sich selbst. Sein Control-Server bietet ihm neue
+Releases an, er installiert sie nach einer zufälligen Wartezeit von bis zu vier
+Stunden und geht von allein zurück, wenn die neue Fassung keinen Server
+erreicht. Installiert wird nur, was mit dem Release-Schlüssel signiert ist, den
+das Binary mitbringt:
+
+```bash
+wave version                     # welche Fassung, und ob eine neuere ansteht
+wave update                      # die neuere jetzt statt später
+wave update --channel insiders   # ein anderer Kanal, sofern der Server ihn anbietet
+wave update --auto-update off    # nur noch anzeigen
+```
+
 ### Zertifikate für Gerätenamen
 
 Trägt ein Wave ein DNS-Suffix, das dir gehört, bekommen seine Geräte gültige

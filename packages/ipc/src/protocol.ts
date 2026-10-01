@@ -57,6 +57,22 @@ export const Request = z.discriminatedUnion("command", [
     hook: z.string().optional(),
   }),
   z.object({ command: z.literal("certs") }),
+  /**
+   * Self-updates (D13). Without fields it only reports. `channel` and
+   * `autoUpdate` change the settings -- the channel is a wish the control
+   * servers may overrule, null hands it back to them. `install` installs the
+   * best offer now instead of after the random delay.
+   *
+   * Which version and from where is never part of the request: the daemon
+   * decides that from signed offers. Otherwise any member of the socket's
+   * group could have root run a binary of their choosing.
+   */
+  z.object({
+    command: z.literal("update"),
+    channel: z.enum(["stable", "insiders", "develop"]).nullable().optional(),
+    autoUpdate: z.boolean().optional(),
+    install: z.boolean().optional(),
+  }),
 ]);
 export type Request = z.infer<typeof Request>;
 
@@ -164,7 +180,39 @@ export const ProfileStatus = z.object({
 });
 export type ProfileStatus = z.infer<typeof ProfileStatus>;
 
+/** Where self-updating stands (D13). */
+export const UpdateStatus = z.object({
+  autoUpdate: z.boolean(),
+  /** The channel this device asked for; null leaves it to the servers. */
+  wish: z.string().nullable().default(null),
+  /** What each server assigned, which is what actually applies there. */
+  channels: z
+    .array(z.object({ controlUrl: z.string(), channel: z.string(), offered: z.array(z.string()) }))
+    .default([]),
+  /** The best valid offer that is newer than this build, if any. */
+  available: z.string().nullable().default(null),
+  state: z.enum(["idle", "scheduled", "installing", "unavailable"]),
+  /** Why not, when it cannot or will not: a dev build, a package manager... */
+  message: z.string().nullable().default(null),
+  scheduledAt: z.string().nullable().default(null),
+});
+export type UpdateStatus = z.infer<typeof UpdateStatus>;
+
+/** The daemon itself: which build it is, and how it updates. */
+export const DaemonInfo = z.object({
+  version: z.string(),
+  platform: z.string(),
+  update: UpdateStatus.nullable().default(null),
+});
+export type DaemonInfo = z.infer<typeof DaemonInfo>;
+
 export const Status = z.object({
+  /**
+   * Missing from a daemon older than D13, and from a CLI running a tunnel on
+   * its own. The tray compares it with its own version, and a tray that finds
+   * itself out of step with the daemon steps aside.
+   */
+  daemon: DaemonInfo.optional(),
   profiles: z.array(ProfileStatus).default([]),
   /**
    * Log lines from the daemon itself, the ones that belong to no single
@@ -202,6 +250,7 @@ export const Response = z.discriminatedUnion("type", [
   z.object({ type: z.literal("status"), status: Status }),
   z.object({ type: z.literal("certs"), certs: z.array(CertificateStatus) }),
   z.object({ type: z.literal("cert-waiting"), waiting: CertWaiting }),
+  z.object({ type: z.literal("update"), update: UpdateStatus, message: z.string().nullable().default(null) }),
   z.object({ type: z.literal("ok") }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

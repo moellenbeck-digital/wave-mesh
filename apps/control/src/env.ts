@@ -1,4 +1,4 @@
-import { Relay } from "@wave/proto";
+import { Relay, UpdateChannel } from "@wave/proto";
 import { z } from "zod";
 import { LETSENCRYPT_STAGING } from "./acme/client.ts";
 
@@ -48,6 +48,22 @@ const EnvSchema = z.object({
    * other people's domains.
    */
   WAVE_DNS_SECRET: z.string().optional(),
+  /**
+   * The update channels this server offers its devices, comma-separated
+   * (D13). The first is the default: a device that names none, or one not on
+   * the list, gets it. `stable,insiders` is a production wave that lets a
+   * device opt into insiders; `insiders` alone puts every device there.
+   */
+  WAVE_UPDATE_CHANNELS: z.string().default("stable"),
+  /** Where the releases come from. The repository is private, hence the token. */
+  WAVE_UPDATE_REPO: z.string().default("moellenbeck-digital/wave-mesh"),
+  /**
+   * A fine-grained token for that one repository, Contents: read and nothing
+   * else. It lives here and only here: no device gets it, no answer carries it
+   * and no log prints it. Without it no update is offered, which a server says
+   * once at start and is otherwise fine with.
+   */
+  WAVE_GITHUB_TOKEN: z.string().optional(),
   /** Password-free login for local development. Refused in production. */
   WAVE_DEV_AUTH: z
     .string()
@@ -72,7 +88,36 @@ export type Config = {
   devAuth: boolean;
   devAuthFrom: string[];
   secureCookies: boolean;
+  updates: {
+    /** At least one; the first is the default. */
+    channels: UpdateChannel[];
+    repo: string;
+    githubToken?: string;
+  };
 };
+
+/**
+ * Reads WAVE_UPDATE_CHANNELS. Refused at start rather than ignored: a typo in
+ * a channel name would otherwise be a wave that silently never updates.
+ */
+export function parseUpdateChannels(value: string): UpdateChannel[] {
+  const names = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const channels: UpdateChannel[] = [];
+  for (const name of names) {
+    const parsed = UpdateChannel.safeParse(name);
+    if (!parsed.success) {
+      throw new Error(
+        `WAVE_UPDATE_CHANNELS: "${name}" is not a channel (${UpdateChannel.options.join(", ")})`,
+      );
+    }
+    if (!channels.includes(parsed.data)) channels.push(parsed.data);
+  }
+  if (channels.length === 0) throw new Error("WAVE_UPDATE_CHANNELS names no channel");
+  return channels;
+}
 
 export function loadConfig(source: Record<string, string | undefined> = process.env): Config {
   const raw = EnvSchema.parse(source);
@@ -118,5 +163,10 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     acmeContact: raw.WAVE_ACME_CONTACT ? [`mailto:${raw.WAVE_ACME_CONTACT.replace(/^mailto:/, "")}`] : [],
     dnsSecret,
     secureCookies: raw.WAVE_BASE_URL.startsWith("https://"),
+    updates: {
+      channels: parseUpdateChannels(raw.WAVE_UPDATE_CHANNELS),
+      repo: raw.WAVE_UPDATE_REPO,
+      githubToken: raw.WAVE_GITHUB_TOKEN?.trim() || undefined,
+    },
   };
 }

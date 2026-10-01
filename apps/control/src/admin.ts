@@ -659,8 +659,12 @@ async function main(): Promise<never> {
       const wildcard = device.wildcardAllowed ? "  [wildcard]" : "";
       const tags = device.tags.length > 0 ? `  ${device.tags.join(" ")}` : "";
       const ports = policy ? `  [${enforcementText(device)}]` : "";
+      // Who is behind (D13). A client from before self-updates never says.
+      const version = device.clientVersion
+        ? `  v${device.clientVersion}${device.updateChannel ? ` (${device.updateChannel})` : ""}`
+        : "  version unknown";
       console.log(
-        `  ${device.hostname.padEnd(20)} ${device.ipv4.padEnd(16)} ${owner}  ${seen}${wildcard}${tags}${ports}`,
+        `  ${device.hostname.padEnd(20)} ${device.ipv4.padEnd(16)} ${owner}  ${seen}${version}${wildcard}${tags}${ports}`,
       );
     }
     if (devices.length === 0) console.log("  no devices");

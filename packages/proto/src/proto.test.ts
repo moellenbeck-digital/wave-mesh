@@ -103,12 +103,16 @@ describe("control messages", () => {
   test("parses a hello", () => {
     const msg = {
       type: "hello",
-      machineKey: key("A"),
-      nodeKey: key("B"),
-      discoKey: key("C"),
       version: "0.1.0",
+      platform: "linux-amd64",
+      channel: "insiders",
+      autoUpdate: true,
     };
     expect(ClientMessage.parse(msg).type).toBe("hello");
+    // The channel is optional -- leaving it to the servers is the default --
+    // but not free text: a typo must not reach the server as a wish.
+    expect(ClientMessage.safeParse({ ...msg, channel: undefined }).success).toBe(true);
+    expect(ClientMessage.safeParse({ ...msg, channel: "beta" }).success).toBe(false);
   });
 
   test("rejects an unknown message type", () => {

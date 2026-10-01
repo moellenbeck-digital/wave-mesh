@@ -51,6 +51,11 @@ configMapGenerator:
       # sind getrennt (acme_accounts hat die Verzeichnis-URL als Schlüssel),
       # ein Zurückschalten auf Staging kostet also nichts.
       - WAVE_ACME_DIRECTORY=https://acme-v02.api.letsencrypt.org/directory
+      # Welche Update-Kanäle dieser Server seinen Geräten anbietet (D13), der
+      # erste ist die Vorgabe. Ein Gerät darf sich mit `wave update --channel`
+      # einen anderen aus der Liste wünschen, keinen darüber hinaus. Ohne
+      # WAVE_GITHUB_TOKEN in secret.env wird gar nichts angeboten.
+      - WAVE_UPDATE_CHANNELS=stable,insiders
 
 secretGenerator:
   - name: wave-secrets

@@ -14,6 +14,7 @@ if (providers.size === 0) {
 }
 
 const app = createApp({ db, config, providers, signingKey });
+app.releases.start();
 const server = Bun.serve({
   port: config.port,
   hostname: process.env.WAVE_HOST ?? "0.0.0.0",

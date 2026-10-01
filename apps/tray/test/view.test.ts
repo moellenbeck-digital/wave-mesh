@@ -274,3 +274,50 @@ describe("several waves", () => {
     expect(actionForId(two(), Ids.quit)).toEqual({ kind: "quit" });
   });
 });
+
+describe("an update (D13)", () => {
+  const withUpdate = (update: Partial<NonNullable<NonNullable<Status["daemon"]>["update"]>>): Status => ({
+    ...up(),
+    daemon: {
+      version: "0.1.0",
+      platform: "linux-amd64",
+      update: {
+        autoUpdate: true,
+        wish: null,
+        channels: [],
+        available: "0.2.0",
+        state: "idle",
+        message: null,
+        scheduledAt: null,
+        ...update,
+      },
+    },
+  });
+
+  test("is said in the tooltip and offered in the menu", () => {
+    const status = withUpdate({});
+    expect(tooltipFor(status)).toEndWith("· Update to 0.2.0 available");
+    expect(labels(menuFor(status))).toContain("Update to 0.2.0 available");
+    expect(actionForId(status, Ids.update)).toEqual({ kind: "update" });
+  });
+
+  test("says when it is going to happen by itself", () => {
+    const status = withUpdate({ state: "scheduled", scheduledAt: new Date().toISOString() });
+    expect(labels(menuFor(status)).some((label) => label?.startsWith("Update to 0.2.0 at "))).toBe(true);
+    expect(labels(menuFor(status))).toContain("Install update now");
+  });
+
+  test("offers no button where this copy cannot install it", () => {
+    // A development build or a package-managed one: a button would only fail.
+    const status = withUpdate({ state: "unavailable", message: "this is a development build" });
+    expect(labels(menuFor(status))).toContain("wave 0.2.0 is available");
+    expect(labels(menuFor(status))).not.toContain("Install update now");
+  });
+
+  test("says nothing when there is nothing newer", () => {
+    const status = withUpdate({ available: null });
+    expect(tooltipFor(status)).not.toContain("Update");
+    expect(actionForId(status, Ids.update)).toBeNull();
+    expect(menuFor(status).some((entry) => entry.id === Ids.update)).toBe(false);
+  });
+});

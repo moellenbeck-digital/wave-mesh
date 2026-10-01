@@ -1,10 +1,39 @@
 import { buildAuthorizationHeader } from "@wave/crypto";
-import { type Candidate, type ClientMessage, type Netmap, ServerMessage } from "@wave/proto";
+import { PLATFORM, VERSION } from "@wave/ipc";
+import {
+  type Candidate,
+  type ClientMessage,
+  type Netmap,
+  ServerMessage,
+  type UpdateChannel,
+} from "@wave/proto";
 import { verifyNetmap } from "./api.ts";
 import type { NodeState } from "./state.ts";
 
+/** What a device says about itself first on every connection (D13). */
+export interface Hello {
+  version: string;
+  platform: string;
+  channel?: UpdateChannel;
+  autoUpdate?: boolean;
+}
+
+/** An update offer, as the server sent it. */
+export type UpdateOffer = Omit<Extract<ServerMessage, { type: "update" }>, "type">;
+
 export interface ControlSocketOptions {
   state: NodeState;
+  /**
+   * Asked on every connect, so a changed setting goes out with the next one
+   * -- or straight away through {@link ControlSocket.hello}. Without it the
+   * device still says which build it is: an operator wants to know that
+   * whether or not this process can update.
+   */
+  hello?: () => Hello;
+  /** An update offer arrived; only the daemon acts on it. */
+  onUpdate?: (offer: UpdateOffer) => void;
+  /** The connection is up -- what a freshly updated build has to prove. */
+  onConnected?: () => void;
   onNetmap: (netmap: Netmap) => void | Promise<void>;
   onDiscoHint: (nodeId: string, candidates: Candidate[]) => void;
   log?: (message: string) => void;
@@ -59,6 +88,8 @@ export class ControlSocket {
     socket.addEventListener("open", () => {
       this.backoff = this.options.minBackoffMs ?? 500;
       this.log("control connected");
+      // First, so the server knows what it is talking to before anything else.
+      this.hello();
       // Candidates are published before the socket is necessarily open, and
       // after a reconnect the server needs them again, so re-send what we have.
       if (this.lastEndpoints) this.send({ type: "endpoints", candidates: this.lastEndpoints });
@@ -66,6 +97,7 @@ export class ControlSocket {
       // that restarted from a dump, or to one that just learned the field.
       if (this.lastFilter) this.send({ type: "filter", ...this.lastFilter });
       this.startHeartbeat();
+      this.options.onConnected?.();
     });
 
     socket.addEventListener("message", (event) => void this.onMessage(String(event.data)));
@@ -142,9 +174,20 @@ export class ControlSocket {
       this.options.onDiscoHint(message.nodeId, message.candidates);
       return;
     }
+    if (message.type === "update") {
+      const { type: _, ...offer } = message;
+      this.options.onUpdate?.(offer);
+      return;
+    }
     if (message.type === "logout") {
       this.log(`control asked this node to re-authenticate: ${message.reason}`);
     }
+  }
+
+  /** Says who we are, again: after a setting changed, the server should know. */
+  hello(): void {
+    const hello = this.options.hello?.() ?? { version: VERSION, platform: PLATFORM };
+    this.send({ type: "hello", ...hello });
   }
 
   send(message: ClientMessage): void {

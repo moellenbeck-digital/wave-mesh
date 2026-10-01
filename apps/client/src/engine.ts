@@ -4,7 +4,7 @@ import { type DnsServer, type ResolverConfig, reverseZonesFor, startDnsServer } 
 import { MagicSock, RelayClient } from "@wave/magicsock";
 import { type Candidate, formatEndpoint, type Netmap } from "@wave/proto";
 import { ControlClient, verifyNetmap } from "./api.ts";
-import { ControlSocket } from "./control-socket.ts";
+import { ControlSocket, type ControlSocketOptions } from "./control-socket.ts";
 import { findTool } from "./install.ts";
 import { interfaceIndex, type LinkBackend } from "./link.ts";
 import { nameFilePath, pidFilePath, RUN_DIR } from "./link-darwin.ts";
@@ -40,6 +40,10 @@ export interface EngineOptions {
   onAuthUrl?: (url: string) => void;
   /** Enrols without a browser, for machines that have none (D11). */
   authKey?: string;
+  /** Passed to the control socket; see ControlSocketOptions (D13). */
+  hello?: ControlSocketOptions["hello"];
+  onUpdate?: ControlSocketOptions["onUpdate"];
+  onControlConnected?: () => void;
   log?: (message: string) => void;
 }
 
@@ -829,6 +833,11 @@ export class Tunnel {
     this.stunTimer = setInterval(() => void this.refreshCandidates().catch(() => {}), STUN_REFRESH_MS);
   }
 
+  /** Says `hello` again, after an update setting changed (D13). */
+  announce(): void {
+    this.control?.hello();
+  }
+
   async stop(): Promise<void> {
     if (this.stunTimer) clearInterval(this.stunTimer);
     if (this.rebindTimer) clearInterval(this.rebindTimer);
@@ -989,6 +998,9 @@ async function start(
   const control = new ControlSocket({
     state,
     log,
+    hello: options.hello,
+    onUpdate: options.onUpdate,
+    onConnected: options.onControlConnected,
     onNetmap: async (next) => {
       if (!tunnel) return;
       const startedAt = Date.now();

@@ -141,6 +141,26 @@ describe("the header", () => {
     const both = status(profile("http://a.example", "up"), profile("http://b.example", "stopped"));
     expect(windowView(both, "laptop").subtitle).toBe("1/2 waves connected");
   });
+
+  test("says an update is there, on the line that speaks for the device", () => {
+    const withUpdate: Status = {
+      ...status(profile("http://a.example", "up")),
+      daemon: {
+        version: "0.1.0",
+        platform: "linux-amd64",
+        update: {
+          autoUpdate: true,
+          wish: null,
+          channels: [],
+          available: "0.2.0",
+          state: "idle",
+          message: null,
+          scheduledAt: null,
+        },
+      },
+    };
+    expect(windowView(withUpdate, "laptop").subtitle).toBe("10.77.0.1 · Update to 0.2.0 available");
+  });
 });
 
 describe("hostOf", () => {

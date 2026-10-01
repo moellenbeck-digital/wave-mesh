@@ -1,4 +1,5 @@
 import { type ProfileStatus, pathKind, type Status, waveLabel } from "@wave/ipc";
+import { updateNotice } from "./view.ts";
 
 /**
  * What the window shows, derived from the daemon's status.
@@ -137,13 +138,18 @@ export function windowView(status: Status | null, deviceName: string): WindowVie
     })),
   );
 
-  const subtitle = !status
+  const state = !status
     ? "waiting for the daemon"
     : profiles.length === 0
       ? "no wave yet — run `wave login`"
       : profiles.length === 1
         ? detailFor(profiles[0] as ProfileStatus)
         : `${up.length}/${profiles.length} waves connected`;
+  // On the subtitle, which every platform's card already draws: an update is
+  // about the device, not about a wave or a machine, and this is the line that
+  // speaks for the device. Installing is in the menu.
+  const notice = updateNotice(status);
+  const subtitle = notice ? `${state} · ${notice.text}` : state;
 
   return {
     title: deviceName,

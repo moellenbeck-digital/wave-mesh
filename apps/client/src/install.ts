@@ -9,6 +9,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import type { UpdateChannel } from "@wave/proto";
+import { defaultStatePath, updateUpdateSettings } from "./state.ts";
 import {
   findWintun,
   findWireguardGo,
@@ -233,6 +235,13 @@ export interface InstallOptions {
   groupPath?: string;
   /** How a command name is turned into a program; overridden by the tests. */
   lookup?: Lookup;
+  /**
+   * `--channel` and `--auto-update` (D13). Written to the daemon's state file
+   * before the service starts, so its first `hello` already carries them.
+   */
+  update?: { channel?: UpdateChannel | null; autoUpdate?: boolean };
+  /** Where the daemon keeps its state; overridden by the tests. */
+  statePath?: string;
 }
 
 export const LINUX_SERVICE = "/etc/systemd/system/wave.service";
@@ -868,6 +877,21 @@ export async function install(
         : Buffer.from(file.content, "utf8");
     writeFileSync(file.path, content, { mode: file.mode ?? 0o644 });
     log(`wrote ${file.path}`);
+  }
+
+  if (options.update) {
+    // On Windows the daemon runs as LocalSystem and finds its state through
+    // that account's profile, which this elevated prompt cannot name with
+    // any certainty -- so there the setting goes through the service itself.
+    if (platform === "win32") {
+      log("Update settings are set through the service on Windows: wave update --channel … --auto-update …");
+    } else {
+      const statePath = options.statePath ?? defaultStatePath(platform, process.env, true);
+      const settings = await updateUpdateSettings(statePath, options.update);
+      log(
+        `updates: ${settings.autoUpdate ? "on" : "off"}, channel ${settings.channel ?? "as the servers say"}`,
+      );
+    }
   }
 
   // A step that fails is worth saying out loud, but the rest still runs:

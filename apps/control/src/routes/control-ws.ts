@@ -1,5 +1,5 @@
 import { createMemoryNonceStore, type NonceStore, verifySignedRequest } from "@wave/crypto";
-import type { Candidate, Relay, ServerMessage } from "@wave/proto";
+import type { Candidate, Relay, ServerMessage, UpdateChannel } from "@wave/proto";
 import { ClientMessage } from "@wave/proto";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -9,6 +9,7 @@ import type { Database } from "../db/client.ts";
 import { nodes, waves } from "../db/schema.ts";
 import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
 import { boundCandidates } from "../netmap/candidates.ts";
+import type { ReleaseFeed } from "../updates/releases.ts";
 import { upgradeWebSocket } from "./ws.ts";
 
 interface Connection {
@@ -18,6 +19,12 @@ interface Connection {
   close: (code: number, reason: string) => void;
   /** The netmap version this connection was last sent; see the heartbeat. */
   sentVersion?: number;
+  /**
+   * Set once the device has said `hello` (D13), with the channel it would
+   * like. A client from before self-updates never says it, and is never sent
+   * an offer it could not read anyway.
+   */
+  update?: { wish: UpdateChannel | null };
 }
 
 /**
@@ -70,6 +77,20 @@ export class NetmapHub {
     set?.delete(connection);
     if (set?.size === 0) this.byWave.delete(connection.waveId);
     this.listener?.(connection.waveId);
+  }
+
+  /**
+   * Sends every greeted connection what it may update to (D13). Called when
+   * the release feed finds something new; each device gets the offer for its
+   * own channel.
+   */
+  offerUpdates(releases: ReleaseFeed): void {
+    for (const set of this.byWave.values()) {
+      for (const connection of set) {
+        if (connection.update)
+          connection.send({ type: "update", ...releases.offerFor(connection.update.wish) });
+      }
+    }
   }
 
   connectionCount(waveId: string): number {
@@ -163,9 +184,11 @@ export interface ControlWsDeps {
   db: Database;
   hub: NetmapHub;
   nonces?: NonceStore;
+  /** Where update offers come from; without it a `hello` is only recorded. */
+  releases?: ReleaseFeed;
 }
 
-export function controlWebsocket({ db, hub, nonces }: ControlWsDeps) {
+export function controlWebsocket({ db, hub, nonces, releases }: ControlWsDeps) {
   const nonceStore = nonces ?? createMemoryNonceStore();
   const app = new Hono();
 
@@ -238,6 +261,24 @@ export function controlWebsocket({ db, hub, nonces }: ControlWsDeps) {
               .limit(1);
             const version = current[0]?.version;
             if (version !== undefined && version !== connection.sentVersion) await hub.sendNetmap(connection);
+            return;
+          }
+          if (parsed.data.type === "hello") {
+            const hello = parsed.data;
+            const wish = hello.channel ?? null;
+            connection.update = { wish };
+            // Recorded as the device said it, plus the channel it got: that
+            // is what `wave-admin devices` shows, and how an operator sees
+            // who is behind.
+            await db
+              .update(nodes)
+              .set({
+                clientVersion: hello.version,
+                clientPlatform: hello.platform,
+                updateChannel: releases?.assign(wish) ?? null,
+              })
+              .where(eq(nodes.id, node.id));
+            if (releases) connection.send({ type: "update", ...releases.offerFor(wish) });
             return;
           }
           if (parsed.data.type === "endpoints") {

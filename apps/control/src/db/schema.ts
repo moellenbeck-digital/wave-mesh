@@ -184,6 +184,15 @@ export const nodes = pgTable(
      */
     filterEnforced: boolean("filter_enforced"),
     filterReason: text("filter_reason"),
+    /**
+     * What the device said about itself in its last `hello` (D13): which
+     * build, for which machine, and the update channel it was assigned. Null
+     * for a client from before self-updates, which never says -- the same
+     * shape as `filterEnforced`, and shown next to it.
+     */
+    clientVersion: text("client_version"),
+    clientPlatform: text("client_platform"),
+    updateChannel: text("update_channel"),
     ephemeral: boolean("ephemeral").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),

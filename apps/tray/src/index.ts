@@ -1,5 +1,5 @@
 import { hostname } from "node:os";
-import { DaemonClient, defaultSocketPath, type Status } from "@wave/ipc";
+import { DaemonClient, defaultSocketPath, isDevVersion, type Status, VERSION } from "@wave/ipc";
 import { createTrayBackend, type TrayBackend, UnsupportedPlatform } from "./backend.ts";
 import { actionForId, iconFor, menuFor, tooltipFor, type Unreachable } from "./view.ts";
 import { createTrayWindow, NoWindowBackend, type TrayWindow } from "./window.ts";
@@ -63,6 +63,12 @@ export async function runTray(options: TrayOptions = {}): Promise<void> {
     const action = actionForId(status, id);
     if (!action) return;
     if (action.kind === "quit") process.exit(0);
+    if (action.kind === "update") {
+      // The daemon restarts on success and this tray follows it once it sees
+      // the new version, so there is nothing to wait for here.
+      await client?.request({ command: "update", install: true }, 15 * 60 * 1000);
+      return;
+    }
     if (action.kind === "open") {
       open(action.url);
       return;
@@ -88,6 +94,21 @@ export async function runTray(options: TrayOptions = {}): Promise<void> {
   });
 
   const refresh = (next: Status | null): void => {
+    // The tray is the same binary as the daemon but a process of its own, so
+    // after a self-update it would go on running the old code (D13). It steps
+    // aside instead -- with a failure status, because that is what systemd's
+    // Restart=on-failure and Task Scheduler's RestartOnFailure answer; launchd
+    // restarts it either way. What comes back is the new build.
+    const daemonVersion = next?.daemon?.version;
+    if (
+      daemonVersion &&
+      daemonVersion !== VERSION &&
+      !isDevVersion(VERSION) &&
+      !isDevVersion(daemonVersion)
+    ) {
+      console.log(`the service runs ${daemonVersion} and this tray ${VERSION}; restarting to catch up`);
+      process.exit(75);
+    }
     status = next;
     window?.update(windowView(next, device));
     tray.update({

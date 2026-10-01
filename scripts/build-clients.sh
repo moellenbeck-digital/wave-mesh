@@ -58,12 +58,22 @@ for arg in "$@"; do
   esac
 done
 
+# The version goes into the binary, so it can say which one it is -- in `wave
+# version`, in the status and to the control server, which offers updates on
+# that basis (D13). From the root package.json, which the release workflow has
+# already checked against the tag. A host build says "+local": build metadata
+# is ignored when versions are compared, so it sits at the release it was built
+# from instead of looking older than it (and being "updated" back to it).
+version="${WAVE_BUILD_VERSION:-$(bun -e 'console.log(require("./package.json").version)')}"
+if $host && [[ -z "${WAVE_BUILD_VERSION:-}" ]]; then version="$version+local"; fi
+
 # x11 is a path inside dbus-next taken only on a machine with an X display and
 # no bus address in the environment. Bundling it would make an optional package
 # a build dependency of every platform, including the ones with no X at all.
 build() { # <bun target, empty for the host> <outfile>
   local target="$1" outfile="$2"
   bun build --compile --external x11 ${target:+--target="$target"} \
+    --define "WAVE_BUILD_VERSION=\"$version\"" \
     "$root/apps/client/src/cli.ts" --outfile "$outfile"
 }
 

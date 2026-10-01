@@ -19,6 +19,9 @@ export interface DeviceRow {
   /** What it last said about enforcing the policy's ports. */
   filterEnforced: boolean | null;
   filterReason: string | null;
+  /** The build it last said it runs, and its update channel (D13). */
+  clientVersion: string | null;
+  updateChannel: string | null;
 }
 
 export async function listNodes(db: Database, waveId: string): Promise<DeviceRow[]> {
@@ -35,6 +38,8 @@ export async function listNodes(db: Database, waveId: string): Promise<DeviceRow
       tags: nodes.tags,
       filterEnforced: nodes.filterEnforced,
       filterReason: nodes.filterReason,
+      clientVersion: nodes.clientVersion,
+      updateChannel: nodes.updateChannel,
     })
     .from(nodes)
     .innerJoin(users, eq(users.id, nodes.userId))

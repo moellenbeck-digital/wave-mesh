@@ -96,6 +96,30 @@ export class ControlClient {
     return ServiceSyncResponse.parse(await this.request("POST", "/v1/services", { names, secure }));
   }
 
+  /**
+   * Fetches an update archive through the control server (D13), signed like
+   * every other node request. Handed back as the response so the caller can
+   * hash it while it streams to disk; nothing here is trusted until the hash
+   * matches the signed manifest.
+   */
+  async download(version: string, archive: string, timeoutMs = 10 * 60 * 1000): Promise<Response> {
+    const path = `/v1/update/${encodeURIComponent(version)}/${encodeURIComponent(archive)}`;
+    const res = await fetch(new URL(path, this.state.controlUrl), {
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: {
+        authorization: buildAuthorizationHeader({
+          machineKey: this.state.machineKey.publicKey,
+          machinePrivateKey: this.state.machineKey.privateKey,
+          method: "GET",
+          path,
+          body: "",
+        }),
+      },
+    });
+    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
+    return res;
+  }
+
   async publishEndpoints(candidates: Candidate[]): Promise<void> {
     await this.request("POST", "/v1/node/endpoints", { candidates });
   }

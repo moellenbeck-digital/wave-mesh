@@ -10,6 +10,9 @@ export const Ids = {
   /** The two lines shown when this device has joined nothing. */
   empty: 12,
   quit: 13,
+  /** What self-updating has to say (D13): a line, and the button under it. */
+  updateInfo: 20,
+  update: 21,
   /**
    * A device can be in several waves, so each gets a block of ids. A block is
    * wider than any wave will ever be, which is what lets {@link actionForId}
@@ -27,6 +30,8 @@ const idFor = (index: number, offset: number): number => toggleId(index) + offse
 
 export type Action =
   | { kind: "quit" }
+  /** Install the offered update now; which one is the daemon's decision. */
+  | { kind: "update" }
   /** The address is carried along: the daemon knows it, the tray should not guess. */
   | { kind: "open"; url: string }
   | { kind: "connect"; controlUrl: string }
@@ -35,6 +40,7 @@ export type Action =
 /** Turns a clicked menu id back into something to ask the daemon for. */
 export function actionForId(status: Status | null, id: number): Action | null {
   if (id === Ids.quit) return { kind: "quit" };
+  if (id === Ids.update) return status?.daemon?.update?.available ? { kind: "update" } : null;
   if (id < Ids.profileBase) return null;
 
   const index = Math.floor((id - Ids.profileBase) / Ids.profileStride);
@@ -75,7 +81,33 @@ const describeProfile = (profile: ProfileStatus): string => {
   return profile.message ?? profile.state;
 };
 
+/**
+ * What there is to say about an update, if anything (D13). Shared by the
+ * tooltip, the menu and the window, so the three cannot word it differently.
+ */
+export function updateNotice(status: Status | null): { text: string; installable: boolean } | null {
+  const update = status?.daemon?.update;
+  if (!update?.available) return null;
+  if (update.state === "installing")
+    return { text: `Installing wave ${update.available}…`, installable: false };
+  // Only shown: this copy does not update itself (a development build, or a
+  // package manager owns it), so a button would only produce an error.
+  if (update.state === "unavailable")
+    return { text: `wave ${update.available} is available`, installable: false };
+  if (update.state === "scheduled" && update.scheduledAt) {
+    const at = new Date(update.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return { text: `Update to ${update.available} at ${at}`, installable: true };
+  }
+  return { text: `Update to ${update.available} available`, installable: true };
+}
+
 export function tooltipFor(status: Status | null, unreachable: Unreachable = null): string {
+  const base = tooltipBase(status, unreachable);
+  const notice = updateNotice(status);
+  return notice ? `${base} · ${notice.text}` : base;
+}
+
+function tooltipBase(status: Status | null, unreachable: Unreachable): string {
   if (!status) {
     if (unreachable === "denied") return "not allowed to use the daemon — log out and back in";
     if (unreachable === "no-daemon") return "the wave service is not running";
@@ -169,6 +201,14 @@ export function menuFor(status: Status | null, options: { unreachable?: Unreacha
     } else {
       entries.push({ id: toggleId(0), label: "Connect" }, { id: 3, separator: true });
     }
+  }
+
+  // Last before Quit: it concerns the device, not any one wave.
+  const notice = updateNotice(status);
+  if (notice) {
+    entries.push({ id: Ids.updateInfo, label: notice.text, enabled: false });
+    if (notice.installable) entries.push({ id: Ids.update, label: "Install update now" });
+    entries.push({ id: Ids.updateInfo + 100, separator: true });
   }
 
   entries.push({ id: Ids.quit, label: "Quit the tray icon" });

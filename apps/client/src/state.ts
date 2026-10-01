@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { generateKeyPair } from "@wave/crypto";
 import { waveLabel } from "@wave/ipc";
+import { UpdateChannel } from "@wave/proto";
 import { z } from "zod";
 
 /**
@@ -60,9 +61,46 @@ export const Profile = NodeState.extend({
 });
 export type Profile = z.infer<typeof Profile>;
 
+/**
+ * How this device updates itself (D13). One setting for the machine, not one
+ * per wave: there is one binary.
+ *
+ * In the state file and not in wave.env, so there is one place for it -- two
+ * places for the same truth is exactly what WAVE_CONTROL_URL got wrong.
+ */
+export const UpdateSettings = z.object({
+  /**
+   * The channel this device would like. Only a wish: each control server
+   * offers the channels it was configured with and gives a device that wants
+   * another one its default. Null leaves it to the servers entirely.
+   */
+  channel: UpdateChannel.nullable().default(null),
+  autoUpdate: z.boolean().default(true),
+  /**
+   * An update that has been swapped in and not yet proven itself. The next
+   * start of the new version has a few minutes to reach a control server;
+   * otherwise the old files come back and this version goes on `broken`.
+   */
+  pending: z
+    .object({
+      version: z.string(),
+      from: z.string(),
+      startedAt: z.string(),
+      /** The files that were swapped, each with a `.old` beside it. */
+      files: z.array(z.string()),
+      installDir: z.string(),
+    })
+    .nullable()
+    .default(null),
+  /** Versions that were installed once and rolled back; never offered again. */
+  broken: z.array(z.string()).default([]),
+});
+export type UpdateSettings = z.infer<typeof UpdateSettings>;
+
 export const ClientState = z.object({
   version: z.literal(2),
   profiles: z.array(Profile),
+  update: UpdateSettings.optional(),
 });
 export type ClientState = z.infer<typeof ClientState>;
 
@@ -96,29 +134,65 @@ export function defaultStatePath(
  * place in the wave rather than having to enrol again.
  */
 export async function loadProfiles(path: string): Promise<Profile[]> {
+  return (await loadState(path)).profiles;
+}
+
+async function loadState(path: string): Promise<{ profiles: Profile[]; update: UpdateSettings }> {
   let raw: unknown;
   try {
     raw = JSON.parse(await readFile(path, "utf8"));
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { profiles: [], update: defaultUpdate() };
     throw err;
   }
 
   const current = ClientState.safeParse(raw);
-  if (current.success) return current.data.profiles;
+  if (current.success)
+    return { profiles: current.data.profiles, update: current.data.update ?? defaultUpdate() };
 
   const legacy = NodeState.safeParse(raw);
-  if (legacy.success) return [{ ...legacy.data, autoStart: true, certs: [] }];
+  if (legacy.success)
+    return { profiles: [{ ...legacy.data, autoStart: true, certs: [] }], update: defaultUpdate() };
 
   throw new Error(`${path} is not a wave state file`);
 }
 
-export async function saveProfiles(path: string, profiles: Profile[]): Promise<void> {
+const defaultUpdate = (): UpdateSettings => UpdateSettings.parse({});
+
+async function saveState(
+  path: string,
+  state: { profiles: Profile[]; update: UpdateSettings },
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const state: ClientState = { version: 2, profiles };
-  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  const file: ClientState = { version: 2, profiles: state.profiles, update: state.update };
+  await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
   // Explicit, because an existing file keeps its old mode on write.
   await chmod(path, 0o600);
+}
+
+/**
+ * Writes the enrolments and keeps whatever else the file holds. Every caller
+ * of this predates the update settings, and a write that dropped them would
+ * turn auto-update back on with the next login.
+ */
+export async function saveProfiles(path: string, profiles: Profile[]): Promise<void> {
+  const { update } = await loadState(path).catch(() => ({ update: defaultUpdate() }));
+  await saveState(path, { profiles, update });
+}
+
+export async function loadUpdateSettings(path: string): Promise<UpdateSettings> {
+  return (await loadState(path)).update;
+}
+
+/** Changes the update settings and leaves the enrolments as they are. */
+export async function updateUpdateSettings(
+  path: string,
+  patch: Partial<UpdateSettings>,
+): Promise<UpdateSettings> {
+  const state = await loadState(path);
+  const update = UpdateSettings.parse({ ...state.update, ...patch });
+  await saveState(path, { profiles: state.profiles, update });
+  return update;
 }
 
 /** Enrolments are found by the server they belong to, never by a nickname. */

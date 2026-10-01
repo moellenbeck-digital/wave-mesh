@@ -299,6 +299,17 @@ jobs:
       - name: Build and package every client
         run: ./scripts/build-clients.sh --package
 
+      # The signed statement of what this release is, and the only thing a
+      # device trusts about it (D13): version, channel and the hash of every
+      # archive, signed with the release key. Control servers pass releases on
+      # to their devices; without this file none of them offers this one. The
+      # script refuses to run without the key, and refuses a key the binaries
+      # do not carry -- either would be a release no device can install.
+      - name: Sign the release manifest
+        env:
+          WAVE_RELEASE_SIGNING_KEY: ${{ secrets.WAVE_RELEASE_SIGNING_KEY }}
+        run: bun scripts/release-manifest.ts dist
+
       - name: Write the download notes
         run: |
           repo="ghcr.io/${GITHUB_REPOSITORY,,}"
@@ -328,6 +339,9 @@ jobs:
           Prüfsummen stehen in \`SHA256SUMS\`:
           \`sha256sum --ignore-missing -c SHA256SUMS\`
 
+          Installierte Clients aktualisieren sich von selbst über ihren
+          Control-Server; \`manifest.json\` ist die signierte Grundlage dafür.
+
           ### Server
 
           \`\`\`
@@ -355,4 +369,4 @@ jobs:
             --notes-file notes.md \
             --generate-notes \
             "${flags[@]}" \
-            dist/*.tar.gz dist/*.zip dist/SHA256SUMS
+            dist/*.tar.gz dist/*.zip dist/SHA256SUMS dist/manifest.json

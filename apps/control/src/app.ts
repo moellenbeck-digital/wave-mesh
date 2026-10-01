@@ -30,8 +30,10 @@ import { machineRoutes } from "./routes/machine.ts";
 import { safeNext } from "./routes/next.ts";
 import { passwordRoutes } from "./routes/password.ts";
 import { serviceRoutes } from "./routes/services.ts";
+import { updateRoutes } from "./routes/update.ts";
 import { waveRoutes } from "./routes/waves.ts";
 import { websocket } from "./routes/ws.ts";
+import { ReleaseFeed } from "./updates/releases.ts";
 import { listDevices } from "./waves/devices.ts";
 import { invitesFor } from "./waves/invites.ts";
 import { wavesOf } from "./waves/members.ts";
@@ -54,6 +56,12 @@ export interface AppDeps {
    * pass one whose CA and DNS provider are fakes they can look inside.
    */
   certs?: CertificateService;
+  /**
+   * Where client updates come from (D13). Built from the config by default;
+   * the tests pass one that reads a fake GitHub. Not started here -- index.ts
+   * does that, so a test app never polls anything on its own.
+   */
+  releases?: ReleaseFeed;
 }
 
 type Vars = { user: SessionUser | null };
@@ -64,7 +72,7 @@ function sameToken(a: string | undefined, b: string | undefined): boolean {
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
-export function createApp({ db, config, providers, signingKey, webFetch, certs }: AppDeps) {
+export function createApp({ db, config, providers, signingKey, webFetch, certs, releases }: AppDeps) {
   const app = new Hono<{ Variables: Vars }>();
 
   /**
@@ -101,7 +109,17 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs }
   // browsers get the device list they are rendering.
   const feed = new DeviceFeed(db, hub);
   hub.onChange((waveId) => feed.changed(waveId));
-  app.route("/", controlWebsocket({ db, hub }));
+  const updates =
+    releases ??
+    new ReleaseFeed({
+      repo: config.updates.repo,
+      token: config.updates.githubToken,
+      channels: config.updates.channels,
+    });
+  // A new release reaches every connected device at once; each one picks its
+  // own moment to install it.
+  updates.onChange(() => hub.offerUpdates(updates));
+  app.route("/", controlWebsocket({ db, hub, releases: updates }));
   app.route("/", deviceFeedRoutes({ db, feed }));
   // One nonce store for every node-facing route: a signature is bound to its
   // path, so sharing it costs nothing and keeps the replay window in one place.
@@ -109,6 +127,7 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs }
   app.route("/", machineRoutes({ db, config, signingKey, hub, nonces }));
   app.route("/", certRoutes({ db, certs: certs ?? new CertificateService({ db, config }), nonces }));
   app.route("/", serviceRoutes({ db, hub, nonces }));
+  app.route("/", updateRoutes({ db, releases: updates, nonces }));
   app.route("/", waveRoutes({ db, config, hub }));
 
   // Without a frontend this server is its own, deliberately plain, UI. With
@@ -311,5 +330,5 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs }
     });
   }
 
-  return Object.assign(app, { websocket, hub, feed });
+  return Object.assign(app, { websocket, hub, feed, releases: updates });
 }

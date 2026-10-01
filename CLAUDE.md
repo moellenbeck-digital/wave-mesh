@@ -2,8 +2,9 @@
 
 Selbst hostbares Mesh-VPN auf WireGuard-Basis. Architektur und Meilensteine
 stehen in [`docs/PLAN.md`](docs/PLAN.md) (Entscheidungen D1–D14, Roadmap M0–M14).
-Erledigt: M0–M6 sowie M11 und M10 (Letzteres bis auf den Lauf auf echter
-Hardware, siehe „Telefone"). M5 und M6 sind zusammen fertig geworden, weil beide dieselbe
+Erledigt: M0–M6 sowie M11, M10 (bis auf den Lauf auf echter Hardware, siehe
+„Telefone") und M13 (bis auf den ersten echten Release, siehe
+„Selbstaktualisierung"). M5 und M6 sind zusammen fertig geworden, weil beide dieselbe
 Arbeit brauchten: Schreibzugriff auf die echte Zone. Der Server schreibt jetzt
 über eine Provider-API hinein, und genau das ist zugleich die Verifikation —
 wer die Zone schreiben kann, besitzt sie (siehe „Zertifikate"). Offen bleiben
@@ -13,7 +14,7 @@ autoritatives DNS, also M9) und die Aliase aus D6.
 ## Befehle
 
 ```bash
-bun test                 # 818 Tests, kein Docker nötig
+bun test                 # 904 Tests, kein Docker nötig
 bun run check            # Biome (Lint + Format)
 bun run typecheck        # tsc --noEmit, strict inkl. noUncheckedIndexedAccess
 bun run db:up            # Postgres für die Entwicklung
@@ -43,6 +44,9 @@ cd apps/web && bun run typecheck   # eigener Lauf: DOM und JSX, nicht Bun
 ./mobile/build.sh ios        # Wavemobile.xcframework (nur macOS, braucht Xcode)
 ./mobile/build.sh android    # wavemobile.aar (braucht ANDROID_HOME mit NDK)
 cd mobile/fixtures && bun run generate   # Vergleichsdaten für die Go-Tests
+
+bun scripts/release-key.ts               # neues Release-Schlüsselpaar (D13)
+WAVE_RELEASE_SIGNING_KEY=… bun scripts/release-manifest.ts dist   # signiertes manifest.json
 ```
 
 Die E2E-Tests brauchen **kein root**: sie starten sich in einem unprivilegierten
@@ -665,6 +669,86 @@ steht. Was fehlt, ist ein Lauf gegen das echte Staging-Verzeichnis mit einer
 echten Domain; die E2E-Skripte decken Zertifikate nicht ab, weil dafür eine
 erreichbare Zone nötig wäre. Eine Oberfläche gibt es dafür ebenfalls noch
 nicht — Provider und Zertifikate stehen nur auf der Shell des Servers.
+
+## Selbstaktualisierung
+
+**Der Daemon aktualisiert sich selbst, aus signierten Releases, über den
+Control-Server** (D13, M13). Vertraut wird allein der Ed25519-Signatur mit
+einem Schlüssel aus `RELEASE_PUBLIC_KEYS` (`packages/crypto/src/release.ts`),
+nie dem Weg. Der Control-Server ist eine Quelle, keine Autorität: er **signiert
+nie** — könnte er es, liefe auf jedem Gerät seines Waves Code als root, den
+sein Betreiber geschrieben hat.
+
+```bash
+wave version                         # Build, Plattform, Stand des Dienstes
+wave update                          # das beste Angebot jetzt statt nach dem Versatz
+wave update --channel insiders       # Wunschkanal; "server" gibt die Wahl zurück
+wave update --auto-update off        # nur anzeigen, nie selbst installieren
+sudo wave install --channel … --auto-update on|off
+```
+
+Am Server: `WAVE_UPDATE_CHANNELS` (Liste, erster Eintrag ist die Vorgabe,
+ungesetzt `stable`; die Kanäle heißen `stable`, `insiders`, `develop`),
+`WAVE_UPDATE_REPO`, `WAVE_GITHUB_TOKEN` (Fine-grained, nur dieses Repository,
+nur Contents: read). Ohne Token wird nichts angeboten. Im Release-Workflow:
+das Secret `WAVE_RELEASE_SIGNING_KEY`; ohne es scheitert der Release, statt ein
+Manifest zu schreiben, das kein Gerät annimmt.
+
+Was daran festliegt:
+
+- **Kanal und Version stehen *im* signierten Manifest.** Signierte Hashes allein
+  ließen einen Server einem Gerät auf `stable` ein echtes `develop`-Build
+  unterschieben. Das Gerät prüft deshalb, dass der Kanal des Manifests zu dem
+  passt, den der Server ihm zugewiesen hat (`channelAccepts`). Signiert heißt
+  auch hier: `looseObject`, kein `.default()` — dieselbe Regel wie bei der
+  Netzkarte.
+- **Die Kanäle gehören dem Server, die Wahl darin dem Gerät.** Das `hello`
+  trägt einen Wunsch; steht er nicht in `WAVE_UPDATE_CHANNELS`, gilt der erste
+  Eintrag. Ein Gerät in mehreren Waves hört alle Server und nimmt das höchste
+  gültige Angebot — welchem Betreiber es glaubt, muss es nie entscheiden.
+- **Kein Downgrade, nie.** Ein altes Release mit gültiger Signatur ist genau
+  die Art, wie ein Server eine geschlossene Lücke zurückbrächte.
+- **Nur der Daemon installiert, und nur die installierte Kopie.** CLI und Tray
+  dürfen über IPC ein Update *anstoßen*, aber nie sagen, welches — sonst ließe
+  jedes Mitglied der Socket-Gruppe root ein Binary seiner Wahl ausführen.
+  `updateBlocker()` lässt nur `defaultBinaryPath()` zu: was woanders liegt,
+  gehört einem Paketmanager oder einem entpackten Archiv, und keines davon
+  startet ein Dienstverwalter neu.
+- **Der Tausch ist nur Umbenennen.** Jede Datei wird zu `.old`, die neue
+  rückt nach. Das geht über laufende Dateien auf allen drei Plattformen —
+  Windows verbietet das Überschreiben einer laufenden `.exe`, nicht das
+  Umbenennen. Gestaged wird deshalb **neben** dem Binary
+  (`.wave-update-<version>`), nicht in `/tmp`: über Dateisystemgrenzen gibt es
+  kein Umbenennen.
+- **`pending` wird geschrieben, bevor sich die erste Datei bewegt**, und
+  `broken`, bevor die alte zurückkommt. Ein Stromausfall mittendrin findet
+  beim nächsten Start in beiden Fällen den Weg.
+- **Die Probezeit läuft an der Uhr, nicht an einem Timer.** Die neue Fassung hat
+  fünf Minuten für eine Control-Verbindung; `Updater.init()` prüft das vor
+  jedem Tunnel. Eine Fassung, die immer wieder abstürzt, kommt bei jedem
+  Neustart dort vorbei und rollt zurück, sobald die Frist um ist. Eine Fassung,
+  die abstürzt, bevor sie den Zustand liest, erreicht das nicht — das ist die
+  bekannte Lücke.
+- **Neu gestartet wird durch Beenden.** systemd (`Restart=always`) und launchd
+  (`KeepAlive`) starten jeden Ausgang neu. Der Aufgabenplaner nicht: unter
+  Windows startet ein losgelöster `schtasks /run` den Task fünf Sekunden
+  später, und der Fehlerstatus ist der Rückfall über `RestartOnFailure` (eine
+  Minute). Ungeprüft, wie alles dort.
+- **Das Tray sagt ein Update an drei Stellen, alle aus `updateNotice()`:**
+  Tooltip, Menü (mit „Install update now", außer wo diese Kopie sich nicht
+  selbst aktualisiert) und die Unterzeile der Karte. Gewählt, weil alle drei
+  Plattformen sie schon zeichnen — es ist eine reine View-Änderung ohne
+  Toolkit-Code. Eine Desktop-Benachrichtigung gibt es nicht.
+- **Das Tray beendet sich, wenn der Daemon eine andere Version meldet**
+  (`Status.daemon.version`), mit Status 75 — Neustart bringt die neue Fassung.
+  Es ist dieselbe Datei, aber ein eigener Prozess, und liefe sonst mit altem
+  Code weiter.
+- **Ein lokaler Build heißt `X.Y.Z+local`.** Build-Metadaten zählen beim
+  Vergleich nicht; als Vorab-Suffix sähe jeder lokale Build älter aus als das
+  Release, aus dem er stammt, und würde darauf „aktualisiert".
+- **Der Server ist kein offener Proxy.** `/v1/update/…` reicht nur Archive aus
+  einem gerade angebotenen Manifest, nur an angemeldete Knoten, und folgt der
+  Umleitung auf den Speicher von Hand und **ohne Token**.
 
 ## Mehrere Waves auf einem Gerät
 

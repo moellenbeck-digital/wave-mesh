@@ -3,12 +3,17 @@ import { parseArgs } from "node:util";
 import {
   type CertificateStatus,
   type CertWaiting,
+  DAEMON_CLOSED,
   DaemonClient,
   DEFAULT_SOCKET_PATH,
+  PLATFORM,
   profileStatusFromSnapshot,
   type Status,
+  type UpdateStatus,
+  VERSION,
   waveLabel,
 } from "@wave/ipc";
+import { UpdateChannel } from "@wave/proto";
 import { ControlClient } from "./api.ts";
 import { DEFAULT_MTU, resolveInterfaceName, up } from "./engine.ts";
 import { platformLink } from "./link-platform.ts";
@@ -41,6 +46,8 @@ const { values, positionals } = parseArgs({
     hook: { type: "string" },
     "auth-key": { type: "string", default: process.env.WAVE_AUTH_KEY ?? "" },
     wildcard: { type: "boolean", default: false },
+    channel: { type: "string" },
+    "auto-update": { type: "string" },
     "wg-socket": { type: "string" },
     help: { type: "boolean", default: false },
   },
@@ -90,6 +97,10 @@ const usage = `wave — mesh VPN client
   wave cert  [name…] get a TLS certificate for this device and keep it renewed
   wave certs         list the certificates this device holds
 
+  wave version    which build this is, and the service's update state
+  wave update     install the newest release on offer now, instead of later
+                  (--channel <name|server>, --auto-update on|off change settings)
+
   wave daemon     run the privileged part in the foreground
   wave tray       run the tray icon in the foreground
 
@@ -117,7 +128,56 @@ Options:
   --hook <cmd>      run this after every renewal, e.g. 'systemctl reload caddy'
   --wildcard        ask for *.<wave domain> (an operator has to allow it first)
   --control <url>   also picks the wave for "wave cert" on a multi-wave device
+  --channel <name>  update channel to ask for: stable, insiders, develop, or
+                    "server" to take each server's default (update, install)
+  --auto-update on|off  whether the service installs updates by itself
 `;
+
+/**
+ * Reads --channel and --auto-update. Undefined means "not given"; a channel of
+ * null hands the choice back to the servers.
+ */
+function updateFlags(): { channel?: UpdateChannel | null; autoUpdate?: boolean } | string {
+  const flags: { channel?: UpdateChannel | null; autoUpdate?: boolean } = {};
+  if (values.channel !== undefined) {
+    if (values.channel === "server") flags.channel = null;
+    else {
+      const parsed = UpdateChannel.safeParse(values.channel);
+      if (!parsed.success) return `--channel takes ${UpdateChannel.options.join(", ")} or server`;
+      flags.channel = parsed.data;
+    }
+  }
+  const auto = values["auto-update"];
+  if (auto !== undefined) {
+    if (auto !== "on" && auto !== "off") return "--auto-update takes on or off";
+    flags.autoUpdate = auto === "on";
+  }
+  return flags;
+}
+
+/** The update state as a few lines, for `wave version` and `wave update`. */
+function describeUpdate(update: UpdateStatus): string[] {
+  const lines: string[] = [];
+  lines.push(
+    `auto-update ${update.autoUpdate ? "on" : "off"}, channel ${update.wish ?? "as the servers say"}`,
+  );
+  for (const entry of update.channels) {
+    lines.push(`  ${waveLabel(entry.controlUrl)}: ${entry.channel} (offers ${entry.offered.join(", ")})`);
+  }
+  if (update.available) {
+    const when =
+      update.state === "scheduled" && update.scheduledAt
+        ? `, installing at ${update.scheduledAt}`
+        : update.state === "installing"
+          ? ", installing now"
+          : "; `wave update` installs it now";
+    lines.push(`update to ${update.available} available${when}`);
+  } else {
+    lines.push("up to date with what the servers offer");
+  }
+  if (update.message) lines.push(update.message);
+  return lines;
+}
 
 /** Watching changes nothing, so Ctrl-C must not promise that it does. */
 const WATCH_HINT = "Ctrl-C to stop watching; the tunnels keep running.";
@@ -282,7 +342,13 @@ async function main(): Promise<number> {
     // volume, say -- the guess creates a directory that looks like a home, and
     // the tray unit written into it is one the user's systemd never sees.
     const home = process.env.SUDO_USER ? homeOf(process.env.SUDO_USER) : undefined;
+    const update = updateFlags();
+    if (typeof update === "string") {
+      console.error(update);
+      return 1;
+    }
     const target = {
+      update: Object.keys(update).length > 0 ? update : undefined,
       group: values.group,
       user,
       userHome: home ?? (process.env.SUDO_USER ? `/home/${process.env.SUDO_USER}` : undefined),
@@ -309,6 +375,60 @@ async function main(): Promise<number> {
     } else if (attempt.reason === "unreachable") {
       console.error(`A control socket exists at ${values.daemon} but nothing answers; doing the work here.`);
     }
+  }
+
+  if (command === "version") {
+    console.log(`wave ${VERSION} (${PLATFORM})`);
+    if (!daemon) return 0;
+    const response = await daemon.request({ command: "status" });
+    daemon.close();
+    if (response.type !== "status") return 0;
+    const info = response.status.daemon;
+    // The service is a separate process and can be another build: the one
+    // before an update restarted it, or one installed from elsewhere.
+    if (!info) console.log("the service runs an older build that does not say its version");
+    else if (info.version !== VERSION) console.log(`the service runs ${info.version}`);
+    if (info?.update) for (const line of describeUpdate(info.update)) console.log(line);
+    return 0;
+  }
+
+  if (command === "update") {
+    const flags = updateFlags();
+    if (typeof flags === "string") {
+      console.error(flags);
+      return 1;
+    }
+    // The daemon is the only process that may write the installation, and
+    // the only one that holds the signed offers to decide from.
+    if (!daemon) {
+      console.error(
+        "updating needs the service: it holds the offers and owns the installation (wave install)",
+      );
+      return 1;
+    }
+    const settingsOnly = Object.keys(flags).length > 0;
+    const response = await daemon.request(
+      { command: "update", ...flags, install: !settingsOnly },
+      15 * 60 * 1000,
+    );
+    daemon.close();
+    // The daemon ending before it answers is the new build being started:
+    // a successful install never gets to reply.
+    if (!settingsOnly && response.type === "error" && response.message === DAEMON_CLOSED) {
+      console.log("installed; the service is restarting with the new version");
+      return 0;
+    }
+    if (response.type === "error") {
+      console.error(response.message);
+      return 1;
+    }
+    if (response.type !== "update") {
+      console.error("unexpected answer");
+      return 1;
+    }
+    if (response.message) console.log(response.message);
+    for (const line of describeUpdate(response.update)) console.log(line);
+    return 0;
   }
 
   if (command === "login") {

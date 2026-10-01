@@ -7,11 +7,13 @@ import {
   DEFAULT_SOCKET_PATH,
   encodeMessage,
   LineReader,
+  PLATFORM,
   type ProfileStatus,
   profileStatusFromSnapshot,
   Request,
   type Status,
   type TunnelState,
+  VERSION,
 } from "@wave/ipc";
 import { ControlClient } from "./api.ts";
 import { certPaths, dueCertificates, issueCertificate, namesOf } from "./certs.ts";
@@ -27,6 +29,7 @@ import {
   type Profile,
   removeProfile,
 } from "./state.ts";
+import type { Updater } from "./update.ts";
 
 /**
  * The privileged half of the client.
@@ -48,6 +51,12 @@ export interface DaemonOptions extends Omit<EngineOptions, "controlUrl"> {
   controlSocketPath?: string;
   /** Group allowed to use the socket; without it only root may. */
   socketGroup?: string;
+  /**
+   * Self-updates (D13). Optional so a daemon can run without them -- the
+   * tests do, and so does every run from source, where the updater would
+   * only ever say it is a development build.
+   */
+  updater?: Updater;
 }
 
 const isPipe = (path: string): boolean => path.startsWith("\\\\");
@@ -164,7 +173,11 @@ export class Daemon {
         }),
       );
     }
-    return { profiles, events: [...this.events] };
+    return {
+      daemon: { version: VERSION, platform: PLATFORM, update: this.options.updater?.status() ?? null },
+      profiles,
+      events: [...this.events],
+    };
   }
 
   private async publish(): Promise<void> {
@@ -267,6 +280,11 @@ export class Daemon {
         listenPort: profile.listenPort,
         socketPath: this.socketFor(profile.interfaceName),
         log: this.logFor(profile.controlUrl),
+        // Every server this device is in gets to make an offer; the updater
+        // takes the best valid one of them all.
+        hello: this.options.updater ? () => (this.options.updater as Updater).hello() : undefined,
+        onUpdate: (offer) => this.options.updater?.receive(profile.controlUrl, offer),
+        onControlConnected: () => void this.options.updater?.confirm(),
         onAuthUrl: (url) => {
           runtime.authUrl = url;
           runtime.state = "waiting-for-approval";
@@ -346,6 +364,7 @@ export class Daemon {
     await new ControlClient(profile).logout().catch((error) => this.log(`${url} logout: ${error}`));
     await removeProfile(this.options.statePath, url);
     this.runtimes.delete(url);
+    this.options.updater?.forget(url);
     this.log(`left ${url}`);
     await this.publish();
     return null;
@@ -597,10 +616,30 @@ export class Daemon {
       case "certs":
         reply({ type: "certs", certs: await this.certs() });
         return;
+      case "update": {
+        const updater = this.options.updater;
+        if (!updater) {
+          reply({ type: "error", message: "this daemon does not update itself (it runs from source)" });
+          return;
+        }
+        const { channel, autoUpdate, install } = parsed.data;
+        if (channel !== undefined || autoUpdate !== undefined) {
+          await updater.configure({ channel, autoUpdate });
+          // The servers assign the channel, so they have to hear the new wish
+          // now and not with the next reconnect.
+          for (const runtime of this.runtimes.values()) runtime.tunnel?.announce();
+        }
+        // On success the process ends here and the caller hears nothing but
+        // the socket closing -- which is what "restarting" looks like.
+        const message = install ? await updater.installNow() : null;
+        reply({ type: "update", update: updater.status(), message });
+        return;
+      }
     }
   }
 
   async stop(): Promise<void> {
+    this.options.updater?.stop();
     if (this.ticker) clearInterval(this.ticker);
     if (this.renewals) clearInterval(this.renewals);
     this.watchers.clear();

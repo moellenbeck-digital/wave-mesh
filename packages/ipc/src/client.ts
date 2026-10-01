@@ -18,6 +18,13 @@ import {
 /** Why the daemon could not be reached, so the caller can say something useful. */
 export type ConnectFailure = "no-daemon" | "denied" | "unreachable";
 
+/**
+ * What a pending request gets when the daemon goes away before answering.
+ * Exported because one caller expects exactly that: a successful `wave
+ * update` ends the daemon before it can reply.
+ */
+export const DAEMON_CLOSED = "the daemon closed the connection";
+
 export type ConnectResult = { ok: true; client: DaemonClient } | { ok: false; reason: ConnectFailure };
 
 export class DaemonClient {
@@ -44,7 +51,7 @@ export class DaemonClient {
 
       socket.once("connect", () => {
         socket.on("data", (chunk: string) => client.onData(chunk));
-        socket.on("close", () => client.fail(new Error("the daemon closed the connection")));
+        socket.on("close", () => client.fail(new Error(DAEMON_CLOSED)));
         resolve({ ok: true, client });
       });
       socket.once("error", (error: NodeJS.ErrnoException) => {

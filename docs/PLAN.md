@@ -832,20 +832,23 @@ Warum überhaupt über ihn und nicht direkt von GitHub:
   des Geräts meldet (siehe unten).
 
 **Das signierte Dokument ist ein Manifest, nicht bloß `SHA256SUMS`.** Der
-Release-Job schreibt `manifest.json` — Version, Kanal, je Archiv Name und
-SHA-256, dazu der nächste öffentliche Schlüssel für die Rotation — in
-kanonischem JSON (`packages/crypto`) und signiert es mit einem
-**Ed25519-Release-Schlüssel**, dessen Geheimnis nur im Release-Environment
-liegt. Kanal und Version *müssen* darin stehen: signierte Hashes allein ließen
-einen Server einem Gerät auf `latest` ein `develop`-Build unterschieben — echt,
+Release-Job schreibt `manifest.json` — Version, Kanal, je Archiv Name,
+Plattform, Größe und SHA-256 — in kanonischem JSON (`packages/crypto`) und
+signiert es mit einem **Ed25519-Release-Schlüssel**, dessen Geheimnis nur im
+Repository-Secret `WAVE_RELEASE_SIGNING_KEY` liegt. Rotiert wird über das
+Binary, nicht über das Manifest: `RELEASE_PUBLIC_KEYS` ist eine Liste, ein
+Release mit dem alten Schlüssel bringt ein Binary, das den neuen schon kennt,
+und erst danach wechselt das Secret. Ein Schlüssel, den das Manifest selbst
+mitbrächte, bewiese nichts. Kanal und Version *müssen* darin stehen: signierte Hashes allein ließen
+einen Server einem Gerät auf `stable` ein `develop`-Build unterschieben — echt,
 gültig signiert und aus dem falschen Kanal. `SHA256SUMS` bleibt für Menschen
 daneben liegen.
 
 **Der Weg eines Updates:**
 
 1. **Der Server löst seine Kanäle auf.** `WAVE_UPDATE_CHANNELS` nennt sie als
-   Liste, etwa `latest,insiders`; der **erste Eintrag ist die Vorgabe** für jedes
-   Gerät, das selbst keinen wählt. Ungesetzt heißt das `latest`. Er fragt die
+   Liste, etwa `stable,insiders`; der **erste Eintrag ist die Vorgabe** für jedes
+   Gerät, das selbst keinen wählt. Ungesetzt heißt das `stable`. Er fragt die
    Releases von
    `WAVE_UPDATE_REPO` (Vorgabe `moellenbeck-digital/wave-mesh`) ab, höchstens alle
    zehn Minuten und im Speicher gehalten, holt je konfiguriertem Kanal das neueste
@@ -885,11 +888,11 @@ Was daran festliegt:
   *woher*, entscheidet der Daemon selbst. Sonst könnte jedes Mitglied der
   Socket-Gruppe root ein beliebiges Binary unterschieben.
 - **Die Kanäle gehören dem Server, die Wahl darin dem Gerät.** Zur Auswahl
-  stehen die, die der Release-Workflow schon schiebt — `latest`, `insiders`,
-  `develop` —, und jeder nimmt seine eigenen Releases und die stabileren:
-  `insiders` nimmt auch ein Stable, `latest` nie ein Insiders. Der Betreiber
+  stehen die, die der Release-Workflow schon unterscheidet — `stable`,
+  `insiders`, `develop` —, und jeder nimmt seine eigenen Releases und die stabileren:
+  `insiders` nimmt auch ein Stable, `stable` nie ein Insiders. Der Betreiber
   entscheidet mit der Liste, was in seinem Wave überhaupt angeboten wird — ein
-  Produktiv-Wave führt nur `latest`, ein Test-Wave `insiders,latest` —, und mit
+  Produktiv-Wave führt nur `stable`, ein Test-Wave `insiders,stable` —, und mit
   dem ersten Eintrag, was ein Gerät ohne eigene Wahl bekommt. Damit ist auch
   beantwortet, ob ein Betreiber einen Kanal empfehlen kann: die Vorgabe *ist*
   die Empfehlung, und mehrere Einträge sind das, was er zur Wahl stellt.
@@ -901,12 +904,12 @@ Was daran festliegt:
   dieselbe Version anbietet.
 - **Das signierte Manifest trägt den Kanal trotzdem.** Der Server wählt zwar
   den Kanal, aber das Gerät prüft, dass das Angebot wirklich aus diesem Kanal
-  stammt — sonst könnte ein Server, der nur `latest` führt, einem Gerät ein
+  stammt — sonst könnte ein Server, der nur `stable` führt, einem Gerät ein
   `develop`-Build als Stable ausgeben. Wer `develop` anbieten will, muss es in
   die Liste schreiben, und das steht dann im Status jedes Geräts.
 - **Kein Downgrade.** Die neue Version muss größer sein als die eigene, sonst
   spielt ein Server ein altes, verwundbares Release mit gültiger Signatur ein.
-  Ein Wechsel von `insiders` auf `latest` wartet, bis Stable aufholt.
+  Ein Wechsel von `insiders` auf `stable` wartet, bis Stable aufholt.
 - **Kein offener Proxy.** Der Server reicht nur Archive durch, die im zuletzt
   geprüften Manifest stehen, nur aus dem einen konfigurierten Repo und nur an
   angemeldete Knoten. Sonst wäre die Route eine Möglichkeit für jeden, seinen
@@ -965,9 +968,12 @@ Was daran festliegt:
   dieselbe Wahrheit ist genau der Fehler, den `WAVE_CONTROL_URL` gemacht hat —
   am Server dagegen ist die Env-Variable die richtige Stelle, weil die Liste
   dort zur Konfiguration des Deployments gehört wie `WAVE_RELAYS`.
-- **Ein Paketmanager hat Vorrang.** Liegt das Binary unter `/usr/bin` oder in
-  Homebrews Cellar, bleibt der Updater aus und sagt das — zwei Instanzen, die
-  dieselbe Datei verwalten, überschreiben sich gegenseitig. Angebote des
+- **Nur die installierte Kopie aktualisiert sich.** Das ist die Datei, die
+  `wave install` hingelegt hat (`/usr/local/bin/wave`, unter Windows
+  `C:\Program Files\wave\wave.exe`) und die ein Dienstverwalter neu startet.
+  Liegt das Binary woanders — unter `/usr/bin`, in Homebrews Cellar, in einem
+  entpackten Archiv —, bleibt der Updater aus und sagt warum: zwei Instanzen,
+  die dieselbe Datei verwalten, überschreiben sich gegenseitig. Angebote des
   Servers werden dann nur angezeigt.
 - **Der Connector aktualisiert sich nie selbst.** Im Cluster ist ein Rollout
   ein Tag-Wechsel im Overlay, und dabei bleibt es.
@@ -984,8 +990,10 @@ im Release-Workflow, dann Auflösen und Durchreichen im Control-Server (mit
 dem Token) samt `wave update` von Hand für Linux und macOS, dann das Angebot
 über `/v1/control` mit Versatz und Rollback, zuletzt Windows — ungeprüft wie alles dort, solange es keine Windows-Maschine gibt.
 
-**Offen:** ob ein Update laufende Verbindungen kurz unterbrechen darf oder auf
-einen ruhigen Moment wartet (kein Verkehr über N Minuten).
+**Offen:** ob ein Update auf einen ruhigen Moment warten soll (kein Verkehr über
+N Minuten). Heute unterbricht es die Tunnel für die Sekunden des Neustarts.
+Ebenso die Mindestversion als Hinweis des Servers — sie ist vorgesehen, aber
+noch nicht gebaut.
 
 ### D14 — Geräte im Cluster: ein Gerät ist ein Service, kein Knoten
 
@@ -1277,10 +1285,10 @@ Damit ist ein Neustart oder ein verpasstes Delta unkritisch.
 | **M10** | Mobile | Go-Kern (MagicSock, Disco, Control-Client, Resolver) über `gomobile bind`, NEPacketTunnelProvider (iOS) und VpnService (Android), native UI (D10) | ein Telefon ist gleichzeitig in zwei Waves, mit direktem Pfad und Relay-Fallback |
 | **M11** | Kubernetes | Connector-Deployment (Node im Cluster, kein eingehender Port), Operator für `Ingress`/`HTTPRoute` mit Klasse `wave`, `wave_services` + Adressvergabe, `Netmap.services`, Dienste im Resolver (D11) | ein internes Grafana ist unter `grafana.wave.example.com` aus dem Wave per HTTPS erreichbar und von außen nicht |
 | **M12** | Pier | `apps/pier` (Knoten im Wave, SNI-Router auf 443), `wave_piers` + `Netmap.piers`, öffentliche A/AAAA-Records aus dem Control-Server, `wave pier` und die Freigabe durch den Betreiber (D12) | ein Dienst auf einem Knoten hinter CGNAT ist aus dem offenen Netz per HTTPS erreichbar, mit dem Zertifikat des Knotens, und der Pier sieht keinen Klartext |
-| **M13** | Selbstaktualisierung | Version im Binary (`wave version`, im Status und am Server), Ed25519-signiertes Manifest (Version, Kanal, Hashes) im Release-Workflow, Control-Server löst die Kanäle aus `WAVE_UPDATE_CHANNELS` auf (erster Eintrag als Vorgabe) und reicht Archive von GitHub durch, Angebot über `/v1/control`, `wave update`, GitHub-Token nur auf dem Server, Wunschkanal und Schalter im State, Austausch mit Rollback je Plattform, Tray-Neustart (D13) | ein Gerät in einem Wave mit `WAVE_UPDATE_CHANNELS=insiders,latest` steht einen Tag nach dem Release ohne Zutun auf der neuen Version, ein absichtlich kaputtes Release rollt sich von selbst zurück, ein unsigniertes wird verweigert, und ein Build aus einem Kanal, den der Server nicht führt, ebenso |
+| **M13** | Selbstaktualisierung | Version im Binary (`wave version`, im Status und am Server), Ed25519-signiertes Manifest (Version, Kanal, Hashes) im Release-Workflow, Control-Server löst die Kanäle aus `WAVE_UPDATE_CHANNELS` auf (erster Eintrag als Vorgabe) und reicht Archive von GitHub durch, Angebot über `/v1/control`, `wave update`, GitHub-Token nur auf dem Server, Wunschkanal und Schalter im State, Austausch mit Rollback je Plattform, Tray-Neustart (D13) | ein Gerät in einem Wave mit `WAVE_UPDATE_CHANNELS=insiders,stable` steht einen Tag nach dem Release ohne Zutun auf der neuen Version, ein absichtlich kaputtes Release rollt sich von selbst zurück, ein unsigniertes wird verweigert, und ein Build aus einem Kanal, den der Server nicht führt, ebenso |
 | **M14** | Geräte im Cluster | Egress-Kette im Connector (DNAT von Pod-Netz auf Wave-Adressen, masquerade auf `wave0`), Ziele per Gerätename aus der Netzkarte, `ExternalName`-Services mit `wave.dev/egress`, Portvergabe und ConfigMap durch den Operator, NetworkPolicy für die Egress-Ports (D14) | ein Pod erreicht `http://ollama.ai:11434` auf einer Workstation im Wave, nur aus freigegebenen Namespaces und nur, solange die Policy es erlaubt |
 
-**Erledigt: M0, M1, M2, M3, M4, M5, M6, M11; M10 bis auf den Lauf auf echter Hardware.** M5 ist mit M6 zusammen fertig
+**Erledigt: M0, M1, M2, M3, M4, M5, M6, M11; M10 bis auf den Lauf auf echter Hardware; M13 bis auf den ersten echten Release.** M5 ist mit M6 zusammen fertig
 geworden, weil beide dieselbe Arbeit brauchten: Der Server schreibt jetzt über
 eine Provider-API (Cloudflare, Hetzner) in die echte Zone, und das Schreiben
 selbst ist zugleich die Verifikation — wer die Zone schreiben kann, besitzt sie
@@ -1331,6 +1339,30 @@ Portfilter unter macOS (pf-Anchor) und Windows (Block-Regeln für das
 Komplement), die Meldung jedes Geräts, ob es seine Ports hält, eine Seite für
 Tags, Policy und Verlauf, und das Audit-Log aus §8. Beide neuen Filter sind nur
 als reine Funktionen geprüft, nicht auf echter Hardware.
+
+**M13 steht bis auf den ersten echten Release** (01.10.2026). Das Binary kennt
+seine Version (`--define` in `scripts/build-clients.sh`, `wave version`, im
+Status und im `hello` an den Server, gespeichert als `nodes.client_version`).
+Der Release-Job signiert `manifest.json` mit `WAVE_RELEASE_SIGNING_KEY` und
+verweigert einen Schlüssel, den die Binaries nicht tragen. Der Control-Server
+löst die Kanäle aus `WAVE_UPDATE_CHANNELS` alle zehn Minuten auf, prüft die
+Manifeste als Filter und reicht Archive über `/v1/update/<version>/<archiv>`
+gestreamt durch, der Umleitung auf den Speicher ohne Token folgend. Auf dem
+Gerät nimmt der Daemon das höchste gültige Angebot aller Server, wartet
+zufällig bis zu vier Stunden (`WAVE_UPDATE_MAX_DELAY` in Sekunden zum
+Ausprobieren), prüft den Hash, tauscht per Umbenennen und beendet sich; die neue
+Fassung hat fünf Minuten, eine Control-Verbindung zu schaffen, sonst kommen die
+`.old`-Dateien zurück und die Version auf `broken`. Die Frist wird an der Uhr
+gemessen, nicht an einem Timer — eine Fassung, die immer wieder abstürzt, rollt
+beim nächsten Start zurück. Nicht abgedeckt ist eine Fassung, die abstürzt,
+bevor sie den Zustand liest; dafür bräuchte es einen Wächter außerhalb des
+Binarys. Das Tray nennt ein anstehendes Update in Tooltip, Menü und
+Kartenzeile und bietet „Install update now" an; es beendet sich, sobald der
+Daemon eine andere Version meldet. Eine Desktop-Benachrichtigung gibt es nicht.
+Geprüft ist das gegen einen nachgebauten GitHub und ein echtes tar.gz; der
+erste Lauf mit echtem Tag und echtem Secret steht aus, ebenso alles unter
+Windows (Neustart über einen losgelösten `schtasks /run`, Rückfall über
+`RestartOnFailure`).
 
 **M10 steht bis auf den Beweis auf einem Telefon.** Der Go-Kern liegt in
 `mobile/core` und trägt alle fünf Schichten aus D10: N Control-Verbindungen

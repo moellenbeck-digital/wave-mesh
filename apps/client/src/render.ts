@@ -105,6 +105,25 @@ export function renderProfile(snapshot: ProfileStatus, events: string[] = snapsh
 }
 
 /**
+ * Which build the service runs, and whether a newer one is coming (D13). The
+ * version is shown so that a device whose only wave offers no updates is
+ * noticed: it stays where it is, and this line is where that shows.
+ */
+function describeDaemon(status: Status): string | null {
+  const info = status.daemon;
+  if (!info) return null;
+  const update = info.update;
+  if (!update?.available) return dim(`wave ${info.version}`);
+  const when =
+    update.state === "installing"
+      ? "installing now"
+      : update.state === "scheduled" && update.scheduledAt
+        ? `installing at ${new Date(update.scheduledAt).toLocaleTimeString()}`
+        : "`wave update` installs it";
+  return `${dim(`wave ${info.version}`)}  ${yellow(`update to ${update.available}`)} ${dim(when)}`;
+}
+
+/**
  * The footer says what Ctrl-C does, which is not the same everywhere: it ends
  * the tunnel when it runs in this process, and only the view when the daemon
  * holds it. Passing null leaves the line out, for a single printed snapshot
@@ -114,6 +133,8 @@ export function renderStatus(status: Status, hint: string | null = "Ctrl-C to di
   if (status.profiles.length === 0) {
     const lines = [dim("No wave yet. Run `wave login --control <url>` to join one.")];
     for (const event of status.events) lines.push(dim(`  ${event}`));
+    const daemon = describeDaemon(status);
+    if (daemon) lines.push("", daemon);
     return lines.join("\n");
   }
 
@@ -133,6 +154,8 @@ export function renderStatus(status: Status, hint: string | null = "Ctrl-C to di
     lines.push("", dim("daemon"));
     for (const event of status.events) lines.push(dim(`  ${event}`));
   }
+  const daemon = describeDaemon(status);
+  if (daemon) lines.push("", daemon);
   if (hint) lines.push("", dim(hint));
   return lines.join("\n");
 }

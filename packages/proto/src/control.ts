@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DiscoKey, MachineKey, NodeId, NodeKey, PublicKey32 } from "./keys.ts";
 import { Ipv4, Ipv6, Timestamp } from "./net.ts";
 import { Candidate, Netmap, Peer, SignedNetmap } from "./netmap.ts";
+import { SignedRelease, UpdateChannel } from "./update.ts";
 
 // --- REST -------------------------------------------------------------------
 
@@ -126,12 +127,21 @@ export type CertOrderStatus = z.infer<typeof CertOrderStatus>;
 // --- WebSocket /v1/control --------------------------------------------------
 
 export const ClientMessage = z.discriminatedUnion("type", [
+  /**
+   * Who is speaking, sent first on every connection (D13): which build, for
+   * which machine, and which update channel this device would like. The server
+   * records it -- that is how an operator sees who is behind -- and answers
+   * with an `update` message.
+   *
+   * The channel is a wish. The server decides which channels it offers
+   * (WAVE_UPDATE_CHANNELS); a wish it does not offer gets its default.
+   */
   z.object({
     type: z.literal("hello"),
-    machineKey: MachineKey,
-    nodeKey: NodeKey,
-    discoKey: DiscoKey,
-    version: z.string(),
+    version: z.string().min(1).max(64),
+    platform: z.string().min(1).max(32),
+    channel: UpdateChannel.optional(),
+    autoUpdate: z.boolean().optional(),
   }),
   z.object({ type: z.literal("endpoints"), candidates: z.array(Candidate) }),
   z.object({ type: z.literal("ping") }),
@@ -164,5 +174,20 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("disco-hint"), nodeId: NodeId, candidates: z.array(Candidate) }),
   z.object({ type: z.literal("logout"), reason: z.enum(["key-expired", "node-removed", "reauth-required"]) }),
   z.object({ type: z.literal("pong") }),
+  /**
+   * The answer to `hello`, and again whenever the server finds a new release
+   * (D13). `channel` is the one assigned to this device, `channels` all the
+   * server offers. `offer` is the newest release that channel takes, or null
+   * -- nothing published yet, or a server that cannot reach the releases.
+   *
+   * Only an offer: the device checks the signature against the keys it was
+   * built with, and decides for itself whether and when to install.
+   */
+  z.object({
+    type: z.literal("update"),
+    channel: UpdateChannel,
+    channels: z.array(UpdateChannel).min(1),
+    offer: SignedRelease.nullable(),
+  }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;
