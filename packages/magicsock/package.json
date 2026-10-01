@@ -1,0 +1,15 @@
+{
+  "name": "@wave/magicsock",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@wave/crypto": "workspace:*",
+    "@wave/disco": "workspace:*",
+    "@wave/proto": "workspace:*",
+    "zod": "^4.1.13"
+  }
+}

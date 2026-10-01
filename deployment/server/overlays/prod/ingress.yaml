@@ -1,0 +1,59 @@
+# Zwei Namen nach außen, und nur diese zwei: der Control-Server und die
+# WebSocket-Seite des Relays. Das Frontend steht bewusst in keinem -- es ist
+# nur über seinen Control-Server zu erreichen, der alles weiterreicht, was er
+# nicht selbst besitzt.
+#
+# STUN fehlt hier, und das ist kein Versehen: es ist UDP und geht am Ingress
+# vorbei über den LoadBalancer-Service wave-relay-stun.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wave-control
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["control.robin-lenz.de"]
+      secretName: wave-control-tls
+  rules:
+    - host: control.robin-lenz.de
+      http:
+        paths:
+          # Ein Pfad, keine Aufteilung: /v1/control ist ein WebSocket, und den
+          # kann der Control-Server nicht per fetch weiterreichen -- er gehört
+          # ihm selbst. Was das Frontend besitzt, proxyt er intern.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wave-control
+                port: { name: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wave-relay
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    # Die Verbindung eines Knotens zum Relay ist lange still, wenn nichts
+    # fließt. Der Heartbeat der Control-Verbindung kommt alle 30 s; ein
+    # Leerlauf-Timeout des Proxys muss darüber liegen, sonst trennt er
+    # Verbindungen, die in Ordnung sind.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["relay.robin-lenz.de"]
+      secretName: wave-relay-tls
+  rules:
+    - host: relay.robin-lenz.de
+      http:
+        paths:
+          - path: /relay
+            pathType: Prefix
+            backend:
+              service:
+                name: wave-relay
+                port: { name: relay }

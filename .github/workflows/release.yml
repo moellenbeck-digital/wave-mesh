@@ -1,0 +1,358 @@
+name: Release
+
+# A tag is the only trigger, and tags come from the release-process skill: it
+# determines the version, writes the changelog, bumps package.json and pushes
+# the tag in one go. Deliberately no workflow_dispatch and no branch trigger --
+# an image or a binary whose version nobody can trace back to a tag is worse
+# than none.
+#
+# What a tag produces: the four images on ghcr -- control, relay, web and the
+# connector a cluster joins a wave with -- and the client for all six
+# platform/architecture pairs attached to the GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  version:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      tags: ${{ steps.tag.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the tag
+        id: tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+
+          # The three shapes the release process knows. Anything else is a tag
+          # someone made by hand, and it does not get an image.
+          if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            channel=stable
+          elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.0-insiders\.[0-9]+$ ]]; then
+            channel=insiders
+          elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.0-develop\.[0-9]+$ ]]; then
+            channel=develop
+          else
+            echo "::error::$tag is not a release tag. Versions are made with the release-process skill (vX.Y.Z, vX.Y.0-insiders.N, vX.Y.0-develop.N)."
+            exit 1
+          fi
+
+          # The skill commits the version before it tags. If the two disagree,
+          # the tag was not made by it -- and the image would lie about itself.
+          declared="$(node -p 'require("./package.json").version')"
+          if [[ "$declared" != "$version" ]]; then
+            echo "::error::package.json says $declared, the tag says $version. Release with the release-process skill so both are written together."
+            exit 1
+          fi
+
+          major="${version%%.*}"
+          minor="${version#*.}"; minor="${minor%%.*}"
+          tags="$version"
+          # Moving tags per channel, so a deployment can follow one without
+          # knowing the numbers. Only a stable release moves latest.
+          case "$channel" in
+            stable) tags="$tags"$'\n'"$major.$minor"$'\n'"$major"$'\n'latest ;;
+            *) tags="$tags"$'\n'"$channel" ;;
+          esac
+
+          {
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "$tag -> $channel"
+
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-go@v5
+        with:
+          # The core has its own toolchain requirement; go.mod is the pin.
+          go-version-file: mobile/core/go.mod
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run typecheck
+      - run: bun test
+      # The Go core for the phones (D10). Its tests read fixtures the
+      # TypeScript side generates, so this is where the two implementations are
+      # held against each other: a canonical encoding that drifts by one
+      # character is a netmap signature that no longer verifies, and on a phone
+      # that reads like an attack rather than like a typo.
+      #
+      # Regenerated rather than compared. A sealed disco packet carries a random
+      # nonce, so the file is not byte-stable -- and regenerating is the
+      # stronger check in any case: it proves the code that runs today agrees,
+      # not that a file somebody committed once still matches itself.
+      - name: Regenerate the cross-implementation fixtures
+        run: cd mobile/fixtures && bun run generate
+      - run: ./mobile/build.sh check
+
+  # `bun test` does not cover enrolment: it runs against PGlite and never
+  # starts a daemon, so `login`, `up` and the control socket are only really
+  # exercised here. That gap has been paid for once already -- CI stood red for
+  # four runs after `wave up` stopped joining, with every unit test green --
+  # which is why this gates the images and the binaries rather than running
+  # beside them.
+  e2e:
+    name: End-to-end (tunnel and NAT traversal)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-go@v5
+        with:
+          # The same pin as `verify`, and it has to be: the mobile scripts
+          # build the core inside their own network namespace, where there is
+          # no DNS. A toolchain older than go.mod asks for therefore does not
+          # fail as a version mismatch but as `lookup proxy.golang.org: connection
+          # refused` -- Go trying to fetch the toolchain it is missing, from a
+          # namespace that has no way out. A hardcoded 1.25 against go.mod's
+          # 1.27.1 cost the whole e2e job on v0.1.0-develop.22.
+          go-version-file: mobile/core/go.mod
+      - name: Build wireguard-go
+        # Lands in $HOME/go/bin/wireguard, which the test script looks for.
+        #
+        # The version comes out of the build script rather than being @latest:
+        # the same tag ships that pin inside every archive, so the tunnel this
+        # job proves works has to be the tunnel people get. Reading it here
+        # keeps one number in one place -- @latest would let the two drift
+        # apart silently, and the difference would only show as a tunnel that
+        # works in the release and not on a laptop.
+        run: |
+          set -euo pipefail
+          version="$(grep -oP '^WIREGUARD_GO_VERSION="\K[^"]+' scripts/build-clients.sh)"
+          echo "wireguard-go $version"
+          go install "golang.zx2c4.com/wireguard@$version"
+      - name: Warm the module cache for the mobile core
+        # The mobile scripts build the core *inside* their own network
+        # namespace, which has no way out -- so every module has to be on disk
+        # before they start. The wireguard install above brings its own tree
+        # and nothing of ours: `coder/websocket`, which wavecontrol and
+        # waverelay both use, would be fetched at build time and fail there.
+        run: cd mobile/core && go mod download
+      - run: bun install --frozen-lockfile
+      - name: Allow unprivileged user namespaces
+        # Ubuntu 24.04 restricts them via AppArmor; the test needs one to
+        # create network namespaces and TUN devices without root.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Install nftables
+        run: sudo apt-get update && sudo apt-get install -y nftables
+      - name: Two nodes ping each other over the tunnel
+        run: ./test/e2e/two-nodes.sh
+      # The one that exercises joining a second wave, which is where enrolment
+      # is most easily broken -- it was not run here, and a change to `login`
+      # went unnoticed because of it.
+      - name: One device in two waves at once
+        run: ./test/e2e/two-waves.sh
+      - name: Two nodes behind NATs punch a direct path
+        run: ./test/e2e/nat-traversal.sh
+      - name: Two nodes behind symmetric NATs fall back to the relay
+        run: ./test/e2e/relay-fallback.sh
+      # The one place a policy meets real tunnels: who may see whom through the
+      # netmap, which ports through nftables, and a mesh that comes back when
+      # the policy goes. Every unit test reads a netmap or a rule set as text.
+      - name: A wave's policy limits peers and ports
+        run: ./test/e2e/acl.sh
+      # The mobile core, against a real TUN. The only place the single-interface
+      # model is exercised at all: one tunnel carrying two waves, one UDP port,
+      # one resolver with no socket. It has already earned the slot -- three
+      # defects that every unit test passed through, one of them a tunnel that
+      # came up on both sides and carried nothing in one direction.
+      - name: The mobile core carries two waves over one interface
+        run: ./test/e2e/mobile-core.sh
+      # M10's own criterion names a direct path *and* relay fallback. The core's
+      # discovery -- its socket, its STUN, its probing, its path choice -- meets
+      # a real NAT nowhere else, and the peer on the other side is the ordinary
+      # client, so the two implementations have to punch at each other.
+      - name: The mobile core punches through two NATs
+        run: ./test/e2e/mobile-nat.sh
+      - name: The mobile core falls back to the relay
+        run: ./test/e2e/mobile-nat.sh --symmetric
+
+  images:
+    name: ${{ matrix.service }} image
+    needs: [version, verify, e2e]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Every image somebody has to run to host a wave. web and connector are
+        # here for the same reason as the others: deployment/ points at tags in
+        # this registry, and an image that only ever gets built locally is one
+        # that is built differently everywhere.
+        service: [control, relay, web, connector]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Name the image
+        id: name
+        run: |
+          set -euo pipefail
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.service }}"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          while read -r tag; do
+            [ -n "$tag" ] && echo "$repo:$tag" >> "$GITHUB_OUTPUT"
+          done <<< "${{ needs.version.outputs.tags }}"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        # The build record this otherwise uploads is an artifact as well, and
+        # it fails loudly whenever the quota is full. Nothing here reads it.
+        env:
+          DOCKER_BUILD_SUMMARY: false
+        with:
+          context: .
+          file: apps/${{ matrix.service }}/Dockerfile
+          # The client covers amd64 and arm64, and a server anyone can host
+          # should not be narrower than the clients that talk to it.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.name.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=wave-${{ matrix.service }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=Elastic-2.0
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  release:
+    name: GitHub release
+    # Last, and after the images: a release that exists while its server images
+    # do not is a version somebody will try to deploy half of.
+    needs: [version, verify, e2e, images]
+    runs-on: ubuntu-latest
+    permissions:
+      # Only this job writes anything back to the repository, and a per-job
+      # block replaces the top-level one rather than adding to it.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      # The archives carry wireguard-go, and it is built here rather than
+      # downloaded: pure Go, no cgo, so one runner cross-compiles all six.
+      - uses: actions/setup-go@v5
+        with:
+          # The same pin as `verify` and `e2e`, and for a reason beyond tidiness:
+          # this toolchain's standard library is compiled into the wireguard-go
+          # that every release archive carries. A pin that stops being supported
+          # ships known stdlib holes in a binary that runs as root -- 1.23 went
+          # out of support with 1.25 and had 45 open advisories against it on
+          # 23.09.2026. Reproducibility comes from -trimpath and the module
+          # pseudo-version, not from the compiler's number, so following go.mod
+          # costs nothing here.
+          go-version-file: mobile/core/go.mod
+          # There is no go.sum in the repo to key a cache on -- the module the
+          # build uses is created on the fly -- and setup-go treats a missing
+          # one as an error rather than as "nothing to cache".
+          cache: false
+      - run: bun install --frozen-lockfile
+
+      # Built in the job that publishes them, not in one of its own. A separate
+      # job can only hand files over as an artifact, and that artifact was the
+      # single largest thing this repository stored: 210 MB a run, seven days
+      # each, which filled the organisation's quota in four days and then
+      # failed every upload -- including this one, on 22.09.2026, which is why
+      # v0.1.0-develop.20 has images and no release. The archives end up on the
+      # release either way, and release assets cost no quota at all.
+      #
+      # The price is that the six builds now run after the images instead of
+      # beside them, and that a failing `gh release create` leaves nothing to
+      # download. Both are cheaper than a release that cannot upload.
+      #
+      # All six from one runner: bun compiles in the target's runtime, so this
+      # needs six builds and not six machines. The same script builds the host
+      # binary, which is what keeps the flags from drifting -- in particular
+      # the absence of --minify and --sourcemap, either of which leaves a
+      # binary whose tray starts and then hangs.
+      - name: Build and package every client
+        run: ./scripts/build-clients.sh --package
+
+      - name: Write the download notes
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          cat > notes.md <<NOTES
+          ### Clients
+
+          | Datei | System |
+          |---|---|
+          | \`wave-linux-amd64.tar.gz\` | Linux, x86-64 |
+          | \`wave-linux-arm64.tar.gz\` | Linux, ARM64 |
+          | \`wave-darwin-amd64.tar.gz\` | macOS, Intel |
+          | \`wave-darwin-arm64.tar.gz\` | macOS, Apple Silicon |
+          | \`wave-windows-amd64.zip\` | Windows, x86-64 |
+          | \`wave-windows-arm64.zip\` | Windows, ARM64 |
+
+          In jedem Archiv liegt \`wave\` und alles, was der Tunnel braucht:
+          **wireguard-go** und unter Windows zusätzlich **wintun.dll**.
+          Einrichten mit \`sudo ./wave install\` (unter Windows aus einer
+          Eingabeaufforderung als Administrator) — der Install legt beide neben
+          das Binary, denn der Daemon läuft als root beziehungsweise
+          LocalSystem und sieht weder PATH noch GOPATH. Beigetreten wird danach
+          mit \`wave login <control-server-url>\`.
+
+          Die Lizenzen der beigelegten Teile liegen als
+          \`LICENSE.wireguard-go\` (MIT) und \`LICENSE.wintun\` daneben.
+
+          Prüfsummen stehen in \`SHA256SUMS\`:
+          \`sha256sum --ignore-missing -c SHA256SUMS\`
+
+          ### Server
+
+          \`\`\`
+          $repo/control:${{ needs.version.outputs.version }}
+          $repo/relay:${{ needs.version.outputs.version }}
+          \`\`\`
+          NOTES
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Only a stable release is a release; insiders and develop are the
+          # channels people follow on purpose, and they must not become the
+          # "Latest" badge on the repository page.
+          flags=()
+          if [ "${{ needs.version.outputs.channel }}" != "stable" ]; then
+            flags+=(--prerelease)
+          fi
+          # --generate-notes appends the commit summary GitHub builds to ours,
+          # so the download table stays at the top where it is looked for.
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --generate-notes \
+            "${flags[@]}" \
+            dist/*.tar.gz dist/*.zip dist/SHA256SUMS

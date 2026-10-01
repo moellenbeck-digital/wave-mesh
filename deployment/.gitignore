@@ -1,0 +1,6 @@
+# Die ausgefüllten Geheimnisse der Overlays. Versioniert ist nur die Vorlage
+# daneben (secret.env.example).
+secret.env
+
+# Der Zugang zur Registry, aus einem persönlichen Token gebaut.
+dockerconfig.json

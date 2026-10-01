@@ -1,0 +1,106 @@
+# STUN (UDP) und Relay (WebSocket) in einem Prozess. Beides ist reine
+# Infrastruktur -- keines von beiden kann lesen, was es trägt.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wave-relay
+  labels:
+    app.kubernetes.io/name: wave-relay
+    app.kubernetes.io/part-of: wave-mesh
+spec:
+  # Wieder genau einer: das Relay hält seine Sitzungen in einer Map im Prozess
+  # (apps/relay/src/relay-server.ts). Zwei Pods hinter einem Service hieße, dass
+  # zwei Peers, die sich über das Relay treffen wollen, auf verschiedenen Pods
+  # landen und einander nie sehen. Mehr Relays gibt es stattdessen als weitere
+  # Einträge in WAVE_RELAYS, jedes mit eigener id und eigener Adresse.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wave-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wave-relay
+        app.kubernetes.io/part-of: wave-mesh
+    spec:
+      # Kubernetes legt für jeden Service im Namensraum die alten
+      # Docker-Link-Variablen an -- der Service `wave-relay` also
+      # WAVE_RELAY_PORT=tcp://10.43.x.x:3479, und genau daraus liest der Relay
+      # seinen Port: `Number("tcp://…")` ist NaN, und er startet mit
+      # ERR_OUT_OF_RANGE gar nicht erst. Gefunden werden die Dienste hier über
+      # DNS, diese Variablen braucht keiner von ihnen.
+      enableServiceLinks: false
+      # Die Images liegen in einer privaten Registry; ohne diesen Verweis zieht
+      # das Kubelet anonym und bekommt 401. Den Inhalt erzeugt das Overlay --
+      # der Name ist hier fest, damit die Basis nicht wissen muss, wer ihn
+      # ausfüllt.
+      imagePullSecrets:
+        - name: ghcr
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay
+          image: ghcr.io/pinguin45orga/wave-mesh/relay
+          ports:
+            - { name: stun, containerPort: 3478, protocol: UDP }
+            - { name: relay, containerPort: 3479, protocol: TCP }
+          readinessProbe:
+            httpGet: { path: /healthz, port: relay }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: relay }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 256Mi }
+---
+# Die WebSocket-Seite. Sie geht über den Ingress und ist von außen nur als
+# wss://<host>/relay zu sehen -- ein gewöhnlicher HTTP-Proxy trägt das.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wave-relay
+  labels:
+    app.kubernetes.io/name: wave-relay
+spec:
+  selector:
+    app.kubernetes.io/name: wave-relay
+  ports:
+    - { name: relay, port: 3479, targetPort: relay, protocol: TCP }
+---
+# STUN, und der einzige Dienst hier, der selbst nach außen geht: UDP kann kein
+# HTTP-Proxy tragen.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wave-relay-stun
+  labels:
+    app.kubernetes.io/name: wave-relay
+spec:
+  type: LoadBalancer
+  # Das ist die wichtigste Zeile dieser Datei. Ein STUN-Server sagt einem Knoten,
+  # wie seine Pakete von außen aussehen -- mit `Cluster` (der Vorgabe) macht
+  # kube-proxy aber SNAT, damit die Antwort über denselben Knoten zurückfindet.
+  # Der Relay-Prozess sähe dann die Adresse eines Cluster-Knotens statt der des
+  # NATs, meldete sie als reflexive Adresse zurück, und jedes Hole Punching
+  # liefe gegen einen Endpunkt, den es nicht gibt. Mit `Local` kommt das Paket
+  # nur auf Knoten mit Pod an, dafür unverfälscht.
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: wave-relay
+  ports:
+    - { name: stun, port: 3478, targetPort: stun, protocol: UDP }

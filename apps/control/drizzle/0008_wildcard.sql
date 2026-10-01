@@ -1,0 +1,1 @@
+ALTER TABLE "nodes" ADD COLUMN "wildcard_allowed" boolean DEFAULT false NOT NULL;

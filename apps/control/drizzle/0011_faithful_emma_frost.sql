@@ -1,0 +1,1 @@
+ALTER TABLE "wave_services" ADD COLUMN "scheme" text DEFAULT 'https' NOT NULL;

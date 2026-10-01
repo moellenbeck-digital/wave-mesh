@@ -1,0 +1,24 @@
+# wave-mesh auf dem Testsystem: zwei unabhängige Control-Server und ein Relay.
+#
+# Diese Datei wird in den zentralen Caddy eingehängt (siehe ~/repos/caddy).
+# Nach einer Änderung:
+#   docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+#
+# Nicht hier zu finden: STUN. Das ist UDP auf Port 3478 und geht direkt an den
+# Host-Port des Relay-Containers vorbei -- ein HTTP-Proxy kann es nicht tragen.
+
+wave-mesh-1.robin-lenz.de {
+	# Der Control-Server ist der einzige Einstieg: was er nicht selbst besitzt,
+	# reicht er intern an sein Next.js weiter. Das Frontend hängt deshalb nicht
+	# im Netz `edge`.
+	reverse_proxy wave-control-1:8080
+}
+
+wave-mesh-2.robin-lenz.de {
+	reverse_proxy wave-control-2:8080
+}
+
+wave-relay.robin-lenz.de {
+	# Nur die WebSocket-Seite des Relays; reverse_proxy trägt das Upgrade selbst.
+	reverse_proxy wave-relay:3479
+}

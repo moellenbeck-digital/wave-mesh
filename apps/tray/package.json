@@ -1,0 +1,15 @@
+{
+  "name": "@wave/tray",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "dbus-next": "^0.10.2",
+    "debug": "^4.4.0",
+    "@wave/ipc": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

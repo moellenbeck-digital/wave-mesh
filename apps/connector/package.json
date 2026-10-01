@@ -1,0 +1,12 @@
+{
+  "name": "@wave/connector",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "wave-connector": "./src/main.ts"
+  },
+  "dependencies": {
+    "@wave/ipc": "workspace:*"
+  }
+}

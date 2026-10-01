@@ -1,0 +1,47 @@
+# Die Serverseite eines Waves: Control-Server, sein Frontend und ein Relay.
+#
+# Die Basis allein ist nicht deploybar -- sie hat keine Geheimnisse und keinen
+# Bildnamen mit Tag. Genommen wird sie über ein Overlay (overlays/dev,
+# overlays/prod).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Der Namespace heißt noch wie das Produkt früher. Das ist Absicht: in ihm
+# liegt das Volume der Datenbank, und ein anderer Name hier legte beim nächsten
+# `apply` einen leeren zweiten Stapel daneben, statt umzuziehen. Umbenannt wird
+# er mit einem eigenen, geplanten Umzug, nicht als Nebenwirkung.
+namespace: wave-mesh
+
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - control.yaml
+  - web.yaml
+  - relay.yaml
+
+configMapGenerator:
+  # Alles, was kein Geheimnis ist. Ein Overlay ergänzt und überschreibt mit
+  # `behavior: merge`. Der Hash im Namen sorgt dafür, dass eine Änderung hier
+  # auch wirklich einen Neustart auslöst.
+  - name: wave-control-config
+    literals:
+      - WAVE_ENV=production
+      # Gesetzt heißt: Browser-Routen gehen an das Next.js, alles andere
+      # proxyt der Control-Server dorthin. Ein WebSocket lässt sich so nicht
+      # weiterreichen, deshalb gehört /v1/control ihm selbst -- und deshalb
+      # zeigt der Ingress auf wave-control, nicht auf wave-web.
+      - WAVE_WEB_URL=http://wave-web:3000
+      # Muss das Overlay setzen: daraus entstehen die Anmeldelinks, die
+      # OAuth-Redirect-URIs und (über das Schema) `secureCookies`. Der Wert
+      # hier ist absichtlich falsch und nicht plausibel, damit ein vergessenes
+      # Overlay auffällt statt still http://localhost zu benutzen.
+      - WAVE_BASE_URL=https://wave.example.com
+      # Zwei unabhängige Server wissen nichts voneinander. Bekäme ein Gerät in
+      # beiden Waves dieselben Adressen, verweigerte es den zweiten (D5) --
+      # also je Server ein eigener Ausschnitt.
+      - WAVE_IPV4_CONTAINER=10.64.0.0/10
+      # Leer heißt: kein STUN, kein Relay, nur direkte Pfade im selben Netz.
+      # Das Overlay trägt hier den Eintrag des eigenen Relays ein; die
+      # STUN-Adresse muss eine IP sein, kein Name (Bun.udpSocket().send()
+      # löst keine Namen auf).
+      - WAVE_RELAYS=[]

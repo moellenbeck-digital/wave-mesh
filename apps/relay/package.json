@@ -1,0 +1,15 @@
+{
+  "name": "@wave/relay",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "dev": "bun --watch src/index.ts"
+  },
+  "dependencies": {
+    "@wave/magicsock": "workspace:*",
+    "@wave/crypto": "workspace:*",
+    "@wave/disco": "workspace:*"
+  }
+}

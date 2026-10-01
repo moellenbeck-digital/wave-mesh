@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "types": ["bun"]
+  },
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "spike/**/*.ts", "mobile/fixtures/**/*.ts"],
+  // apps/web needs DOM and JSX and brings its own tsconfig; `bun run typecheck`
+  // there covers it.
+  "exclude": ["apps/web"]
+}

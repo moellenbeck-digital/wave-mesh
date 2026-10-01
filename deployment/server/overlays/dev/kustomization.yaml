@@ -1,0 +1,87 @@
+# Ein Wave auf einem lokalen Cluster (kind, k3d, minikube): Entwicklungsmodus,
+# und der Zugang per port-forward statt über einen Ingress. Die Datenbank
+# bringt die Basis mit.
+#
+#   cp secret.env.example secret.env   # und ausfüllen
+#   kubectl apply -k .
+#   kubectl -n wave-mesh port-forward svc/wave-control 8080:8080
+#
+# Danach ein Konto anlegen -- eine Registrierungsseite gibt es absichtlich nicht:
+#   kubectl -n wave-mesh exec -it deploy/wave-control -- \
+#     bun apps/control/src/admin.ts set-password you@example.com
+# (-it, weil das Kommando das Passwort auf stdin erfragt.)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: wave-mesh
+
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/pinguin45orga/wave-mesh/control
+    newTag: develop
+  - name: ghcr.io/pinguin45orga/wave-mesh/web
+    newTag: develop
+  - name: ghcr.io/pinguin45orga/wave-mesh/relay
+    newTag: develop
+
+configMapGenerator:
+  - name: wave-control-config
+    behavior: merge
+    literals:
+      # Ohne WAVE_NETMAP_SIGNING_KEY würde der Produktionsmodus den Start
+      # verweigern. Hier erzeugt der Server stattdessen einen flüchtigen und
+      # sagt es -- der Preis ist, dass sich nach einem Neustart jedes Gerät neu
+      # anmelden muss. Für einen Wave, der länger leben soll, den Schlüssel in
+      # secret.env legen und diese Zeile entfernen.
+      - WAVE_ENV=development
+      # Passt zum port-forward oben. http:// heißt zugleich: die Sitzungs-
+      # cookies sind nicht `secure`, sonst käme über Klartext keine Anmeldung
+      # zustande.
+      - WAVE_BASE_URL=http://localhost:8080
+      # Nur zum Ausprobieren: ein Login ohne Passwort, aus diesen Netzen. In
+      # der Produktion schaltet WAVE_ENV=production ihn ohnehin ab.
+      - WAVE_DEV_AUTH=1
+      - WAVE_DEV_AUTH_FROM=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/32
+      # Der Knoten-seitige Eintrag des Relays. Die IP ist die, unter der der
+      # NodePort unten von den Geräten aus erreichbar ist -- ein Name geht hier
+      # nicht, STUN spricht Bun.udpSocket() und das löst keine Namen auf.
+      # Solange das leer bleibt, gibt es nur direkte Pfade im selben Netz.
+      - WAVE_RELAYS=[]
+
+secretGenerator:
+  # secret.env steht in der .gitignore -- die Vorlage daneben zeigt, was hinein
+  # gehört.
+  - name: wave-secrets
+    envs:
+      - secret.env
+
+  # Der Zugang zur Registry. `wave-mesh` ist ein privates Repository, also sind
+  # auch seine Images privat. Die Datei daneben entsteht aus einem klassischen
+  # GitHub-Token mit `read:packages` -- ein fein granulares reicht für die
+  # Container-Registry nicht:
+  #
+  #   printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' \
+  #     "$(printf '<github-benutzer>:<token>' | base64 -w0)" > dockerconfig.json
+  #
+  # Sie steht in der .gitignore, wie secret.env.
+  - name: ghcr
+    type: kubernetes.io/dockerconfigjson
+    files:
+      - .dockerconfigjson=dockerconfig.json
+
+patches:
+  # Auf einem lokalen Cluster gibt es meist keinen LoadBalancer, der eine
+  # Adresse vergibt (k3d bringt einen mit, kind ohne MetalLB nicht). NodePort
+  # trägt hier dasselbe: UDP direkt auf den Knoten.
+  - target:
+      kind: Service
+      name: wave-relay-stun
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30478

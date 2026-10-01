@@ -1,0 +1,161 @@
+# Der Wave-Connector: die eine Mitgliedschaft eines Clusters in einem Wave (D11).
+#
+# Drei Container in einem Pod, weil sie derselbe Teilnehmer sind: der Daemon
+# hält den Tunnel, der Connector leitet weiter, der Operator liest Kubernetes.
+# Sie teilen sich eine Anmeldung, eine Zustandsdatei und eine Identität. Eine
+# zweite wäre ein zweiter Knoten im Wave, der nie Verkehr trägt.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wave-connector
+  labels:
+    app.kubernetes.io/name: wave-connector
+    app.kubernetes.io/part-of: wave-mesh
+spec:
+  # Ein StatefulSet und kein Deployment, aus zwei Gründen, die beide an der
+  # Anmeldung hängen: Sie liegt auf einem Volume, das bei jedem Neustart
+  # dasselbe sein muss (volumeClaimTemplates unten), und der Knoten im Wave
+  # heißt so, wie der Pod heißt -- `wave-connector-0` statt einer neuen
+  # Zufallsendung nach jedem Rollout, die eine Leiche in der Geräteliste
+  # hinterlässt.
+  serviceName: wave-connector
+  # Genau einer. Zwei Connectoren wären zwei Knoten im Wave, die dieselben
+  # Dienstnamen beanspruchen -- und der zweite bekäme sie nicht (409). Ein
+  # StatefulSet fährt einen Ordinal ohnehin nie doppelt, das frühere
+  # `strategy: Recreate` erübrigt sich damit.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wave-connector
+  template:
+    metadata:
+      labels:
+        app: wave-connector
+        app.kubernetes.io/name: wave-connector
+    spec:
+      # Kubernetes legt für jeden Service im Namensraum die alten
+      # Docker-Link-Variablen an -- der Service `wave-relay` also
+      # WAVE_RELAY_PORT=tcp://10.43.x.x:3479, und genau daraus liest der Relay
+      # seinen Port: `Number("tcp://…")` ist NaN, und er startet mit
+      # ERR_OUT_OF_RANGE gar nicht erst. Gefunden werden die Dienste hier über
+      # DNS, diese Variablen braucht keiner von ihnen.
+      enableServiceLinks: false
+      # Die Images liegen in einer privaten Registry; ohne diesen Verweis zieht
+      # das Kubelet anonym und bekommt 401. Den Inhalt erzeugt das Overlay --
+      # der Name ist hier fest, damit die Basis nicht wissen muss, wer ihn
+      # ausfüllt.
+      imagePullSecrets:
+        - name: ghcr
+      serviceAccountName: wave-connector
+      # Kein hostNetwork und kein eingehender Port: STUN und der Relay-Fallback
+      # tragen den Tunnel aus dem Cluster heraus. Genau dafür gibt es sie.
+      containers:
+        - name: daemon
+          image: ghcr.io/pinguin45orga/wave-mesh/connector
+          command: ["bun", "apps/client/src/cli.ts", "daemon"]
+          envFrom:
+            - configMapRef:
+                name: wave-connector-config
+            - secretRef:
+                name: wave-auth
+          securityContext:
+            # Root, und das ist der Punkt: der Daemon legt ein TUN-Gerät an,
+            # setzt Adressen und schreibt Routen. Mehr als NET_ADMIN und
+            # /dev/net/tun braucht er nicht.
+            capabilities:
+              add: ["NET_ADMIN"]
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/wave }
+            - { name: run, mountPath: /run/wave }
+            - { name: tun, mountPath: /dev/net/tun }
+          # Ohne Anmeldung tut der Daemon nichts; das Beitreten ist ein eigener
+          # Aufruf, und mit dem Pre-Auth-Key braucht er keinen Browser. `up`
+          # tritt absichtlich nie selbst bei -- ein Gerät, das plötzlich in
+          # einem Wave ist, den niemand genannt hat, kam aus dieser Ecke.
+          #
+          # Läuft bei jedem Start, auch wenn die Anmeldung schon auf dem
+          # Volume liegt: ein Gerät, das bereits im Wave ist, verbraucht dabei
+          # keinen Zug des Schlüssels.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - >-
+                    for i in $(seq 1 30); do
+                      bun /app/apps/client/src/cli.ts login "$WAVE_CONTROL_URL"
+                      --auth-key "$WAVE_AUTH_KEY" && exit 0; sleep 2;
+                    done
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+
+        - name: connector
+          image: ghcr.io/pinguin45orga/wave-mesh/connector
+          command: ["bun", "apps/connector/src/main.ts"]
+          envFrom:
+            - configMapRef:
+                name: wave-connector-config
+          securityContext:
+            # Für die nftables-Regel, die alles auf wave0 weiterleitet, was
+            # nicht an eine der eigenen Adressen geht. Welche Adressen das sind,
+            # hat WireGuard schon entschieden -- deshalb braucht diese Regel
+            # keine Liste der Dienste und keinen Reload, wenn einer dazukommt.
+            capabilities:
+              add: ["NET_ADMIN"]
+          volumeMounts:
+            - { name: run, mountPath: /run/wave }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+
+        - name: operator
+          image: ghcr.io/pinguin45orga/wave-mesh/connector
+          command: ["bun", "apps/operator/src/main.ts"]
+          envFrom:
+            - configMapRef:
+                name: wave-connector-config
+          env:
+            - { name: WAVE_STATE, value: /var/lib/wave/state.json }
+          volumeMounts:
+            # Nur lesend: die Anmeldung gehört dem Daemon, der Operator benutzt
+            # ihren Maschinenschlüssel, um sich beim Control-Server auszuweisen.
+            - { name: state, mountPath: /var/lib/wave, readOnly: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+
+      volumes:
+        # Nur der Steuersocket und das TUN-Gerät sind flüchtig. Die Anmeldung
+        # nicht -- die steht unten im volumeClaimTemplate.
+        - name: run
+          emptyDir: {}
+        - name: tun
+          hostPath: { path: /dev/net/tun, type: CharDevice }
+
+  volumeClaimTemplates:
+    # Die Anmeldung: Maschinenschlüssel, Node-Id und der gepinnte
+    # Signaturschlüssel des Servers. Überlebt sie den Pod nicht, meldet sich
+    # nach jedem Rollout ein neues Gerät an, und das alte bleibt als Leiche in
+    # der Wave stehen.
+    #
+    # Ein paar Kilobyte, aber 1Gi ist die kleinste Zahl, die überall
+    # durchgeht -- manche CSI-Treiber haben Mindestgrößen (Hetzner: 10 GiB und
+    # aufgerundet wird berechnet). Welche Klasse es sein soll, sagt das
+    # Overlay; hier steht keine, damit die Vorgabe des Clusters greift.
+    #
+    # Zu wissen: volumeClaimTemplates sind an einem laufenden StatefulSet
+    # unveränderlich. Größe oder Klasse ändern heißt
+    # `kubectl delete sts wave-connector --cascade=orphan` und neu anlegen.
+    - metadata:
+        name: state
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,0 +1,14 @@
+{
+  "name": "@wave/operator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "wave-operator": "./src/main.ts"
+  },
+  "dependencies": {
+    "@wave/client": "workspace:*",
+    "@wave/proto": "workspace:*",
+    "@wave/crypto": "workspace:*"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@wave/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "wave": "./src/cli.ts"
+  },
+  "scripts": {
+    "wave": "bun src/cli.ts",
+    "build": "../../scripts/build-clients.sh --host"
+  },
+  "dependencies": {
+    "@wave/crypto": "workspace:*",
+    "@wave/proto": "workspace:*",
+    "zod": "^4.1.13",
+    "@wave/magicsock": "workspace:*",
+    "@wave/disco": "workspace:*",
+    "@wave/dns": "workspace:*",
+    "@wave/ipc": "workspace:*",
+    "@wave/tray": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/cli.ts",
+    "./api": "./src/api.ts",
+    "./state": "./src/state.ts",
+    "./certs": "./src/certs.ts"
+  }
+}

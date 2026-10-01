@@ -1,0 +1,112 @@
+import { redirect } from "next/navigation";
+import { fetchMe, fetchProviders } from "@/lib/control";
+
+const PROVIDER_NAMES: Record<string, string> = {
+  google: "Google",
+  dev: "Entwickler-Login",
+};
+
+const ERRORS: Record<string, string> = {
+  invalid: "E-Mail oder Passwort stimmt nicht.",
+  throttled: "Zu viele Versuche. Bitte später erneut probieren.",
+};
+
+/** Only relative paths, so a crafted link cannot bounce the user off-site. */
+function safeNext(value: string | undefined): string | undefined {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
+  return value;
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const next = safeNext(typeof params.next === "string" ? params.next : undefined);
+  const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;
+
+  const me = await fetchMe();
+  if (me) redirect(next ?? "/");
+
+  const providers = await fetchProviders();
+  const suffix = next ? `?next=${encodeURIComponent(next)}` : "";
+
+  return (
+    <div className="mx-auto max-w-md">
+      <div className="mb-10 text-center">
+        <h1 className="animate-fade-in font-display text-display-sm text-navy">Anmelden</h1>
+        <p className="animate-fade-in mt-2 text-body-sm text-slate" style={{ animationDelay: "0.1s" }}>
+          Mit deinem Konto verwaltest du die Geräte in deinem Wave.
+        </p>
+      </div>
+
+      <section
+        className="wc-card animate-slide-up relative rounded-lg p-8"
+        style={{ animationDelay: "0.2s" }}
+      >
+        <div className="absolute top-0 right-0 left-0 h-1 rounded-t-lg bg-accent" />
+
+        {error ? (
+          <p className="wc-alert-error mb-6" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <form method="post" action="/auth/password/login" className="flex flex-col gap-4">
+          {next ? <input type="hidden" name="next" value={next} /> : null}
+
+          <div>
+            <label className="wc-label" htmlFor="email">
+              E-Mail
+            </label>
+            <input
+              className="wc-input"
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="username"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="wc-label" htmlFor="password">
+              Passwort
+            </label>
+            <input
+              className="wc-input"
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </div>
+
+          <button type="submit" className="wc-btn wc-btn-primary mt-2 w-full">
+            Anmelden
+          </button>
+        </form>
+
+        {providers.length > 0 ? (
+          <>
+            <div className="my-7 flex items-center gap-4">
+              <span className="h-px flex-1 bg-line" />
+              <span className="text-label text-slate uppercase">oder</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {providers.map((id) => (
+                <a key={id} className="wc-btn wc-btn-secondary w-full" href={`/auth/${id}/start${suffix}`}>
+                  Weiter mit {PROVIDER_NAMES[id] ?? id}
+                </a>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </section>
+    </div>
+  );
+}

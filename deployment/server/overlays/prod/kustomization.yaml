@@ -1,0 +1,133 @@
+# Ein Wave im Betrieb: eigene Namen, eigene Datenbank, gepinnte Images.
+#
+#   cp secret.env.example secret.env   # und ausfüllen, Modus 600
+#   kubectl apply -k .
+#
+# Die Namen stehen an zwei Stellen -- in ingress.yaml und in WAVE_BASE_URL.
+# Sie müssen übereinstimmen: aus WAVE_BASE_URL entstehen die Anmeldelinks und
+# die OAuth-Redirect-URIs, und ein Wechsel auf http:// würde die Sitzungs-
+# cookies still unsicher machen.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: wave-mesh
+
+resources:
+  - ../../base
+  - ingress.yaml
+
+images:
+  # Eine feste Version, nie `latest`: ein Rollout soll eine Entscheidung sein
+  # und nicht die Nebenwirkung eines Neustarts. Die mitlaufenden Tags (X.Y, X,
+  # latest, insiders, develop) gibt es dafür trotzdem -- siehe CLAUDE.md.
+  - name: ghcr.io/pinguin45orga/wave-mesh/control
+    newTag: "0.1.0-insiders.9"
+  - name: ghcr.io/pinguin45orga/wave-mesh/web
+    newTag: "0.1.0-insiders.9"
+  - name: ghcr.io/pinguin45orga/wave-mesh/relay
+    newTag: "0.1.0-insiders.9"
+
+configMapGenerator:
+  - name: wave-control-config
+    behavior: merge
+    literals:
+      - WAVE_BASE_URL=https://control.robin-lenz.de
+      # Der eigene Ausschnitt dieses Servers. Läuft ein zweiter Wave-Server
+      # daneben, bekommt er einen anderen -- sonst bekäme ein Gerät in beiden
+      # dieselben Adressen und verweigerte den zweiten (D5).
+      - WAVE_IPV4_CONTAINER=10.64.0.0/11
+      # Die reflexive Adresse kommt von STUN, also braucht der Eintrag eine
+      # IP -- einen Namen nimmt Bun.udpSocket().send() nicht. Es ist die
+      # öffentliche Adresse des Knotens, auf den der Relay unten festgenagelt
+      # ist (nodeSelector unten); wandert der Pod, wandert sie mit.
+      # Die WebSocket-Seite geht dagegen ganz normal über den Ingress.
+      - WAVE_RELAYS=[{"id":"hel1","region":"hel","url":"wss://relay.robin-lenz.de/relay","stun":{"ip":"65.108.214.173","port":3478}}]
+      # Wohin die CA ihre Ablaufwarnungen schickt. Ohne Zertifikate egal.
+      - WAVE_ACME_CONTACT=email@robin-lenz.de
+      # Die echte Ausstellung, bewusst gesetzt: ohne diese Zeile zeigt
+      # WAVE_ACME_DIRECTORY auf Let's Encrypts Staging. Hier gilt das Rate
+      # Limit der Domain -- ein Fehlversuch kostet eine Woche, und dieselben
+      # Namen lassen sich nur fünfmal pro Woche neu ausstellen. Die Accounts
+      # sind getrennt (acme_accounts hat die Verzeichnis-URL als Schlüssel),
+      # ein Zurückschalten auf Staging kostet also nichts.
+      - WAVE_ACME_DIRECTORY=https://acme-v02.api.letsencrypt.org/directory
+
+secretGenerator:
+  - name: wave-secrets
+    envs:
+      - secret.env
+
+  # Der Zugang zur Registry. `wave-mesh` ist ein privates Repository, also sind
+  # auch seine Images privat. Die Datei daneben entsteht aus einem klassischen
+  # GitHub-Token mit `read:packages` -- ein fein granulares reicht für die
+  # Container-Registry nicht:
+  #
+  #   printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' \
+  #     "$(printf '<github-benutzer>:<token>' | base64 -w0)" > dockerconfig.json
+  #
+  # Sie steht in der .gitignore, wie secret.env.
+  - name: ghcr
+    type: kubernetes.io/dockerconfigjson
+    files:
+      - .dockerconfigjson=dockerconfig.json
+
+patches:
+  # STUN geht hier am Service vorbei, direkt auf den Knoten.
+  #
+  # Der Grund ist Hetzner: ein Cloud-Load-Balancer trägt nur TCP, HTTP und
+  # HTTPS -- kein UDP. Und einen zweiten LB neben dem des Ingress gibt es
+  # nicht: teilen lässt sich einer nicht, der hcloud-CCM räumt beim Abgleich
+  # weg, was nicht zu seinem Service gehört. Der Service aus der Basis stand
+  # deshalb 40 Minuten auf <pending> und der CCM meldete alle drei Minuten
+  # `SyncLoadBalancerFailed`.
+  #
+  # hostPort ist hier sogar das bessere Werkzeug: kein kube-proxy im Pfad,
+  # also auch kein SNAT, das die reflexive Adresse verfälschen könnte -- genau
+  # die Sorge, wegen der in der Basis `externalTrafficPolicy: Local` steht.
+  # Der Preis ist die Bindung an einen Knoten: seine öffentliche Adresse steht
+  # oben in WAVE_RELAYS, also muss der Pod dort bleiben.
+  - target: { kind: Deployment, name: wave-relay }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: wave-relay
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: <relay-knoten>  # Name des Knotens mit der IP aus WAVE_RELAYS
+            containers:
+              - name: relay
+                ports:
+                  - name: stun
+                    containerPort: 3478
+                    protocol: UDP
+                    hostPort: 3478
+  - target: { kind: Service, name: wave-relay-stun }
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: wave-relay-stun
+
+# Mit einem verwalteten Postgres fällt der Pod aus der Basis hier heraus --
+# DATABASE_URL im Secret zeigt dann auf den Dienst, und das Volume, das niemand
+# sichert, gibt es gar nicht erst. Die beiden Einträge gehören dann in den
+# patches-Block oben -- zweimal `patches:` wäre kein gültiges YAML:
+#
+#   - target: { kind: StatefulSet, name: wave-postgres }
+#     patch: |-
+#       $patch: delete
+#       apiVersion: apps/v1
+#       kind: StatefulSet
+#       metadata:
+#         name: wave-postgres
+#   - target: { kind: Service, name: wave-postgres }
+#     patch: |-
+#       $patch: delete
+#       apiVersion: v1
+#       kind: Service
+#       metadata:
+#         name: wave-postgres

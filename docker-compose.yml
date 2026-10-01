@@ -1,0 +1,80 @@
+# Die Testumgebung: Postgres wie bisher, dazu die beiden Server aus ihren
+# eigenen Images. Gebaut wird hier aus dem Quellbaum -- veröffentlicht werden
+# dieselben Dockerfiles nur über den Release-Workflow, siehe CLAUDE.md.
+
+x-control-build: &control-build
+  build:
+    context: .
+    dockerfile: apps/control/Dockerfile
+  image: wave-control:dev
+
+x-control-env: &control-env
+  # Das Image steht auf production und verlangt dort einen Signaturschlüssel.
+  # Der Teststapel tritt bewusst zurück: ein fester Schlüssel im Repo wäre
+  # einer, den irgendwann jemand in ein echtes Deployment kopiert.
+  WAVE_ENV: development
+  WAVE_DEV_AUTH: "1"
+  DATABASE_URL: postgres://wave:wave@postgres:5432/wave
+  WAVE_BASE_URL: http://localhost:${WAVE_CONTROL_PORT:-8080}
+  # Die Adressen gelten für einen Client auf dem Host, nicht im Compose-Netz --
+  # `wave up` läuft nicht im Container. STUN braucht eine IP, keinen Namen.
+  WAVE_RELAYS: '[{"id":"dev","region":"local","url":"ws://127.0.0.1:${WAVE_RELAY_PORT:-3479}/relay","stun":{"ip":"127.0.0.1","port":${WAVE_STUN_PORT:-3478}}}]' 
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: wave
+      POSTGRES_PASSWORD: wave
+      POSTGRES_DB: wave
+    ports:
+      - "127.0.0.1:${WAVE_DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wave"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Einmal durchlaufen, bevor der Server startet. Dasselbe Image, anderes
+  # Kommando -- die Migrationen reisen darin mit.
+  migrate:
+    <<: *control-build
+    environment: *control-env
+    command: ["bun", "apps/control/src/db/migrate.ts"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  control:
+    <<: *control-build
+    environment: *control-env
+    ports:
+      - "${WAVE_CONTROL_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  relay:
+    build:
+      context: .
+      dockerfile: apps/relay/Dockerfile
+    image: wave-relay:dev
+    ports:
+      - "${WAVE_RELAY_PORT:-3479}:3479/tcp"
+      - "${WAVE_STUN_PORT:-3478}:3478/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3479/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

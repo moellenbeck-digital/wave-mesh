@@ -1,0 +1,32 @@
+# Die Clusterseite eines Waves (D11): ein Connector, der die Dienste dieses
+# Clusters im Wave erreichbar macht.
+#
+# Das ist bewusst ein eigener Wurzelbaum neben server/: er läuft in *dem*
+# Cluster, dessen Dienste exponiert werden, und der steht in aller Regel
+# woanders als der Control-Server. Ein `kubectl apply -k`, das beide auf einmal
+# installiert, wäre für beide falsch.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: wave
+
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - ingress.yaml
+  - connector.yaml
+
+configMapGenerator:
+  - name: wave-connector-config
+    literals:
+      # Welcher Wave. Dieselbe Adresse, die `wave login` bekäme.
+      - WAVE_CONTROL_URL=https://wave.example.com
+      # Die ClusterIP des internen Controllers aus ingress.yaml. Sie muss
+      # hier als Adresse stehen, nicht als Name: daraus wird eine
+      # nftables-Regel. Deshalb legt das Overlay sie fest, statt sie vergeben
+      # zu lassen -- sonst stünde sie erst nach dem ersten Apply fest.
+      - WAVE_BACKEND_IPV4=10.43.0.80
+      - WAVE_BACKEND_PORTS=80,443
+      # Gelesen werden nur Ingresses dieser Klasse und HTTPRoutes an einem
+      # Gateway derselben.
+      - WAVE_INGRESS_CLASS=wave

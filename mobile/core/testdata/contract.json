@@ -1,0 +1,202 @@
+{
+  "keys": {
+    "machine": {
+      "publicKey": "3GFmNQ908SQrKQK1LhFsyZ4DjCmxKMCl4jgn4RjQ+sg=",
+      "privateKey": "gczd+qPpT6qLBLJNvo0U0lCfRIenudOQVj7RaID8P7o="
+    },
+    "discoA": {
+      "publicKey": "n54eG6QS4dtWhX8q2H8wBBSo/ANq7Vz2zlDeqh5F1BU=",
+      "privateKey": "jyDiRuYcvKWqF73L9I8kp/IAUjEs/F4Q7as7CuSIxYI="
+    },
+    "discoB": {
+      "publicKey": "L8mlGhbjSNFSXWU3EaIYIvEgn2Z8nIMipk/CCOlCc3A=",
+      "privateKey": "D6t6KTfZXP0/bNnRRTSmIB3XEIsSNOFBW1b6ZKaThIM="
+    }
+  },
+  "canonical": [
+    {
+      "value": {
+        "version": 7,
+        "waveId": "w_1",
+        "self": {
+          "id": "n_0",
+          "nodeKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "discoKey": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+          "hostname": "phone",
+          "dnsName": "phone.wave.example.com",
+          "ipv4": "10.77.0.1",
+          "ipv6": "fd7a:1::1",
+          "allowedIps": [
+            "10.77.0.1/32",
+            "fd7a:1::1/128"
+          ],
+          "addresses": [
+            "10.77.0.1/32",
+            "fd7a:1::1/128"
+          ],
+          "candidates": [
+            {
+              "kind": "stun",
+              "ip": "203.0.113.7",
+              "port": 41641
+            }
+          ],
+          "online": true,
+          "keyExpiresAt": null
+        },
+        "peers": [],
+        "dns": {
+          "suffix": "wave.example.com",
+          "resolverAddress": "100.100.100.100",
+          "routes": [],
+          "upstream": []
+        },
+        "relays": [
+          {
+            "id": "r_fsn",
+            "region": "fsn",
+            "url": "https://relay.example.com"
+          }
+        ],
+        "issuedAt": "2026-09-22T12:00:00.000Z",
+        "futureField": {
+          "b": 2,
+          "a": [
+            1,
+            "x",
+            null,
+            true
+          ]
+        }
+      },
+      "encoded": "{\"dns\":{\"resolverAddress\":\"100.100.100.100\",\"routes\":[],\"suffix\":\"wave.example.com\",\"upstream\":[]},\"futureField\":{\"a\":[1,\"x\",null,true],\"b\":2},\"issuedAt\":\"2026-09-22T12:00:00.000Z\",\"peers\":[],\"relays\":[{\"id\":\"r_fsn\",\"region\":\"fsn\",\"url\":\"https://relay.example.com\"}],\"self\":{\"addresses\":[\"10.77.0.1/32\",\"fd7a:1::1/128\"],\"allowedIps\":[\"10.77.0.1/32\",\"fd7a:1::1/128\"],\"candidates\":[{\"ip\":\"203.0.113.7\",\"kind\":\"stun\",\"port\":41641}],\"discoKey\":\"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=\",\"dnsName\":\"phone.wave.example.com\",\"hostname\":\"phone\",\"id\":\"n_0\",\"ipv4\":\"10.77.0.1\",\"ipv6\":\"fd7a:1::1\",\"keyExpiresAt\":null,\"nodeKey\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"online\":true},\"version\":7,\"waveId\":\"w_1\"}"
+    },
+    {
+      "value": {
+        "b": 1,
+        "a": 2
+      },
+      "encoded": "{\"a\":2,\"b\":1}"
+    },
+    {
+      "value": {
+        "s": "quote \" backslash \\ newline \n tab \t unit \u001f accent é emoji 😀"
+      },
+      "encoded": "{\"s\":\"quote \\\" backslash \\\\ newline \\n tab \\t unit \\u001f accent é emoji 😀\"}"
+    },
+    {
+      "value": [
+        1,
+        -2,
+        1.5,
+        0,
+        1e+21,
+        1e-7,
+        null,
+        true
+      ],
+      "encoded": "[1,-2,1.5,0,1e+21,1e-7,null,true]"
+    },
+    {
+      "value": {},
+      "encoded": "{}"
+    }
+  ],
+  "netmap": {
+    "signingPublicKey": "Z1Fy4vUxPwYmhMbrhfnfb+iDgBpitwQ3l57QIc0MN9w=",
+    "signature": "cLih36glivyzGdDJ7lZLH3r505kcFTQGcZNlqAF6VC1+6sYGA2CiGzJV3mDdbcWN9vPwONptKub6NzVE6J7iAg==",
+    "document": {
+      "version": 7,
+      "waveId": "w_1",
+      "self": {
+        "id": "n_0",
+        "nodeKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "discoKey": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+        "hostname": "phone",
+        "dnsName": "phone.wave.example.com",
+        "ipv4": "10.77.0.1",
+        "ipv6": "fd7a:1::1",
+        "allowedIps": [
+          "10.77.0.1/32",
+          "fd7a:1::1/128"
+        ],
+        "addresses": [
+          "10.77.0.1/32",
+          "fd7a:1::1/128"
+        ],
+        "candidates": [
+          {
+            "kind": "stun",
+            "ip": "203.0.113.7",
+            "port": 41641
+          }
+        ],
+        "online": true,
+        "keyExpiresAt": null
+      },
+      "peers": [],
+      "dns": {
+        "suffix": "wave.example.com",
+        "resolverAddress": "100.100.100.100",
+        "routes": [],
+        "upstream": []
+      },
+      "relays": [
+        {
+          "id": "r_fsn",
+          "region": "fsn",
+          "url": "https://relay.example.com"
+        }
+      ],
+      "issuedAt": "2026-09-22T12:00:00.000Z",
+      "futureField": {
+        "b": 2,
+        "a": [
+          1,
+          "x",
+          null,
+          true
+        ]
+      }
+    }
+  },
+  "httpsig": {
+    "message": "wave-sig-v1\nPOST\n/v1/machine/register\n1790000000\nZm9vYmFyYmF6cXV4\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "m20uNLMh8ctLtnew7+J3udwvEA+0I93YflaCC02ixLp8eNCvvOlg0pQK7J+bC84H8/QlhrSTgyU/5xGO8nm0Cg=="
+  },
+  "disco": {
+    "sharedKey": "6LfgV+xsbYqZigftMVPpdxHdndzCVIqVZY2fIEpsVDM=",
+    "sealedPing": "d2F2ZWRjAZ+eHhukEuHbVoV/Kth/MAQUqPwDau1c9s5Q3qoeRdQVfQEMl6df1mDO58VYyMJyLBS2uGvSIeN3T+iCAiMXw1QQnDzPE8eH0Iy+u8Yd9h7Q0Q==",
+    "sealedCallMeMaybe": "d2F2ZWRjAZ+eHhukEuHbVoV/Kth/MAQUqPwDau1c9s5Q3qoeRdQVIruJxpsaPkxMHHjyChU6Vn3mQTTeQPi8pMUhu9qzUlE1dl0TXIDljlBA7xOHz0sLMVEKqeuup5/Qz1vJyO+ScrUAoA=="
+  },
+  "stun": {
+    "request": "AAEAACESpEIC5wquw8TDlHLa6ko=",
+    "txid": "02e70aaec3c4c39472daea4a",
+    "response": "AQEADCESpEIC5wquw8TDlHLa6koAIAAIAAGDu+oS1UU=",
+    "mapped": {
+      "ip": "203.0.113.7",
+      "port": 41641
+    }
+  },
+  "dns": {
+    "query": {
+      "id": 4660,
+      "recursionDesired": true,
+      "question": {
+        "name": "laptop.wave.example.com",
+        "type": 1,
+        "class": 1
+      }
+    },
+    "a": "EjSFAAABAAEAAAAABmxhcHRvcAR3YXZlB2V4YW1wbGUDY29tAAABAAEGbGFwdG9wBHdhdmUHZXhhbXBsZQNjb20AAAEAAQAAADwABApNAAI=",
+    "nxdomain": "EjSFAwABAAAAAAAABmxhcHRvcAR3YXZlB2V4YW1wbGUDY29tAAABAAE=",
+    "empty": "EjSFAAABAAAAAAAABmxhcHRvcAR3YXZlB2V4YW1wbGUDY29tAAABAAE="
+  },
+  "relay": {
+    "frame": "L8mlGhbjSNFSXWU3EaIYIvEgn2Z8nIMipk/CCOlCc3AJCAc=",
+    "toDiscoKey": "L8mlGhbjSNFSXWU3EaIYIvEgn2Z8nIMipk/CCOlCc3A="
+  },
+  "derived": {
+    "discoAPublicFromPrivate": "n54eG6QS4dtWhX8q2H8wBBSo/ANq7Vz2zlDeqh5F1BU="
+  }
+}

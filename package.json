@@ -1,0 +1,37 @@
+{
+  "name": "wave-mesh",
+  "version": "0.1.0-insiders.9",
+  "license": "Elastic-2.0",
+  "author": "Robin Lenz <email@robin-lenz.de>",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "mobile/fixtures"
+  ],
+  "scripts": {
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "images:build": "docker compose build control relay",
+    "stack:up": "docker compose up -d --build",
+    "stack:down": "docker compose down -v",
+    "build:client": "./scripts/build-clients.sh --host",
+    "build:clients": "./scripts/build-clients.sh",
+    "dev:web": "cd apps/web && bun run dev",
+    "build:web": "cd apps/web && bun run build",
+    "icon": "bun scripts/icon.ts"
+  },
+  "overrides": {
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.14",
+    "@types/bun": "^1.4.2",
+    "typescript": "^5.9.3"
+  }
+}

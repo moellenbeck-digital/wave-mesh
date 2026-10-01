@@ -1,0 +1,28 @@
+{
+  "name": "@wave/control",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:migrate": "bun src/db/migrate.ts",
+    "admin": "bun src/admin.ts"
+  },
+  "dependencies": {
+    "@wave/proto": "workspace:*",
+    "arctic": "^3.7.0",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.10.3",
+    "pg": "^8.16.3",
+    "zod": "^4.1.13",
+    "@wave/crypto": "workspace:*"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@types/pg": "^8.15.6",
+    "drizzle-kit": "^0.31.6"
+  }
+}

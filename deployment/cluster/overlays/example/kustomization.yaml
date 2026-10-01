@@ -1,0 +1,100 @@
+# Ein Cluster tritt einem Wave bei.
+#
+#   cp secret.env.example secret.env   # den Pre-Auth-Key eintragen
+#   kubectl apply -k .
+#
+# Den Schlüssel gibt es auf der Shell des Control-Servers:
+#   bun apps/control/src/admin.ts auth-key <wave> connector --reusable
+#
+# --reusable, weil der Pod seinen Zustand in einem emptyDir hält: nach jedem
+# Neustart meldet er sich erneut an. Ein Gerät, das schon im Wave ist,
+# verbraucht dabei keinen Zug -- aber der Pod ist nach einem Neustart ein
+# frisches Gerät, solange kein PVC darunter liegt.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/pinguin45orga/wave-mesh/connector
+    newTag: "0.1.0-insiders.9"
+
+configMapGenerator:
+  - name: wave-connector-config
+    namespace: wave
+    behavior: merge
+    literals:
+      - WAVE_CONTROL_URL=https://control.robin-lenz.de
+      # Dieselbe Adresse wie im Patch unten, und das ist die einzige Stelle,
+      # an der sie zweimal steht: der Connector braucht sie als Zahl für seine
+      # nftables-Regel, der Service als festen Wert. Sie muss im Service-CIDR
+      # des Clusters liegen (k3s: 10.43.0.0/16, kubeadm meist 10.96.0.0/12)
+      # und frei sein -- ist sie es nicht, scheitert der Apply sichtbar am
+      # Service, statt still das Falsche zu tun.
+      - WAVE_BACKEND_IPV4=10.43.0.80
+
+patches:
+  # Die Speicherklasse für die Anmeldung. Sie steht hier und nicht in der
+  # Basis, weil dieser Cluster *zwei* als Vorgabe markiert hat
+  # (`hcloud-volumes` und `local-path`) -- dann entscheidet der API-Server,
+  # und das ist keine Grundlage. `local-path` ist hier die richtige: ein paar
+  # Kilobyte Schlüsselmaterial, kostenlos, und die 10-GiB-Mindestgröße der
+  # Hetzner-Volumes wäre für eine Datei absurd. Der Preis ist, dass das
+  # Volume am Knoten klebt: stirbt er, meldet sich der Connector mit dem
+  # (wiederverwendbaren) Schlüssel neu an -- also genau das, was vorher bei
+  # jedem Rollout passierte, nur jetzt selten statt immer.
+  - target: { kind: StatefulSet, name: wave-connector }
+    patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: wave-connector
+        namespace: wave
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: state
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: local-path
+              resources:
+                requests:
+                  storage: 1Gi
+
+  # Die ClusterIP des internen Controllers festnageln. Der Connector trägt sie
+  # in eine nftables-Regel, also muss sie vor dem ersten Start feststehen --
+  # eine vergebene Adresse stünde erst nach dem Apply fest und hieße: zweimal
+  # anwenden, und beim nächsten frischen Cluster wieder.
+  - target: { kind: Service, name: wave-ingress }
+    patch: |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: wave-ingress
+        namespace: wave
+      spec:
+        clusterIP: 10.43.0.80
+
+secretGenerator:
+  # Der Namensraum muss hier stehen: die Basis setzt ihren über ihre eigene
+  # Kustomization, und dieses Overlay setzt bewusst keinen globalen.
+  - name: wave-auth
+    namespace: wave
+    envs:
+      - secret.env
+
+  # Der Zugang zur Registry. `wave-mesh` ist ein privates Repository, also sind
+  # auch seine Images privat. Die Datei daneben entsteht aus einem klassischen
+  # GitHub-Token mit `read:packages` -- ein fein granulares reicht für die
+  # Container-Registry nicht:
+  #
+  #   printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' \
+  #     "$(printf '<github-benutzer>:<token>' | base64 -w0)" > dockerconfig.json
+  #
+  # Sie steht in der .gitignore, wie secret.env.
+  - name: ghcr
+    namespace: wave
+    type: kubernetes.io/dockerconfigjson
+    files:
+      - .dockerconfigjson=dockerconfig.json

@@ -1,0 +1,191 @@
+# Der Stapel auf dem Testsystem (openclaw): zwei unabhängige Control-Server und
+# ein Relay, alle hinter dem zentralen Caddy. Nur das Relay veröffentlicht einen
+# Port selbst -- STUN ist UDP und kann nicht durch einen HTTP-Proxy.
+#
+#   docker compose -f deploy/docker-compose.yml up -d --build --wait
+#
+# Die Geheimnisse stehen in deploy/.env neben dieser Datei und gehören nicht ins
+# Repo: POSTGRES_PASSWORD, WAVE_SIGNING_KEY_1, WAVE_SIGNING_KEY_2, WAVE_STUN_IP,
+# wenn Google-Login gewünscht ist GOOGLE_CLIENT_ID und GOOGLE_CLIENT_SECRET, und
+# für Zertifikate WAVE_DNS_SECRET.
+#
+# Der Projektname ist bewusst ein eigener: ohne ihn hieße das Projekt nach dem
+# Verzeichnis des Checkouts, genau wie die Entwicklungsumgebung aus dem
+# Wurzelverzeichnis, und beide teilten sich Containernamen und das Volume
+# `<verzeichnis>_pgdata`. Die Namen, auf die Caddy zeigt, stehen unabhängig
+# davon in container_name. Dass er noch den alten Produktnamen trägt, ist
+# ebenfalls Absicht: an ihm hängen die Volumes auf dem Testsystem, und ein
+# neuer Projektname begänne mit leeren Datenbanken.
+name: wave-mesh-deploy
+
+x-control-image: &control-image
+  build:
+    context: ..
+    dockerfile: apps/control/Dockerfile
+  image: wave-control:deploy
+
+x-web-image: &web-image
+  build:
+    context: ..
+    dockerfile: apps/web/Dockerfile
+  image: wave-web:deploy
+
+x-control-common: &control-common
+  WAVE_ENV: production
+  # Zertifikate (D7). Ohne WAVE_DNS_SECRET lässt sich kein Provider-Token
+  # ablegen -- absichtlich: ein Token im Klartext in der Datenbank wäre der
+  # Schlüssel zur Domain eines anderen. Bewusst ohne :?, damit der Stapel auch
+  # ohne Zertifikate startet; dann verweigert nur `set-dns-provider`.
+  WAVE_DNS_SECRET: ${WAVE_DNS_SECRET}
+  # Der Vorgabewert ist das Staging-Verzeichnis. Auf die echte Ausstellung
+  # umzustellen ist eine bewusste Zeile in deploy/.env -- die Rate Limits der
+  # Produktion verbrennt ein Fehlversuch für eine Woche.
+  WAVE_ACME_DIRECTORY: ${WAVE_ACME_DIRECTORY:-https://acme-staging-v02.api.letsencrypt.org/directory}
+  WAVE_ACME_CONTACT: ${WAVE_ACME_CONTACT}
+  # Ein Relay für beide Server. Die WebSocket-Seite läuft über Caddy, STUN
+  # geht direkt auf den Host -- deshalb dort eine IP und kein Name.
+  WAVE_RELAYS: '[{"id":"fsn-1","region":"fsn","url":"wss://wave-relay.robin-lenz.de/relay","stun":{"ip":"${WAVE_STUN_IP:?deploy/.env fehlt}","port":3478}}]'
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 3s
+  retries: 12
+  start_period: 20s
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wave
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?deploy/.env fehlt}
+      POSTGRES_DB: wave1
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Legt wave2 an -- läuft nur beim ersten Start eines leeren Volumes.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wave"]
+      <<: *healthcheck-defaults
+    networks: [internal]
+
+  # ---------------------------------------------------------------- wave-mesh-1
+  # Erbt Datenbank und Signaturschlüssel des bisherigen Servers, damit die schon
+  # angemeldeten Geräte angemeldet bleiben.
+  migrate-1:
+    <<: *control-image
+    environment:
+      <<: *control-common
+      DATABASE_URL: postgres://wave:${POSTGRES_PASSWORD}@postgres:5432/wave1
+      WAVE_BASE_URL: https://wave-mesh-1.robin-lenz.de
+      WAVE_NETMAP_SIGNING_KEY: ${WAVE_SIGNING_KEY_1:?deploy/.env fehlt}
+    command: ["bun", "apps/control/src/db/migrate.ts"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    networks: [internal]
+
+  control-1:
+    <<: *control-image
+    container_name: wave-control-1
+    restart: unless-stopped
+    environment:
+      <<: *control-common
+      DATABASE_URL: postgres://wave:${POSTGRES_PASSWORD}@postgres:5432/wave1
+      WAVE_BASE_URL: https://wave-mesh-1.robin-lenz.de
+      WAVE_NETMAP_SIGNING_KEY: ${WAVE_SIGNING_KEY_1:?deploy/.env fehlt}
+      WAVE_WEB_URL: http://web-1:3000
+      # Zwei unabhängige Server wissen nichts voneinander. Ohne getrennte
+      # Container bekäme ein Gerät in beiden Waves dieselben Adressen und
+      # verweigerte den zweiten (siehe D5). Die bestehende Wave rl liegt auf
+      # 10.77.0.0/16 und bleibt damit in ihrem Container.
+      WAVE_IPV4_CONTAINER: 10.64.0.0/11
+      # Ohne beide Werte gibt es den Provider nicht -- ein leerer ist deshalb
+      # kein Fehler, sondern schlicht "kein Google". Sie stehen in deploy/.env
+      # neben dieser Datei. Bewusst ohne :? -- wer ohne OAuth fahren will, soll
+      # den Stapel trotzdem starten können. control-2 bleibt beim Passwort.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+    depends_on:
+      migrate-1: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      <<: *healthcheck-defaults
+    networks: [internal, edge]
+
+  web-1:
+    <<: *web-image
+    restart: unless-stopped
+    environment:
+      WAVE_CONTROL_URL: http://control-1:8080
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login || exit 1"]
+      <<: *healthcheck-defaults
+    networks: [internal]
+
+  # ---------------------------------------------------------------- wave-mesh-2
+  migrate-2:
+    <<: *control-image
+    environment:
+      <<: *control-common
+      DATABASE_URL: postgres://wave:${POSTGRES_PASSWORD}@postgres:5432/wave2
+      WAVE_BASE_URL: https://wave-mesh-2.robin-lenz.de
+      WAVE_NETMAP_SIGNING_KEY: ${WAVE_SIGNING_KEY_2:?deploy/.env fehlt}
+    command: ["bun", "apps/control/src/db/migrate.ts"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    networks: [internal]
+
+  control-2:
+    <<: *control-image
+    container_name: wave-control-2
+    restart: unless-stopped
+    environment:
+      <<: *control-common
+      DATABASE_URL: postgres://wave:${POSTGRES_PASSWORD}@postgres:5432/wave2
+      WAVE_BASE_URL: https://wave-mesh-2.robin-lenz.de
+      WAVE_NETMAP_SIGNING_KEY: ${WAVE_SIGNING_KEY_2:?deploy/.env fehlt}
+      WAVE_WEB_URL: http://web-2:3000
+      WAVE_IPV4_CONTAINER: 10.96.0.0/11
+    depends_on:
+      migrate-2: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      <<: *healthcheck-defaults
+    networks: [internal, edge]
+
+  web-2:
+    <<: *web-image
+    restart: unless-stopped
+    environment:
+      WAVE_CONTROL_URL: http://control-2:8080
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login || exit 1"]
+      <<: *healthcheck-defaults
+    networks: [internal]
+
+  # ------------------------------------------------------------------- Relay
+  relay:
+    build:
+      context: ..
+      dockerfile: apps/relay/Dockerfile
+    image: wave-relay:deploy
+    container_name: wave-relay
+    restart: unless-stopped
+    ports:
+      # STUN ist UDP; Caddy ist ein HTTP-Proxy und kann es nicht tragen. Der
+      # WebSocket-Teil auf 3479 geht dagegen über Caddy und bleibt hier innen.
+      - "3478:3478/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3479/healthz || exit 1"]
+      <<: *healthcheck-defaults
+    networks: [internal, edge]
+
+volumes:
+  pgdata:
+
+networks:
+  internal:
+  edge:
+    external: true

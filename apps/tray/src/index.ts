@@ -1,0 +1,138 @@
+import { hostname } from "node:os";
+import { DaemonClient, defaultSocketPath, type Status } from "@wave/ipc";
+import { createTrayBackend, type TrayBackend, UnsupportedPlatform } from "./backend.ts";
+import { actionForId, iconFor, menuFor, tooltipFor, type Unreachable } from "./view.ts";
+import { createTrayWindow, NoWindowBackend, type TrayWindow } from "./window.ts";
+import { windowView } from "./window-view.ts";
+
+/**
+ * Tray icon for the wave client.
+ *
+ * A plain reader of the daemon's control socket: everything it shows comes
+ * from there, and the actions it offers are the ones the CLI already sends. It
+ * needs no privileges beyond being allowed to use that socket.
+ */
+
+export interface TrayOptions {
+  socketPath?: string;
+}
+
+/** The platforms differ only in the name of the "open this" command. */
+function openCommand(target: string): string[] {
+  if (process.platform === "darwin") return ["open", target];
+  if (process.platform === "win32") return ["cmd", "/c", "start", "", target];
+  return ["xdg-open", target];
+}
+
+const open = (target: string) => Bun.spawn(openCommand(target), { stdout: "ignore", stderr: "ignore" });
+
+export async function runTray(options: TrayOptions = {}): Promise<void> {
+  const socketPath = options.socketPath ?? process.env.WAVE_SOCKET ?? defaultSocketPath();
+
+  let status: Status | null = null;
+  let client: DaemonClient | null = null;
+  let shownUrl: string | null = null;
+  let unreachable: Unreachable = "no-daemon";
+  const device = hostname();
+
+  /**
+   * The window is where connections are switched and machines are copied; the
+   * menu stays as the fallback for a platform without one, and for a right
+   * click when the window is not what is wanted.
+   */
+  const window: TrayWindow | null = await createTrayWindow({
+    onToggle: (controlUrl, connect) =>
+      void client?.request(
+        connect ? { command: "up", controlUrl } : { command: "down", controlUrl },
+        15 * 60 * 1000,
+      ),
+    // A service in the card is a name in the wave; opening it is the same
+    // command the menu already uses for the enrolment link.
+    onOpen: (url) => void open(url),
+  }).catch((error: unknown) => {
+    console.error(error instanceof NoWindowBackend ? error.message : error);
+    // Without a window a left click has nothing to open, so say where the rest
+    // of it still is rather than leaving the icon looking dead.
+    console.error("Everything is still in the icon's menu: open it with the right button.");
+    return null;
+  });
+
+  const activate = async (id: number): Promise<void> => {
+    // Every address the tray shows comes from the daemon, one per wave. The
+    // tray itself is not configured with a server -- nothing here is.
+    const action = actionForId(status, id);
+    if (!action) return;
+    if (action.kind === "quit") process.exit(0);
+    if (action.kind === "open") {
+      open(action.url);
+      return;
+    }
+    if (action.kind === "connect") {
+      await client?.request({ command: "up", controlUrl: action.controlUrl }, 15 * 60 * 1000);
+    }
+    if (action.kind === "disconnect") {
+      await client?.request({ command: "down", controlUrl: action.controlUrl });
+    }
+  };
+
+  const tray: TrayBackend = await createTrayBackend({
+    onActivate: (id) => void activate(id),
+    // A click shows the overlay, and a second click puts it away again -- it
+    // has no title bar of its own to close it with. Connecting and
+    // disconnecting happen on the switches inside it, where it is visible
+    // which wave is being acted on.
+    onClick: () => window?.toggle(),
+  }).catch((error: unknown) => {
+    console.error(error instanceof UnsupportedPlatform ? error.message : error);
+    process.exit(1);
+  });
+
+  const refresh = (next: Status | null): void => {
+    status = next;
+    window?.update(windowView(next, device));
+    tray.update({
+      state: iconFor(next),
+      tooltip: tooltipFor(next, unreachable),
+      entries: menuFor(next, { unreachable }),
+    });
+
+    // The enrolment link is the one thing worth pushing at the user. Whichever
+    // wave is waiting for it -- only one can be enrolling at a time, since the
+    // daemon brings them up in turn.
+    const waiting = next?.profiles.find(
+      (profile) => profile.state === "waiting-for-approval" && profile.authUrl,
+    );
+    if (waiting?.authUrl && waiting.authUrl !== shownUrl) {
+      shownUrl = waiting.authUrl;
+      open(waiting.authUrl);
+    }
+    if (!waiting) shownUrl = null;
+  };
+
+  await tray.start();
+  refresh(null);
+  console.log(`wave tray started (${tray.platform}), reading ${socketPath}`);
+
+  // Reconnects until the daemon is there, so the icon can start first.
+  for (;;) {
+    const attempt = await DaemonClient.open(socketPath);
+    client = attempt.ok ? attempt.client : null;
+    unreachable = attempt.ok ? null : attempt.reason;
+    if (client) {
+      const closed = Promise.withResolvers<void>();
+      await client.watch(refresh);
+      const check = setInterval(async () => {
+        const response = await client?.request({ command: "status" }, 3000);
+        if (!response || response.type === "error") {
+          clearInterval(check);
+          closed.resolve();
+        }
+      }, 5000);
+      await closed.promise;
+      client?.close();
+      client = null;
+    }
+    refresh(null);
+    await Bun.sleep(2000);
+  }
+}

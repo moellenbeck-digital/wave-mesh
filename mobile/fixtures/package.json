@@ -1,0 +1,16 @@
+{
+  "name": "@wave/mobile-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "bun src/generate.ts > ../core/testdata/contract.json"
+  },
+  "dependencies": {
+    "@wave/crypto": "workspace:*",
+    "@wave/disco": "workspace:*",
+    "@wave/proto": "workspace:*",
+    "@wave/magicsock": "workspace:*",
+    "@wave/dns": "workspace:*"
+  }
+}

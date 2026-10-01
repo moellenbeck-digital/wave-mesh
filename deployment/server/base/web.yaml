@@ -1,0 +1,85 @@
+# Das Frontend. Es spricht ausschließlich sein eigener Control-Server an; von
+# außen ist es nie erreichbar, deshalb steht es in keinem Ingress. Die Datenbank
+# fasst es nie an -- alles kommt über /api/me und Geschwister.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wave-web
+  labels:
+    app.kubernetes.io/name: wave-web
+    app.kubernetes.io/part-of: wave-mesh
+spec:
+  # Hier dürfte man skalieren: das Next.js hält keinen Zustand. Eins reicht,
+  # solange ein Control-Server davorsteht, der ohnehin nur einmal läuft.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wave-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wave-web
+        app.kubernetes.io/part-of: wave-mesh
+    spec:
+      # Kubernetes legt für jeden Service im Namensraum die alten
+      # Docker-Link-Variablen an -- der Service `wave-relay` also
+      # WAVE_RELAY_PORT=tcp://10.43.x.x:3479, und genau daraus liest der Relay
+      # seinen Port: `Number("tcp://…")` ist NaN, und er startet mit
+      # ERR_OUT_OF_RANGE gar nicht erst. Gefunden werden die Dienste hier über
+      # DNS, diese Variablen braucht keiner von ihnen.
+      enableServiceLinks: false
+      # Die Images liegen in einer privaten Registry; ohne diesen Verweis zieht
+      # das Kubelet anonym und bekommt 401. Den Inhalt erzeugt das Overlay --
+      # der Name ist hier fest, damit die Basis nicht wissen muss, wer ihn
+      # ausfüllt.
+      imagePullSecrets:
+        - name: ghcr
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: ghcr.io/pinguin45orga/wave-mesh/web
+          ports:
+            - { name: http, containerPort: 3000 }
+          env:
+            # Gelesen beim Start -- von next.config.ts für die Rewrites und von
+            # lib/control.ts für die serverseitigen Aufrufe.
+            - { name: WAVE_CONTROL_URL, value: "http://wave-control:8080" }
+          # Es gibt kein /healthz im Frontend; /login ist die eine Seite, die
+          # ohne Sitzung rendert. Dasselbe prüft die docker-compose.yml.
+          readinessProbe:
+            httpGet: { path: /login, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /login, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # Bewusst *nicht* readOnlyRootFilesystem: der Standalone-Server von
+            # Next.js schreibt zur Laufzeit in .next/cache. Ungeprüft, also
+            # nicht zugedreht.
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wave-web
+  labels:
+    app.kubernetes.io/name: wave-web
+spec:
+  selector:
+    app.kubernetes.io/name: wave-web
+  ports:
+    - { name: http, port: 3000, targetPort: http }

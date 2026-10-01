@@ -1,0 +1,13 @@
+# Build context: the repo root. Everything the images need is source and
+# manifests -- installed or generated trees are rebuilt inside the image.
+.git
+node_modules
+**/node_modules
+dist
+apps/web/.next
+apps/web/out
+spike
+docs
+test
+*.log
+.env*

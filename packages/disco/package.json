@@ -1,0 +1,13 @@
+{
+  "name": "@wave/disco",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.1.0",
+    "@wave/crypto": "workspace:*"
+  }
+}
