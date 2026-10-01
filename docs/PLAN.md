@@ -799,7 +799,9 @@ bekommt den Fix nie. Heute weiß das Binary nicht einmal, welche Version es ist 
 `scripts/build-clients.sh` bettet keine ein, und es gibt kein `wave version`.
 
 **Entscheidung:** Der **Daemon** aktualisiert sich selbst, aus einem **Kanal**
-der GitHub-Releases, und nur mit einem **signierten** Release. Die Bytes kommen
+der GitHub-Releases, und nur mit einem **signierten** Release. **Welche Kanäle
+es gibt, legt der Control-Server fest** (`WAVE_UPDATE_CHANNELS`, einer oder
+mehrere). Die Bytes kommen
 über den **Control-Server**, der sie von GitHub durchreicht — vertraut wird
 dabei allein dem Release-Schlüssel, nie dem Weg.
 
@@ -841,19 +843,25 @@ daneben liegen.
 
 **Der Weg eines Updates:**
 
-1. **Der Server löst den Kanal auf.** Er fragt die Releases von
+1. **Der Server löst seine Kanäle auf.** `WAVE_UPDATE_CHANNELS` nennt sie als
+   Liste, etwa `latest,insiders`; der **erste Eintrag ist die Vorgabe** für jedes
+   Gerät, das selbst keinen wählt. Ungesetzt heißt das `latest`. Er fragt die
+   Releases von
    `WAVE_UPDATE_REPO` (Vorgabe `moellenbeck-digital/wave-mesh`) ab, höchstens alle
-   zehn Minuten und im Speicher gehalten, holt je Kanal das neueste
+   zehn Minuten und im Speicher gehalten, holt je konfiguriertem Kanal das neueste
    `manifest.json` samt Signatur und prüft sie. Diese Prüfung ist ein Filter
    gegen Müll, kein Schutz — geschützt wird auf dem Gerät. Ohne
    `WAVE_GITHUB_TOKEN` (siehe unten) bietet er nichts an und sagt das einmal
    beim Start; ein Server, der Updates nicht kann, ist kein kaputter Server.
-2. **Er bietet an.** Das Gerät nennt im `hello` Version, Kanal und Plattform;
-   ist für diesen Kanal etwas Neueres da, schickt der Server
+2. **Er bietet an.** Das Gerät nennt im `hello` Version, Plattform und — falls
+   es einen gewählt hat — seinen Wunschkanal. Der Server bestimmt daraus den
+   Kanal des Geräts: den Wunsch, wenn er in der Liste steht, sonst die Vorgabe;
+   was es geworden ist, sagt er im Status zurück. Ist dort etwas Neueres da,
+   schickt der Server
    `{ type: "update", manifest, signature }` — beim Verbinden und immer dann,
    wenn sein Takt ein neues Release findet.
 3. **Das Gerät prüft und wartet.** Signatur gegen den eingebauten Schlüssel,
-   Kanal passt, Version größer als die eigene, nicht als kaputt vermerkt —
+   der Kanal im Manifest ist der, den der Server ihm zugewiesen hat, Version größer als die eigene, nicht als kaputt vermerkt —
    sonst verworfen und einmal geloggt. Danach ein **zufälliger Versatz** von
    bis zu einigen Stunden, derselbe Grund wie beim ARI-Fenster: nicht alle
    zugleich, und hier zusätzlich, weil jeder Download durch *einen*
@@ -876,13 +884,26 @@ Was daran festliegt:
   verfügbar" und können über IPC ein `update` anstoßen — *welche* Version und
   *woher*, entscheidet der Daemon selbst. Sonst könnte jedes Mitglied der
   Socket-Gruppe root ein beliebiges Binary unterschieben.
-- **Der Kanal gehört dem Gerät, die Server machen nur Angebote.** Die Kanäle
-  sind die, die der Release-Workflow schon schiebt — `latest`, `insiders`,
+- **Die Kanäle gehören dem Server, die Wahl darin dem Gerät.** Zur Auswahl
+  stehen die, die der Release-Workflow schon schiebt — `latest`, `insiders`,
   `develop` —, und jeder nimmt seine eigenen Releases und die stabileren:
-  `insiders` nimmt auch ein Stable, `latest` nie ein Insiders. Ein Gerät in
-  mehreren Waves hört damit mehrere Server und nimmt **das höchste gültige
-  Angebot**; welchem Betreiber es glaubt, muss es nie entscheiden. Scheitert
-  der Download bei einem, fragt es den nächsten, der dieselbe Version anbietet.
+  `insiders` nimmt auch ein Stable, `latest` nie ein Insiders. Der Betreiber
+  entscheidet mit der Liste, was in seinem Wave überhaupt angeboten wird — ein
+  Produktiv-Wave führt nur `latest`, ein Test-Wave `insiders,latest` —, und mit
+  dem ersten Eintrag, was ein Gerät ohne eigene Wahl bekommt. Damit ist auch
+  beantwortet, ob ein Betreiber einen Kanal empfehlen kann: die Vorgabe *ist*
+  die Empfehlung, und mehrere Einträge sind das, was er zur Wahl stellt.
+- **Mehrere Waves, mehrere Listen.** Jeder Server weist seinen Kanal für sich
+  zu und bietet daraus an; das Gerät nimmt **das höchste gültige Angebot** über
+  alle. Welchem Betreiber es glaubt, muss es nie entscheiden — jedes Angebot
+  ist ein echtes, signiertes Release aus einem Kanal, den sein Betreiber
+  freigegeben hat. Scheitert der Download bei einem, fragt es den nächsten, der
+  dieselbe Version anbietet.
+- **Das signierte Manifest trägt den Kanal trotzdem.** Der Server wählt zwar
+  den Kanal, aber das Gerät prüft, dass das Angebot wirklich aus diesem Kanal
+  stammt — sonst könnte ein Server, der nur `latest` führt, einem Gerät ein
+  `develop`-Build als Stable ausgeben. Wer `develop` anbieten will, muss es in
+  die Liste schreiben, und das steht dann im Status jedes Geräts.
 - **Kein Downgrade.** Die neue Version muss größer sein als die eigene, sonst
   spielt ein Server ein altes, verwundbares Release mit gültiger Signatur ein.
   Ein Wechsel von `insiders` auf `latest` wartet, bis Stable aufholt.
@@ -908,9 +929,10 @@ Was daran festliegt:
   bleibt also stehen — das ist der bekannte Preis, und `wave status` zeigt die
   eigene Version, damit er auffällt. Wird das Repo öffentlich, ist der direkte
   Weg mit denselben Prüfungen der naheliegende Rückfall.
-- **Festhalten kann ein Betreiber eine Flotte nicht.** Das wäre genau das Wort
-  eines Betreibers über ein fremdes Gerät. Wer eine Version halten will,
-  schaltet am Gerät `--auto-update off`.
+- **Festhalten kann ein Betreiber eine Flotte nicht**, nur ihren Kanal wählen.
+  Eine *Version* zu halten wäre genau das Wort eines Betreibers über ein
+  fremdes Gerät. Wer eine Version halten will — oder einem Betreiber nicht
+  folgen, der `develop` vorgibt —, schaltet am Gerät `--auto-update off`.
 - **Der Server darf eine Mindestversion nennen** (etwa weil eine Netzkarte ein
   Feld trägt, das ein alter Client nicht versteht) — als Hinweis im Status,
   nicht als Befehl. Signieren und entscheiden tut er nie.
@@ -937,9 +959,12 @@ Was daran festliegt:
   Tunnel kommt dann niemand mehr heran, um es zu reparieren. Dass das Update
   selbst über den Control-Server kam, ändert daran nichts: die alte Fassung
   braucht zum Hochkommen nichts als ihre eigenen Dateien.
-- **Die Einstellung steht im State, nicht in `wave.env`.**
-  `wave install --channel … --auto-update on|off`. Eine zweite Stelle für
-  dieselbe Wahrheit ist genau der Fehler, den `WAVE_CONTROL_URL` gemacht hat.
+- **Die Einstellung am Gerät steht im State, nicht in `wave.env`.**
+  `wave install --channel … --auto-update on|off`; `--channel` ist dabei ein
+  Wunsch, der nur gilt, wo der Server ihn führt. Eine zweite Stelle für
+  dieselbe Wahrheit ist genau der Fehler, den `WAVE_CONTROL_URL` gemacht hat —
+  am Server dagegen ist die Env-Variable die richtige Stelle, weil die Liste
+  dort zur Konfiguration des Deployments gehört wie `WAVE_RELAYS`.
 - **Ein Paketmanager hat Vorrang.** Liegt das Binary unter `/usr/bin` oder in
   Homebrews Cellar, bleibt der Updater aus und sagt das — zwei Instanzen, die
   dieselbe Datei verwalten, überschreiben sich gegenseitig. Angebote des
@@ -960,8 +985,7 @@ dem Token) samt `wave update` von Hand für Linux und macOS, dann das Angebot
 über `/v1/control` mit Versatz und Rollback, zuletzt Windows — ungeprüft wie alles dort, solange es keine Windows-Maschine gibt.
 
 **Offen:** ob ein Update laufende Verbindungen kurz unterbrechen darf oder auf
-einen ruhigen Moment wartet (kein Verkehr über N Minuten), und ob ein Betreiber
-für seinen Wave einen Kanal *empfehlen* können soll, ohne ihn vorzuschreiben.
+einen ruhigen Moment wartet (kein Verkehr über N Minuten).
 
 ### D14 — Geräte im Cluster: ein Gerät ist ein Service, kein Knoten
 
@@ -1253,7 +1277,7 @@ Damit ist ein Neustart oder ein verpasstes Delta unkritisch.
 | **M10** | Mobile | Go-Kern (MagicSock, Disco, Control-Client, Resolver) über `gomobile bind`, NEPacketTunnelProvider (iOS) und VpnService (Android), native UI (D10) | ein Telefon ist gleichzeitig in zwei Waves, mit direktem Pfad und Relay-Fallback |
 | **M11** | Kubernetes | Connector-Deployment (Node im Cluster, kein eingehender Port), Operator für `Ingress`/`HTTPRoute` mit Klasse `wave`, `wave_services` + Adressvergabe, `Netmap.services`, Dienste im Resolver (D11) | ein internes Grafana ist unter `grafana.wave.example.com` aus dem Wave per HTTPS erreichbar und von außen nicht |
 | **M12** | Pier | `apps/pier` (Knoten im Wave, SNI-Router auf 443), `wave_piers` + `Netmap.piers`, öffentliche A/AAAA-Records aus dem Control-Server, `wave pier` und die Freigabe durch den Betreiber (D12) | ein Dienst auf einem Knoten hinter CGNAT ist aus dem offenen Netz per HTTPS erreichbar, mit dem Zertifikat des Knotens, und der Pier sieht keinen Klartext |
-| **M13** | Selbstaktualisierung | Version im Binary (`wave version`, im Status und am Server), Ed25519-signiertes Manifest (Version, Kanal, Hashes) im Release-Workflow, Control-Server löst Kanäle auf und reicht Archive von GitHub durch, Angebot über `/v1/control`, `wave update`, GitHub-Token nur auf dem Server, Kanal und Schalter im State, Austausch mit Rollback je Plattform, Tray-Neustart (D13) | ein Gerät auf `insiders` steht einen Tag nach dem Release ohne Zutun auf der neuen Version, ein absichtlich kaputtes Release rollt sich von selbst zurück, ein unsigniertes wird verweigert, und ein Build aus einem fremden Kanal ebenso |
+| **M13** | Selbstaktualisierung | Version im Binary (`wave version`, im Status und am Server), Ed25519-signiertes Manifest (Version, Kanal, Hashes) im Release-Workflow, Control-Server löst die Kanäle aus `WAVE_UPDATE_CHANNELS` auf (erster Eintrag als Vorgabe) und reicht Archive von GitHub durch, Angebot über `/v1/control`, `wave update`, GitHub-Token nur auf dem Server, Wunschkanal und Schalter im State, Austausch mit Rollback je Plattform, Tray-Neustart (D13) | ein Gerät in einem Wave mit `WAVE_UPDATE_CHANNELS=insiders,latest` steht einen Tag nach dem Release ohne Zutun auf der neuen Version, ein absichtlich kaputtes Release rollt sich von selbst zurück, ein unsigniertes wird verweigert, und ein Build aus einem Kanal, den der Server nicht führt, ebenso |
 | **M14** | Geräte im Cluster | Egress-Kette im Connector (DNAT von Pod-Netz auf Wave-Adressen, masquerade auf `wave0`), Ziele per Gerätename aus der Netzkarte, `ExternalName`-Services mit `wave.dev/egress`, Portvergabe und ConfigMap durch den Operator, NetworkPolicy für die Egress-Ports (D14) | ein Pod erreicht `http://ollama.ai:11434` auf einer Workstation im Wave, nur aus freigegebenen Namespaces und nur, solange die Policy es erlaubt |
 
 **Erledigt: M0, M1, M2, M3, M4, M5, M6, M11; M10 bis auf den Lauf auf echter Hardware.** M5 ist mit M6 zusammen fertig
