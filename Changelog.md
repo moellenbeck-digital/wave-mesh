@@ -6,7 +6,15 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.2.0-develop.2 ist nichts hinzugekommen.*
+*Seit v0.2.0-develop.3 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.2.0-develop.3 (01.10.2026)
+
+*Keine neuen Funktionen: ein Release, an dem sich die Selbst-Updates erproben
+lassen. Ein Gerät mit v0.2.0-develop.1 oder .2 auf dem Kanal `develop` sollte
+sich von selbst auf diese Version heben.*
 
 ---
 
