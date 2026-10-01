@@ -6,7 +6,44 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.2.0-develop.4 ist nichts hinzugekommen.*
+*Seit v0.2.0 ist nichts hinzugekommen.*
+
+---
+
+## ✅ Stable v0.2.0 (01.10.2026)
+
+*Clients halten sich ab dieser Version selbst aktuell. Enthält alles aus
+v0.2.0-develop.1 bis v0.2.0-develop.4.*
+
+### Neue Funktionen (gegenüber v0.1.0)
+
+- **Clients aktualisieren sich selbst.** Der Control-Server bietet neue
+  Releases an, der Dienst installiert sie nach einer zufälligen Wartezeit von
+  bis zu vier Stunden und kehrt von allein zur alten Version zurück, wenn die
+  neue keinen Server erreicht. Installiert wird nur, was mit dem
+  Release-Schlüssel signiert ist, und nie eine ältere Version. *(seit develop.1)*
+- **Neue Befehle:** `wave version` zeigt die installierte Fassung und ob eine
+  neuere ansteht, `wave update` installiert sie sofort, `--channel` und
+  `--auto-update on|off` stellen Kanal und Automatik ein. *(seit develop.1)*
+- **Update-Dialog:** Eine neue Version meldet sich einmal mit einem Dialog,
+  der mit einem Klick installiert; Tooltip und Menü des Tray-Icons nennen sie
+  ebenfalls. *(seit develop.1 und develop.4)*
+- **Client-Versionen in der Weboberfläche:** Die Geräteliste zeigt, welche
+  Version und welcher Update-Kanal auf jedem Gerät läuft, live aktualisiert.
+  *(seit develop.2)*
+
+### Für Betreiber
+
+- `WAVE_UPDATE_CHANNELS` legt fest, welche Kanäle ein Server anbietet
+  (`stable`, `insiders`, `develop`; der erste ist die Vorgabe, ungesetzt
+  `stable`). Ohne `WAVE_GITHUB_TOKEN` — Fine-grained, nur dieses Repository,
+  „Contents: read" — wird nichts angeboten.
+- `wave-admin devices` zeigt Version und Kanal jedes Geräts.
+- Eine Datenbankmigration läuft beim Rollout von selbst mit.
+
+> Clients von v0.1.0 und älter können sich noch nicht selbst aktualisieren:
+> auf jedem Gerät einmal von Hand `sudo ./wave install` mit dieser Version,
+> danach geht es von allein.
 
 ---
 
