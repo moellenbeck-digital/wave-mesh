@@ -111,7 +111,9 @@ Gestalterisch folgt die Oberfläche <https://wavecenter.org/de>: dieselbe Palett
 (`#fffdf8` Papier, `#0f2744` Navy, `#7c8b9a` Slate), Space Grotesk und Inter,
 dieselben `wc-*`-Komponenten. Eigen ist nur der Akzent — dort Gold, hier Petrol
 `#0f6e6e`. Die Tokens stehen in `apps/web/src/app/globals.css`; wer dort etwas
-hinzufügt, das keine Seite trägt, lässt es besser weg.
+hinzufügt, das keine Seite trägt, lässt es besser weg. Farben, Typografie,
+Komponenten und Regeln für Web und Tray sind in `DESIGN.md` zusammengefasst —
+wer dort oder an den Tokens etwas ändert, zieht das andere nach.
 
 ## Die Geräteliste lebt
 
