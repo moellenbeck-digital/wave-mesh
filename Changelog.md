@@ -6,7 +6,31 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.4.0 ist nichts hinzugekommen.*
+*Seit v0.5.0-develop.1 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.5.0-develop.1 (02.10.2026)
+
+### Neue Funktionen
+
+- **Deutsch und Englisch überall.** Weboberfläche, die Seiten des
+  Control-Servers, `wave`, das Tray-Icon, `wave-admin` und die Apps gibt es in
+  beiden Sprachen; ist die eigene keine davon, gilt Englisch.
+- **Umschalter DE | EN in der Kopfzeile** der Weboberfläche, auch vor der
+  Anmeldung. Ohne Wahl gilt die Sprache des Browsers.
+- **`wave` und das Tray-Icon folgen der Systemsprache**, `WAVE_LANG=en` oder
+  `WAVE_LANG=de` legt sie fest. Meldungen des Dienstes erscheinen in der
+  Sprache dessen, der sie liest.
+- Das Tray-Menü sagt jetzt, warum sich ein Gerät nicht selbst aktualisiert.
+
+### Verbesserungen
+
+- Ist eine Gerätefreigabe abgelaufen oder ein Wave noch leer, nennt die Seite
+  den richtigen Befehl: `wave login <control-server-url>` statt `wave up`.
+
+> Protokolle des Dienstes und des Servers bleiben englisch, damit man sie
+> durchsuchen und vergleichen kann.
 
 ---
 
