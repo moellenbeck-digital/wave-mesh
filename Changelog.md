@@ -6,7 +6,38 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.4.0-develop.2 ist nichts hinzugekommen.*
+*Seit v0.4.0 ist nichts hinzugekommen.*
+
+---
+
+## ✅ Stable v0.4.0 (02.10.2026)
+
+*Enthält alles aus v0.4.0-develop.1 und v0.4.0-develop.2.*
+
+### Neue Funktionen (gegenüber v0.3.0)
+
+- **Zugriffsregeln als Graph.** Auf der Zugriffsseite eines Waves stehen
+  Mitglieder, Gruppen, Rollen, Tags, Dienste und „alle“ als Karten; eine Regel
+  ist ein Pfeil, den man von einer Karte zur anderen zieht, und die Ports
+  hängen an der Kante. Der erste Pfeil schaltet die Policy ein — ab dann gilt
+  nur noch, was ein Pfeil erlaubt. *(seit develop.1)*
+- **Gruppen und Tags direkt auf der Seite.** Gruppen werden angelegt und mit
+  Mitgliedern gefüllt, Tags angelegt und Geräten gegeben. Die Seite zeigt
+  dabei sofort, welche Geräte eine Karte trifft und wer danach wen erreicht —
+  noch bevor gespeichert ist. Gespeichert wird alles auf einmal, mit
+  „Rückgängig“ und „Verwerfen“ davor. *(seit develop.1)*
+- Die Policy lässt sich weiterhin als JSON bearbeiten, aufklappbar unter dem
+  Graphen. *(seit develop.1)*
+
+### Verbesserungen (gegenüber v0.3.0)
+
+- **Die Leiste zum Bearbeiten steht rechts neben dem Graphen**, die
+  Zugriffsseite ist dafür so breit wie die Kopfzeile. *(seit develop.2)*
+- Die Übersicht beginnt direkt mit den Wave-Karten. *(seit develop.1)*
+
+> An den Clients hat sich nichts geändert. Geräte auf dem Kanal stable
+> bekommen v0.4.0 trotzdem angeboten und installieren sie — mit demselben
+> Code wie v0.3.0.
 
 ---
 
