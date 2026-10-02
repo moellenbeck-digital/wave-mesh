@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English is the base: a phone set to any language without its own folder
+     falls back to this one. German lives in values-de. Android picks the folder
+     from the system language; there is no switch in the app. -->
+<resources>
+    <!-- The product name is a name, not a word: it stays the same in every
+         language, which is why values-de does not repeat it. -->
+    <string name="app_name" translatable="false">wave</string>
+
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="open_enrolment_link">Open the enrolment link</string>
+    <string name="control_server_address">control server address</string>
+    <string name="log_in">Log in</string>
+    <string name="no_wave_yet">This device is in no wave yet. Logging in is the only way in — there is no second one.</string>
+    <string name="no_control_connection">no control connection; peers will stop being updated</string>
+    <string name="leave_wave">Leave this wave</string>
+
+    <!-- Path of a peer. The core reports "relay" or the address of the direct
+         path; only the word is translated. -->
+    <string name="path_none">no fixed path</string>
+    <string name="path_relay">relay</string>
+    <!-- %1$s: "relay" or an address, %2$d: round-trip time in milliseconds -->
+    <string name="path_with_rtt">%1$s · %2$d ms</string>
+
+    <string name="notification_channel">Tunnel status</string>
+    <string name="notification_running">the tunnel is running</string>
+    <string name="login_failed">login failed</string>
+    <string name="logout_failed">logout failed</string>
+</resources>

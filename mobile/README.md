@@ -165,6 +165,32 @@ Relay-Fallback.
 
 Alle vier stehen jetzt als Test da, drei davon zusätzlich als Unit-Test.
 
+## Sprachen
+
+Englisch ist die Grundsprache, Deutsch die Übersetzung; welche gilt, entscheidet
+die Systemsprache des Telefons. Einen Schalter in der App gibt es nicht. Beide
+Plattformen nehmen dafür ihren eigenen Mechanismus, und der deutsche Text folgt
+der Weboberfläche: „du", „der Wave", „Diesen Wave verlassen".
+
+- **iOS: ein String Catalog**, `ios/Wave/Localizable.xcstrings`. Schlüssel ist
+  der englische Text selbst. `Text("…")`, `Button("…")` und `Section("…")`
+  schlagen Literale von allein nach; was als gewöhnlicher `String` entsteht
+  (etwa der Pfad eines Peers), geht ausdrücklich durch `String(localized:)`.
+  Eine Interpolation wird dabei zu einem Formatschlüssel — `"\(via) ·
+  \(rtt) ms"` mit `String` und `Int` heißt im Katalog `%@ · %lld ms`. Das ist
+  der eine Schlüssel, den Xcode beim ersten Öffnen bestätigen sollte: stimmt er
+  nicht genau, steht still der englische Text da. Der Katalog gehört in
+  **beide** Targets — die Fehlermeldungen der Extension schlagen in deren
+  eigenem Bundle nach, nicht in dem der App.
+- **Android: Ressourcen**, `res/values/strings.xml` und
+  `res/values-de/strings.xml`, gelesen über `stringResource()` in Compose und
+  `getString()` im Dienst (Benachrichtigung und ihr Kanal). Der App-Name
+  `wave` ist `translatable="false"` — ein Name, kein Wort.
+
+Was der Kern sagt — Fehlermeldungen aus `login` und `logout`, Log-Zeilen —
+bleibt Englisch: er läuft unter `go test` ohne Plattform und kennt keine
+Sprache.
+
 ## Was offen ist, und was ungeprüft
 
 **Die Telefone selbst sind ungeprüft.** Was ein Telefon bräuchte:
@@ -179,13 +205,18 @@ Alle vier stehen jetzt als Test da, drei davon zusätzlich als Unit-Test.
   (App und Packet-Tunnel-Extension), das Entitlement
   `com.apple.developer.networking.networkextension` mit `packet-tunnel-provider`,
   eine App-Gruppe `group.org.wave` für beide, und die Bundle-Id der Extension
-  muss `org.wave.app.tunnel` sein — so heißt sie in `WaveApp.swift`.
+  muss `org.wave.app.tunnel` sein — so heißt sie in `WaveApp.swift`. Dazu
+  `Localizable.xcstrings` als Mitglied beider Targets, `de` unter
+  *Project → Info → Localizations*, und in beiden `Info.plist`
+  `CFBundleDevelopmentRegion` = `en` (Xcodes Vorgabe).
 - **Das Entitlement gibt es nur mit bezahltem Developer-Account**, auch für das
   eigene Gerät. Ohne ihn lässt sich das hier nicht einmal starten.
 - Das Android-Projekt baut, sobald `mobile/build.sh android` die `.aar` gelegt
   hat; ohne sie fehlt Gradle eine Abhängigkeit, und das ist Absicht — die
   Alternative wäre eine Gradle-Task, die Go und das NDK aufruft und dann in
-  einer Sprache scheitert, die nach Kotlin aussieht.
+  einer Sprache scheitert, die nach Kotlin aussieht. Gebaut wurde es hier nie:
+  es gibt weder ein Android-SDK noch einen Gradle-Wrapper im Repo, also sind
+  auch die Ressourcen nur als XML geprüft, nicht durch `aapt`.
 
 Das ist derselbe Stand wie beim Windows-Tray und bei den Cluster-Manifesten:
 benannt, nicht verschwiegen.

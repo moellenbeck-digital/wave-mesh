@@ -18,6 +18,7 @@
     "@wave/disco": "workspace:*",
     "@wave/dns": "workspace:*",
     "@wave/ipc": "workspace:*",
+    "@wave/i18n": "workspace:*",
     "@wave/tray": "workspace:*"
   },
   "exports": {

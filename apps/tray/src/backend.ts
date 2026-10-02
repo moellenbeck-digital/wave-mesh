@@ -1,5 +1,6 @@
 import type { IconState } from "./icon.ts";
 import type { MenuEntry } from "./menu.ts";
+import { t } from "./messages.ts";
 
 /**
  * What a tray icon has to be able to do, independent of how the platform
@@ -26,10 +27,7 @@ export interface TrayBackendOptions {
 
 export class UnsupportedPlatform extends Error {
   constructor(platform: NodeJS.Platform) {
-    super(
-      `wave has no tray backend for ${platform} yet. ` +
-        "The tunnel itself is unaffected: use `wave status` or `wave up`.",
-    );
+    super(t().noTrayBackend(platform));
   }
 }
 

@@ -1,17 +1,15 @@
 import { redirect } from "next/navigation";
+import { type AppMessages, appMessages, providerName } from "@/i18n/app";
+import { rich } from "@/i18n/rich";
 import { fetchInvite, fetchMe, fetchProviders } from "@/lib/control";
 import { formatDate } from "@/lib/format";
+import { getLocale } from "@/lib/i18n";
 
-const PROVIDER_NAMES: Record<string, string> = {
-  google: "Google",
-  dev: "Entwickler-Login",
-};
-
-const ERRORS: Record<string, string> = {
-  "wrong-address": "Diese Einladung gehört zu einer anderen Adresse als der, mit der du angemeldet bist.",
-  "unverified-address":
-    "Der Anmeldedienst bestätigt deine Adresse nicht. Eine unbestätigte Adresse kann keine Einladung annehmen.",
-  gone: "Diese Einladung wurde schon benutzt, zurückgezogen oder ist abgelaufen.",
+/** The codes the control server redirects back with, never its own wording. */
+const ERRORS: Record<string, (t: AppMessages) => string> = {
+  "wrong-address": (t) => t.joinWrongAddress,
+  "unverified-address": (t) => t.joinUnverified,
+  gone: (t) => t.joinGone,
 };
 
 /**
@@ -30,7 +28,9 @@ export default async function JoinPage({
 }) {
   const { token } = await params;
   const query = await searchParams;
-  const error = typeof query.error === "string" ? ERRORS[query.error] : undefined;
+  const locale = await getLocale();
+  const t = appMessages(locale);
+  const error = typeof query.error === "string" ? ERRORS[query.error]?.(t) : undefined;
 
   const invite = await fetchInvite(token);
   if (!invite) redirect("/join/gone");
@@ -38,16 +38,18 @@ export default async function JoinPage({
   const [me, providers] = await Promise.all([fetchMe(), fetchProviders()]);
   const accept = `/invite/${encodeURIComponent(token)}`;
   const suffix = `?next=${encodeURIComponent(accept)}`;
-  const role = invite.role === "admin" ? "Administrator" : "Mitglied";
 
   return (
     <div className="mx-auto max-w-md">
       <div className="mb-10 text-center">
-        <h1 className="animate-fade-in font-display text-display-sm text-navy">Einladung in {invite.wave}</h1>
+        <h1 className="animate-fade-in font-display text-display-sm text-navy">{t.joinTitle(invite.wave)}</h1>
         <p className="animate-fade-in mt-2 text-body-sm text-slate" style={{ animationDelay: "0.1s" }}>
-          Für <strong className="font-medium text-navy">{invite.email}</strong>, als {role}
-          {invite.invitedBy ? <>, von {invite.invitedBy}</> : null}. Gültig bis {formatDate(invite.expiresAt)}
-          .
+          {rich(t.joinLead, {
+            email: <strong className="font-medium text-navy">{invite.email}</strong>,
+            role: t.asRole(invite.role),
+            by: invite.invitedBy ? t.joinBy(invite.invitedBy) : null,
+            until: formatDate(invite.expiresAt, locale),
+          })}
         </p>
       </div>
 
@@ -66,21 +68,20 @@ export default async function JoinPage({
         {me ? (
           <>
             <p className="text-body-sm text-slate">
-              Du bist als <strong className="font-medium text-navy">{me.user.email ?? me.user.id}</strong>{" "}
-              angemeldet.
+              {rich(t.signedInAs, {
+                who: <strong className="font-medium text-navy">{me.user.email ?? me.user.id}</strong>,
+              })}
             </p>
             {me.user.email === invite.email ? (
               <a href={accept} className="wc-btn wc-btn-primary mt-6 w-full">
-                Beitreten
+                {t.join}
               </a>
             ) : (
               <>
-                <p className="mt-2 text-body-sm text-slate">
-                  Melde dich ab und mit {invite.email} wieder an, um die Einladung anzunehmen.
-                </p>
+                <p className="mt-2 text-body-sm text-slate">{t.signOutToAccept(invite.email)}</p>
                 <form method="post" action="/auth/logout" className="mt-6">
                   <button type="submit" className="wc-btn wc-btn-secondary w-full">
-                    Abmelden
+                    {t.signOut}
                   </button>
                 </form>
               </>
@@ -88,18 +89,15 @@ export default async function JoinPage({
           </>
         ) : invite.hasAccount ? (
           <>
-            <p className="text-body-sm text-slate">
-              Für diese Adresse gibt es schon ein Konto. Melde dich damit an — die Einladung wird dabei
-              angenommen.
-            </p>
+            <p className="text-body-sm text-slate">{t.hasAccount}</p>
             <a href={`/login${suffix}`} className="wc-btn wc-btn-primary mt-6 w-full">
-              Anmelden
+              {t.signIn}
             </a>
             {providers.length > 0 ? (
               <div className="mt-3 flex flex-col gap-3">
                 {providers.map((id) => (
                   <a key={id} className="wc-btn wc-btn-secondary w-full" href={`/auth/${id}/start${suffix}`}>
-                    Weiter mit {PROVIDER_NAMES[id] ?? id}
+                    {t.continueWith(providerName(id, t))}
                   </a>
                 ))}
               </div>
@@ -112,7 +110,7 @@ export default async function JoinPage({
             <form method="post" action={`${accept}/claim`} className="flex flex-col gap-4">
               <div>
                 <label className="wc-label" htmlFor="password">
-                  Passwort für {invite.email}
+                  {t.passwordFor(invite.email)}
                 </label>
                 <input
                   className="wc-input"
@@ -123,11 +121,11 @@ export default async function JoinPage({
                   minLength={12}
                   required
                 />
-                <p className="mt-2 text-caption text-slate">Mindestens 12 Zeichen.</p>
+                <p className="mt-2 text-caption text-slate">{t.minChars}</p>
               </div>
 
               <button type="submit" className="wc-btn wc-btn-primary w-full">
-                Konto anlegen und beitreten
+                {t.createAndJoin}
               </button>
             </form>
 
@@ -135,7 +133,7 @@ export default async function JoinPage({
               <>
                 <div className="my-7 flex items-center gap-4">
                   <span className="h-px flex-1 bg-line" />
-                  <span className="text-label text-slate uppercase">oder</span>
+                  <span className="text-label text-slate uppercase">{t.or}</span>
                   <span className="h-px flex-1 bg-line" />
                 </div>
 
@@ -146,7 +144,7 @@ export default async function JoinPage({
                       className="wc-btn wc-btn-secondary w-full"
                       href={`/auth/${id}/start${suffix}`}
                     >
-                      Weiter mit {PROVIDER_NAMES[id] ?? id}
+                      {t.continueWith(providerName(id, t))}
                     </a>
                   ))}
                 </div>

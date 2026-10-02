@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Notice } from "./notice.ts";
 
 /**
  * The local control channel between the privileged daemon and everything that
@@ -194,6 +195,8 @@ export const UpdateStatus = z.object({
   state: z.enum(["idle", "scheduled", "installing", "unavailable"]),
   /** Why not, when it cannot or will not: a dev build, a package manager... */
   message: z.string().nullable().default(null),
+  /** The same, as a code to be said in the reader's language; see notice.ts. */
+  notice: Notice.nullable().default(null),
   scheduledAt: z.string().nullable().default(null),
 });
 export type UpdateStatus = z.infer<typeof UpdateStatus>;
@@ -250,9 +253,18 @@ export const Response = z.discriminatedUnion("type", [
   z.object({ type: z.literal("status"), status: Status }),
   z.object({ type: z.literal("certs"), certs: z.array(CertificateStatus) }),
   z.object({ type: z.literal("cert-waiting"), waiting: CertWaiting }),
-  z.object({ type: z.literal("update"), update: UpdateStatus, message: z.string().nullable().default(null) }),
+  z.object({
+    type: z.literal("update"),
+    update: UpdateStatus,
+    message: z.string().nullable().default(null),
+    notice: Notice.nullable().default(null),
+  }),
   z.object({ type: z.literal("ok") }),
-  z.object({ type: z.literal("error"), message: z.string() }),
+  /**
+   * `message` is the English sentence and always there; `notice` says the
+   * same as a code, for a reader that can put it in its person's language.
+   */
+  z.object({ type: z.literal("error"), message: z.string(), notice: Notice.nullable().default(null) }),
 ]);
 export type Response = z.infer<typeof Response>;
 

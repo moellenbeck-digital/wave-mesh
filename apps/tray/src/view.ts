@@ -1,6 +1,8 @@
-import { type ProfileStatus, pathKind, type Status, waveLabel } from "@wave/ipc";
+import { intlTag } from "@wave/i18n";
+import { type ProfileStatus, pathWords, readNotice, type Status, tunnelWords, waveLabel } from "@wave/ipc";
 import type { IconState } from "./icon.ts";
 import type { MenuEntry } from "./menu.ts";
+import { locale, t } from "./messages.ts";
 
 /** What the tray shows, derived from the daemon's status. Pure, so testable. */
 
@@ -13,6 +15,8 @@ export const Ids = {
   /** What self-updating has to say (D13): a line, and the button under it. */
   updateInfo: 20,
   update: 21,
+  /** Why this copy cannot install it, when it cannot. */
+  updateWhy: 22,
   /**
    * A device can be in several waves, so each gets a block of ids. A block is
    * wider than any wave will ever be, which is what lets {@link actionForId}
@@ -75,9 +79,10 @@ export type Unreachable = "no-daemon" | "denied" | "unreachable" | null;
 const describeProfile = (profile: ProfileStatus): string => {
   if (profile.state === "up") {
     const reachable = profile.peers.filter((peer) => peer.via !== null).length;
-    return `${profile.self?.ipv4 ?? "connected"} — ${reachable}/${profile.peers.length} peer(s) reachable`;
+    return `${profile.self?.ipv4 ?? t().connected} — ${t().peersReachable(reachable, profile.peers.length)}`;
   }
-  if (profile.state === "waiting-for-approval") return "waiting for approval in the browser";
+  if (profile.state === "waiting-for-approval") return tunnelWords(locale()).waitingInBrowser;
+  // A raw error from deeper down, said as it came; translating it would mean guessing.
   return profile.message ?? profile.state;
 };
 
@@ -85,20 +90,29 @@ const describeProfile = (profile: ProfileStatus): string => {
  * What there is to say about an update, if anything (D13). Shared by the
  * tooltip, the menu and the window, so the three cannot word it differently.
  */
-export function updateNotice(status: Status | null): { text: string; installable: boolean } | null {
+export function updateNotice(
+  status: Status | null,
+): { text: string; installable: boolean; reason?: string } | null {
   const update = status?.daemon?.update;
   if (!update?.available) return null;
-  if (update.state === "installing")
-    return { text: `Installing wave ${update.available}…`, installable: false };
+  const words = t();
+  if (update.state === "installing") return { text: words.installing(update.available), installable: false };
   // Only shown: this copy does not update itself (a development build, or a
-  // package manager owns it), so a button would only produce an error.
-  if (update.state === "unavailable")
-    return { text: `wave ${update.available} is available`, installable: false };
-  if (update.state === "scheduled" && update.scheduledAt) {
-    const at = new Date(update.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return { text: `Update to ${update.available} at ${at}`, installable: true };
+  // package manager owns it), so a button would only produce an error. Why
+  // not is the daemon's to say -- as a notice, so it reads in this session's
+  // language rather than the daemon's, which has none.
+  if (update.state === "unavailable") {
+    const reason = readNotice(update, locale());
+    return { text: words.available(update.available), installable: false, ...(reason ? { reason } : {}) };
   }
-  return { text: `Update to ${update.available} available`, installable: true };
+  if (update.state === "scheduled" && update.scheduledAt) {
+    const at = new Date(update.scheduledAt).toLocaleTimeString(intlTag(locale()), {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return { text: words.updateAt(update.available, at), installable: true };
+  }
+  return { text: words.updateAvailable(update.available), installable: true };
 }
 
 export function tooltipFor(status: Status | null, unreachable: Unreachable = null): string {
@@ -109,27 +123,24 @@ export function tooltipFor(status: Status | null, unreachable: Unreachable = nul
 
 function tooltipBase(status: Status | null, unreachable: Unreachable): string {
   if (!status) {
-    if (unreachable === "denied") return "not allowed to use the daemon — log out and back in";
-    if (unreachable === "no-daemon") return "the wave service is not running";
-    if (unreachable === "unreachable") return "the wave service is not answering";
-    return "waiting for the daemon";
+    if (unreachable === "denied") return t().denied;
+    if (unreachable === "no-daemon") return t().noDaemon;
+    if (unreachable === "unreachable") return t().unreachable;
+    return t().waitingForDaemon;
   }
-  if (status.profiles.length === 0) return "no wave yet — run `wave login`";
+  if (status.profiles.length === 0) return t().noWaveYet;
   const first = status.profiles[0];
   if (status.profiles.length === 1 && first) return describeProfile(first);
 
   const up = status.profiles.filter((profile) => profile.state === "up").length;
-  return `${up}/${status.profiles.length} waves connected`;
+  return t().wavesConnected(up, status.profiles.length);
 }
 
-const describePath = (peer: ProfileStatus["peers"][number]): string => {
-  const kind = pathKind(peer);
-  if (kind === "loose") return "no fixed path";
-  if (kind === "none") return "connecting…";
-  return kind === "relay" ? "via relay" : `direct ${peer.via}`;
-};
+/** The menu shows no RTT: a label that changes every second is one nobody can read. */
+const describePath = (peer: ProfileStatus["peers"][number]): string => pathWords(peer, locale()).text;
 
 export function menuFor(status: Status | null, options: { unreachable?: Unreachable } = {}): MenuEntry[] {
+  const words = t();
   const entries: MenuEntry[] = [
     { id: Ids.header, label: tooltipFor(status, options.unreachable ?? null), enabled: false },
     { id: 2, separator: true },
@@ -139,10 +150,10 @@ export function menuFor(status: Status | null, options: { unreachable?: Unreacha
   // what to do about it instead of offering buttons that do nothing.
   if (!status && options.unreachable === "denied") {
     entries.push(
-      { id: Ids.profileBase, label: "Your account is in the 'wave' group,", enabled: false },
-      { id: Ids.profileBase + 1, label: "but this session started before that.", enabled: false },
+      { id: Ids.profileBase, label: words.deniedGroup, enabled: false },
+      { id: Ids.profileBase + 1, label: words.deniedSession, enabled: false },
       { id: 3, separator: true },
-      { id: Ids.quit, label: "Quit the tray icon" },
+      { id: Ids.quit, label: words.quit },
     );
     return entries;
   }
@@ -171,17 +182,17 @@ export function menuFor(status: Status | null, options: { unreachable?: Unreacha
       label:
         profile.state === "up"
           ? named
-            ? `Disconnect ${waveLabel(profile.controlUrl)}`
-            : "Disconnect"
+            ? words.disconnectWave(waveLabel(profile.controlUrl))
+            : words.disconnect
           : named
-            ? `Connect ${waveLabel(profile.controlUrl)}`
-            : "Connect",
+            ? words.connectWave(waveLabel(profile.controlUrl))
+            : words.connect,
     });
     // Naming the host rather than "the control server": with two waves the
     // labels would otherwise be identical, and it is the one place the address
     // is worth seeing.
     if (profile.controlUrl) {
-      entries.push({ id: idFor(index, Offset.open), label: `Open ${waveLabel(profile.controlUrl)}` });
+      entries.push({ id: idFor(index, Offset.open), label: words.openWave(waveLabel(profile.controlUrl)) });
     }
     entries.push({ id: idFor(index, Ids.profileStride - 1), separator: true });
   });
@@ -194,12 +205,12 @@ export function menuFor(status: Status | null, options: { unreachable?: Unreacha
     // so the button stays and the click is what finds out.
     if (status) {
       entries.push(
-        { id: Ids.empty, label: "Not in any wave yet", enabled: false },
-        { id: Ids.empty + 1, label: "Join one with: wave login <control-server-url>", enabled: false },
+        { id: Ids.empty, label: words.notInAnyWave, enabled: false },
+        { id: Ids.empty + 1, label: words.joinWith, enabled: false },
         { id: 3, separator: true },
       );
     } else {
-      entries.push({ id: toggleId(0), label: "Connect" }, { id: 3, separator: true });
+      entries.push({ id: toggleId(0), label: words.connect }, { id: 3, separator: true });
     }
   }
 
@@ -207,10 +218,13 @@ export function menuFor(status: Status | null, options: { unreachable?: Unreacha
   const notice = updateNotice(status);
   if (notice) {
     entries.push({ id: Ids.updateInfo, label: notice.text, enabled: false });
-    if (notice.installable) entries.push({ id: Ids.update, label: "Install update now" });
+    // Where there is no button, the line under it says why -- the menu is the
+    // one place with room for that; the tooltip and the card keep it short.
+    if (notice.reason) entries.push({ id: Ids.updateWhy, label: notice.reason, enabled: false });
+    if (notice.installable) entries.push({ id: Ids.update, label: words.installNow });
     entries.push({ id: Ids.updateInfo + 100, separator: true });
   }
 
-  entries.push({ id: Ids.quit, label: "Quit the tray icon" });
+  entries.push({ id: Ids.quit, label: words.quit });
   return entries;
 }

@@ -157,12 +157,15 @@ enum WaveError: LocalizedError {
     case noTunnelDescriptor
     case noCore
 
+    /// Shown by iOS when the tunnel fails to start, so it is localized. The
+    /// lookup goes to the extension's own bundle -- which is why the catalog
+    /// has to be a member of this target too, not only of the app.
     var errorDescription: String? {
         switch self {
         case .noTunnelDescriptor:
-            return "the tunnel interface has no descriptor; the extension cannot carry traffic"
+            return String(localized: "the tunnel interface has no descriptor; the extension cannot carry traffic")
         case .noCore:
-            return "the wave core did not start"
+            return String(localized: "the wave core did not start")
         }
     }
 }

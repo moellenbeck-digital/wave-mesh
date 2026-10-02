@@ -12,6 +12,7 @@
     "admin": "bun src/admin.ts"
   },
   "dependencies": {
+    "@wave/i18n": "workspace:*",
     "@wave/proto": "workspace:*",
     "arctic": "^3.7.0",
     "drizzle-orm": "^0.45.3",

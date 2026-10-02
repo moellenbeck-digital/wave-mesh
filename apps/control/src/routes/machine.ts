@@ -10,12 +10,14 @@ import type { SessionUser } from "../auth/session.ts";
 import type { Database } from "../db/client.ts";
 import { authRequests, nodes, waveMembers, waveServices, waves } from "../db/schema.ts";
 import type { Config } from "../env.ts";
+import { localeOf } from "../i18n.ts";
 import { newId } from "../ids.ts";
 import { allocateIpv4, ipv6ForIpv4, uniqueHostname } from "../net/addressing.ts";
 import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
 import { claimAuthKey } from "../waves/auth-keys.ts";
 import { type NetmapHub, publishEndpoints } from "./control-ws.ts";
 import { authenticateMachine } from "./machine-auth.ts";
+import { pageMessages } from "./messages.ts";
 
 const AUTH_REQUEST_TTL_MS = 15 * 60 * 1000;
 const NODE_KEY_TTL_MS = 180 * 24 * 60 * 60 * 1000;
@@ -244,7 +246,8 @@ export function machineRoutes({ db, config, signingKey, hub, nonces }: MachineRo
     const request = await loadPendingRequest(db, requestId);
     if (!request) {
       if (config.webUrl) return c.redirect("/devices/expired");
-      return c.html(html`<h1>Device request expired</h1><p>Run <code>wave up</code> again.</p>`, 410);
+      const m = pageMessages(localeOf(c));
+      return c.html(html`<h1>${m.requestExpired}</h1><p>${raw(m.runUpAgainHtml)}</p>`, 410);
     }
 
     const candidates = await waveCandidates(db, user.id);
@@ -288,9 +291,10 @@ export function machineRoutes({ db, config, signingKey, hub, nonces }: MachineRo
     }
     // The only success page there is, now that the GET above just asks. It
     // names the address because that is what the person goes on to use.
-    return c.html(html`<h1>${request.hostname} is connected</h1>
-      <p>It joined <strong>${approved.waveName}</strong> as <code>${approved.ipv4}</code>.</p>
-      <p>You can close this tab — the command line has taken over.</p>`);
+    const m = pageMessages(localeOf(c));
+    return c.html(html`<h1>${m.connected(request.hostname)}</h1>
+      <p>${raw(m.joinedAsHtml(approved.waveName, approved.ipv4))}</p>
+      <p>${m.closeTab}</p>`);
   });
 
   /**
@@ -334,10 +338,11 @@ export function machineRoutes({ db, config, signingKey, hub, nonces }: MachineRo
     if (config.webUrl) {
       return c.redirect(`/devices/choose?request=${encodeURIComponent(request.id)}`, 303);
     }
+    const m = pageMessages(localeOf(c));
     const only = candidates.length === 1 ? candidates[0] : undefined;
     const body = only
       ? html`<input type="hidden" name="wave" value="${only.id}" />
-          <p>It will get an address in <strong>${only.name}</strong> and appear to every device in it.</p>`
+          <p>${raw(m.willJoinHtml(only.name))}</p>`
       : html`${candidates.map(
           (wave, index) => html`<label>
             <input type="radio" name="wave" value="${wave.id}" ${index === 0 ? raw("checked") : ""} />
@@ -345,13 +350,13 @@ export function machineRoutes({ db, config, signingKey, hub, nonces }: MachineRo
           </label><br />`,
         )}`;
     const title = only
-      ? html`<h1>Add ${request.hostname} to your wave?</h1>`
-      : html`<h1>Which wave should ${request.hostname} join?</h1>`;
+      ? html`<h1>${m.addToWave(request.hostname)}</h1>`
+      : html`<h1>${m.whichWave(request.hostname)}</h1>`;
     return c.html(html`${title}
       <form method="post" action="/machine/authorize">
         <input type="hidden" name="request" value="${request.id}" />
         ${body}
-        <button type="submit">Add device</button>
+        <button type="submit">${m.addDevice}</button>
       </form>`);
   }
 

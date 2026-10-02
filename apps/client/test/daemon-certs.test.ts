@@ -3,6 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateKeyPair } from "@wave/crypto";
+import { englishText } from "@wave/ipc";
 import { Daemon } from "../src/daemon.ts";
 import { loadProfiles, type Profile, saveProfiles } from "../src/state.ts";
 import { type FakeControl, fakeControl } from "./fake-control.ts";
@@ -100,7 +101,7 @@ describe("asking for one through the daemon", () => {
   test("issues it and reports where the files are", async () => {
     const { daemon, statePath } = await daemonWith([]);
     const result = await daemon.cert(undefined, ["laptop.wave.example.com"], "true");
-    if (typeof result === "string") throw new Error(result);
+    if ("code" in result) throw new Error(englishText(result));
     if ("waiting" in result) throw new Error("the fake server does not ask for a record");
 
     expect(result[0]?.name).toBe("laptop.wave.example.com");
@@ -139,12 +140,12 @@ describe("asking for one through the daemon", () => {
     // been up -- the sentence has to name its subject. It used to read
     // "no certificate for : ..." because an empty list is not a missing one.
     const result = await daemon.cert(undefined, undefined, undefined, true);
-    expect(result).toStartWith("no certificate for the wave's wildcard: ");
+    expect("code" in result && englishText(result)).toStartWith("no certificate for the wave's wildcard: ");
   });
 
   test("a wave this device is not in is named, not guessed", async () => {
     const { daemon } = await daemonWith([]);
     const result = await daemon.cert("nowhere.example", ["laptop.wave.example.com"]);
-    expect(result).toContain("not in a wave at nowhere.example");
+    expect("code" in result && englishText(result)).toContain("not in a wave at nowhere.example");
   });
 });

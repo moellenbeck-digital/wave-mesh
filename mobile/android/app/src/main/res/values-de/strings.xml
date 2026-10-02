@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same wording and form of address as the web interface: "du", and "der
+     Wave". A key missing here falls back to values/strings.xml. -->
+<resources>
+    <string name="connect">Verbinden</string>
+    <string name="disconnect">Trennen</string>
+    <string name="open_enrolment_link">Anmeldelink öffnen</string>
+    <string name="control_server_address">Adresse des Control-Servers</string>
+    <string name="log_in">Anmelden</string>
+    <string name="no_wave_yet">Dieses Gerät ist noch in keinem Wave. Anmelden ist der einzige Weg hinein — einen zweiten gibt es nicht.</string>
+    <string name="no_control_connection">keine Verbindung zum Control-Server; die Peers werden nicht mehr aktualisiert</string>
+    <string name="leave_wave">Diesen Wave verlassen</string>
+
+    <string name="path_none">kein fester Pfad</string>
+    <string name="path_relay">Relay</string>
+    <string name="path_with_rtt">%1$s · %2$d ms</string>
+
+    <string name="notification_channel">Tunnelstatus</string>
+    <string name="notification_running">der Tunnel läuft</string>
+    <string name="login_failed">Anmelden fehlgeschlagen</string>
+    <string name="logout_failed">Abmelden fehlgeschlagen</string>
+</resources>

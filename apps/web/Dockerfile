@@ -18,12 +18,16 @@ COPY apps/web/package.json apps/web/
 COPY packages/crypto/package.json packages/crypto/
 COPY packages/disco/package.json packages/disco/
 COPY packages/dns/package.json packages/dns/
+COPY packages/i18n/package.json packages/i18n/
 COPY packages/ipc/package.json packages/ipc/
 COPY packages/magicsock/package.json packages/magicsock/
 COPY packages/proto/package.json packages/proto/
 RUN bun install --frozen-lockfile --filter @wave/web
 
 FROM deps AS build
+# The one workspace package the frontend imports: how a request's language is
+# chosen, shared with the control server so both pick the same one.
+COPY packages/i18n packages/i18n
 COPY apps/web apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd apps/web && bun run build

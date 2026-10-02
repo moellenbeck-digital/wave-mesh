@@ -214,7 +214,12 @@ setzen sich daraus zusammen, statt Stile nachzubauen.
 
 ## Sprache und Ton
 
-- Die Oberfläche ist **deutsch** (`<html lang="de">`).
+- Die Oberfläche spricht **Deutsch und Englisch**, Englisch ist der Rückfall.
+  Im Browser entscheidet der Umschalter DE | EN in der Kopfzeile (Cookie
+  `wave_lang`), sonst die Sprache des Browsers; `<html lang>` folgt. CLI und
+  Tray nehmen die Systemsprache, `WAVE_LANG` setzt sie fest.
+- Im Deutschen wird **geduzt**, und es heißt **der Wave** („in deinem Wave“,
+  „einem Wave beitreten“) — auch in CLI, Tray und den Apps.
 - Kurz und konkret: sagen, was ist und was man tun kann — „In diesem Wave ist
   noch kein Gerät angemeldet.“, nicht „Keine Daten vorhanden.“
 - Fachbegriffe, die man im Terminal wiederfindet (`wave-admin`, Tags wie

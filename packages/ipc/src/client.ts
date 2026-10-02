@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
+import { englishText, notice } from "./notice.ts";
 import {
   DEFAULT_SOCKET_PATH,
   encodeMessage,
@@ -78,16 +79,16 @@ export class DaemonClient {
 
   private fail(error: Error): void {
     while (this.pending.length > 0) {
-      this.pending.shift()?.({ type: "error", message: error.message });
+      this.pending.shift()?.({ type: "error", message: error.message, notice: null });
     }
   }
 
   request(request: Request, timeoutMs = 20_000): Promise<Response> {
     return new Promise((resolve) => {
-      const timer = setTimeout(
-        () => resolve({ type: "error", message: "the daemon did not answer" }),
-        timeoutMs,
-      );
+      const timer = setTimeout(() => {
+        const said = notice("daemon-silent");
+        resolve({ type: "error", message: englishText(said), notice: said });
+      }, timeoutMs);
       this.pending.push((response) => {
         clearTimeout(timer);
         resolve(response);

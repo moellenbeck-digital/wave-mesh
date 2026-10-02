@@ -1,6 +1,9 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
+import { aclMessages } from "@/i18n/acl";
+import { rich } from "@/i18n/rich";
 import type { AclPreview, AclView } from "@/lib/control";
 import { type Draft, type Edge, kindOf, NAME_PATTERN, parsePort } from "./model";
 
@@ -12,8 +15,6 @@ const PRESETS: [string, string][] = [
   ["NFS", "tcp:2049"],
   ["DNS", "53"],
 ];
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 function Title({ children }: { children: React.ReactNode }) {
   return <h3 className="wc-section-title mb-0! pb-1.5!">{children}</h3>;
@@ -37,11 +38,12 @@ function Covered({
   view: AclView;
   preview: AclPreview | null;
 }) {
+  const t = aclMessages(useLocale());
   const covers = preview?.covers[selector];
-  if (!covers) return <Note>Wird ausgewertet …</Note>;
+  if (!covers) return <Note>{t.evaluating}</Note>;
   const devices = view.devices.filter((d) => covers.nodes.includes(d.id));
   const services = view.services.filter((s) => covers.services.includes(s.name));
-  if (devices.length === 0 && services.length === 0) return <Note>Trifft derzeit kein Gerät.</Note>;
+  if (devices.length === 0 && services.length === 0) return <Note>{t.coversNone}</Note>;
   return (
     <ul className="divide-y divide-line">
       {devices.map((d) => (
@@ -86,6 +88,7 @@ export interface PanelActions {
 }
 
 export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; actions: PanelActions }) {
+  const t = aclMessages(useLocale());
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const reverse = draft.edges.find((e) => e.src === edge.dst && e.dst === edge.src);
@@ -106,7 +109,7 @@ export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; 
     if (parts.length === 0) return;
     const bad = parts.find((p) => parsePort(p) === null);
     if (bad) {
-      setError(`„${bad}“ ist kein Port. Erlaubt: *, 22, 5000-5001, mit tcp: oder udp: davor.`);
+      setError(t.portInvalid(bad));
       return;
     }
     setError("");
@@ -116,18 +119,15 @@ export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; 
 
   return (
     <>
-      <Title>Verbindung</Title>
+      <Title>{t.connection}</Title>
       <Heading>
         {edge.src}
         <span className="px-1 text-accent">→</span>
         {edge.dst}
       </Heading>
-      <Note>
-        {edge.src} darf Verbindungen zu {edge.dst} beginnen
-        {edge.ports.length > 0 ? " — nur auf diesen Ports." : ", auf allen Ports."}
-      </Note>
+      <Note>{t.edgeNote(edge.src, edge.dst, edge.ports.length > 0)}</Note>
       <div className="grid gap-2">
-        <Title>Ports</Title>
+        <Title>{t.ports}</Title>
         <div className="flex flex-wrap gap-1.5">
           {edge.ports.length > 0 ? (
             edge.ports.map((port, index) => (
@@ -138,7 +138,7 @@ export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; 
                 {port}
                 <button
                   type="button"
-                  aria-label={`${port} entfernen`}
+                  aria-label={t.removeItem(port)}
                   className="h-5 w-5 cursor-pointer rounded-full hover:bg-[#0f6e6e26]"
                   onClick={() =>
                     actions.change((d) => {
@@ -151,22 +151,22 @@ export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; 
               </span>
             ))
           ) : (
-            <span className="wc-badge bg-[#0f27440f] text-slate">alle Ports</span>
+            <span className="wc-badge bg-[#0f27440f] text-slate">{t.allPorts}</span>
           )}
         </div>
         <form className="flex min-w-0 gap-2" onSubmit={submit} noValidate>
           <input
             id="acl-port"
             className={`wc-input min-w-0 flex-1 px-2.5! py-1.5! font-mono ${error ? "border-[#dc2626]!" : ""}`}
-            placeholder="z. B. 443 oder tcp:5000-5001"
+            placeholder={t.portPlaceholder}
             value={text}
             onChange={(event) => setText(event.target.value)}
             autoComplete="off"
             spellCheck={false}
-            aria-label="Port hinzufügen"
+            aria-label={t.addPort}
           />
           <button type="submit" className="wc-btn wc-btn-primary flex-none px-4! py-1.5!">
-            Hinzufügen
+            {t.add}
           </button>
         </form>
         {error ? <p className="text-[#dc2626] text-caption">{error}</p> : null}
@@ -183,7 +183,7 @@ export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; 
             </button>
           ))}
         </div>
-        <Note>Ohne Ports gilt die Kante für alle. Ping und Path-MTU-Discovery gehen immer.</Note>
+        <Note>{t.portsNote}</Note>
       </div>
       <div className="grid gap-2">
         {kindOf(edge.dst) === "svc" ? null : reverse ? (
@@ -192,7 +192,7 @@ export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; 
             className="wc-btn wc-btn-secondary whitespace-normal!"
             onClick={() => actions.selectEdge(reverse.id)}
           >
-            Gegenrichtung ansehen
+            {t.viewReverse}
           </button>
         ) : (
           <button
@@ -200,7 +200,7 @@ export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; 
             className="wc-btn wc-btn-secondary whitespace-normal! break-words"
             onClick={() => actions.connect(edge.dst, edge.src)}
           >
-            Auch {edge.dst} → {edge.src} erlauben
+            {t.allowReverse(edge.dst, edge.src)}
           </button>
         )}
         <button
@@ -213,19 +213,12 @@ export function EdgePanel({ edge, draft, actions }: { edge: Edge; draft: Draft; 
             actions.selectEdge(null);
           }}
         >
-          Verbindung entfernen
+          {t.removeConnection}
         </button>
       </div>
     </>
   );
 }
-
-const NODE_TEXT: Record<string, string> = {
-  user: "Alle ungetaggten Geräte dieses Mitglieds. Ein getaggtes Gerät zählt nicht mehr zu ihm, nur noch zu seinen Tags.",
-  role: "Alle ungetaggten Geräte der Mitglieder mit dieser Rolle. Wechselt jemand die Rolle, wandern seine Geräte mit.",
-  any: "Jedes Gerät im Wave, getaggt oder nicht — und als Ziel auch jeder Dienst. Neue Geräte gehören sofort dazu.",
-  svc: "Gemeldet von einem Connector. Ein Dienst ist nur Ziel einer Regel.",
-};
 
 export function NodePanel({
   id,
@@ -238,31 +231,28 @@ export function NodePanel({
   view: AclView;
   preview: AclPreview | null;
 }) {
+  const t = aclMessages(useLocale());
   const kind = kindOf(id);
+  const nodeText: Partial<Record<typeof kind, string>> = {
+    user: t.nodeUser,
+    role: t.nodeRole,
+    any: t.nodeAny,
+    svc: t.nodeSvc,
+  };
   const out = draft.edges.filter((e) => e.src === id).length;
   const into = draft.edges.filter((e) => e.dst === id).length;
   const known = kind !== "user" || view.members.some((m) => `user:${m.email}` === id);
   return (
     <>
-      <Title>
-        {{ user: "Mitglied", role: "Rolle", any: "Alle", svc: "Dienst", group: "Gruppe", tag: "Tag" }[kind]}
-      </Title>
+      <Title>{t.kindTitle(kind)}</Title>
       <Heading>{id}</Heading>
-      <Note>{NODE_TEXT[kind]}</Note>
-      {known ? null : (
-        <p className="wc-alert-error">
-          Diese Adresse ist kein Mitglied des Waves. Die Regel trifft niemanden.
-        </p>
-      )}
+      <Note>{nodeText[kind]}</Note>
+      {known ? null : <p className="wc-alert-error">{t.notMember}</p>}
       <div className="grid gap-2">
-        <Title>{kind === "svc" ? "Adresse" : "Trifft"}</Title>
+        <Title>{kind === "svc" ? t.address : t.covers}</Title>
         <Covered selector={id} view={view} preview={preview} />
       </div>
-      {draft.policy ? (
-        <Note>
-          {out} ausgehende, {plural(into, "eingehende Verbindung", "eingehende Verbindungen")}.
-        </Note>
-      ) : null}
+      {draft.policy ? <Note>{t.edgeCounts(out, into)}</Note> : null}
     </>
   );
 }
@@ -288,6 +278,7 @@ export function GroupPanel({
   preview: AclPreview | null;
   actions: PanelActions;
 }) {
+  const t = aclMessages(useLocale());
   const members = draft.groups[id] ?? [];
   const free = view.members.filter((m) => !members.includes(m.email));
   const [pick, setPick] = useState("");
@@ -296,13 +287,11 @@ export function GroupPanel({
 
   return (
     <>
-      <Title>Gruppe</Title>
+      <Title>{t.kindTitle("group")}</Title>
       <Heading>{id}</Heading>
-      <Note>
-        Eine Gruppe fasst Mitglieder zusammen. Sie trifft deren ungetaggte Geräte, wie user: es täte.
-      </Note>
+      <Note>{t.groupNote}</Note>
       <div className="grid gap-2">
-        <Title>Mitglieder</Title>
+        <Title>{t.members}</Title>
         {members.length > 0 ? (
           <ul className="divide-y divide-line">
             {members.map((email) => (
@@ -313,11 +302,11 @@ export function GroupPanel({
                 <span className="min-w-0 break-words">
                   {email}
                   {view.members.some((m) => m.email === email) ? null : (
-                    <span className="ml-1 text-[#dc2626] text-caption">kein Mitglied</span>
+                    <span className="ml-1 text-[#dc2626] text-caption">{t.notAMember}</span>
                   )}
                 </span>
                 <RemoveButton
-                  label={`${email} entfernen`}
+                  label={t.removeItem(email)}
                   onClick={() =>
                     actions.change((d) => {
                       d.groups[id] = (d.groups[id] ?? []).filter((m) => m !== email);
@@ -328,7 +317,7 @@ export function GroupPanel({
             ))}
           </ul>
         ) : (
-          <Note>Noch leer. Eine leere Gruppe trifft niemanden.</Note>
+          <Note>{t.groupEmpty}</Note>
         )}
         <form
           className="flex min-w-0 gap-2"
@@ -342,7 +331,7 @@ export function GroupPanel({
         >
           <select
             id="acl-group-member"
-            aria-label="Mitglied wählen"
+            aria-label={t.chooseMember}
             className="wc-input min-w-0 flex-1 truncate px-2.5! py-1.5!"
             value={chosen}
             onChange={(event) => setPick(event.target.value)}
@@ -354,18 +343,16 @@ export function GroupPanel({
             ))}
           </select>
           <button type="submit" className="wc-btn wc-btn-primary flex-none px-4! py-1.5!" disabled={!chosen}>
-            Hinzufügen
+            {t.add}
           </button>
         </form>
-        <Note>Einzelne Geräte bündelt ein Tag, keine Gruppe.</Note>
+        <Note>{t.groupDevicesNote}</Note>
       </div>
       <div className="grid gap-2">
-        <Title>Trifft</Title>
+        <Title>{t.covers}</Title>
         <Covered selector={id} view={view} preview={preview} />
       </div>
-      {draft.policy ? null : (
-        <Note>Eine Gruppe ist Teil der Policy. Solange es keine gibt, wird sie nicht gespeichert.</Note>
-      )}
+      {draft.policy ? null : <Note>{t.groupNoPolicy}</Note>}
       <button
         type="button"
         className={dangerButton}
@@ -374,7 +361,7 @@ export function GroupPanel({
           actions.selectNode(null);
         }}
       >
-        Gruppe löschen{usedIn > 0 ? ` (mit ${plural(usedIn, "Verbindung", "Verbindungen")})` : ""}
+        {t.deleteGroup(usedIn)}
       </button>
     </>
   );
@@ -391,6 +378,7 @@ export function TagPanel({
   view: AclView;
   actions: PanelActions;
 }) {
+  const t = aclMessages(useLocale());
   const wearing = view.devices.filter((d) => (draft.tags[d.id] ?? []).includes(id));
   const free = view.devices.filter((d) => !(draft.tags[d.id] ?? []).includes(id));
   const [pick, setPick] = useState("");
@@ -399,19 +387,24 @@ export function TagPanel({
   // What a device counts as right now: its owner while untagged, else its other tags.
   const countsAs = (deviceId: string, email: string | null) => {
     const others = (draft.tags[deviceId] ?? []).filter((t) => t !== id);
-    return others.length > 0 ? others.join(", ") : (email ?? "ohne Besitzer");
+    return others.length > 0 ? others.join(", ") : (email ?? t.noOwner);
   };
 
   return (
     <>
-      <Title>Tag</Title>
+      <Title>{t.kindTitle("tag")}</Title>
       <Heading>{id}</Heading>
       <Note>
-        Ein getaggtes Gerät ist für die Policy nur noch seine Tags: <code>user:</code>, <code>group:</code>{" "}
-        und <code>role:</code> treffen es nicht mehr, nur <code>tag:</code> und <code>*</code>.
+        {rich(t.tagNote, {
+          user: <code>user:</code>,
+          group: <code>group:</code>,
+          role: <code>role:</code>,
+          tag: <code>tag:</code>,
+          any: <code>*</code>,
+        })}
       </Note>
       <div className="grid gap-2">
-        <Title>Geräte</Title>
+        <Title>{t.devices}</Title>
         {wearing.length > 0 ? (
           <ul className="divide-y divide-line">
             {wearing.map((d) => (
@@ -423,7 +416,7 @@ export function TagPanel({
                   {d.hostname} <code className="text-caption text-slate">{d.ipv4}</code>
                 </span>
                 <RemoveButton
-                  label={`${d.hostname} entfernen`}
+                  label={t.removeItem(d.hostname)}
                   onClick={() =>
                     actions.change((draft) => {
                       draft.tags[d.id] = (draft.tags[d.id] ?? []).filter((t) => t !== id);
@@ -436,7 +429,7 @@ export function TagPanel({
             ))}
           </ul>
         ) : (
-          <Note>Noch leer. Ein Tag ohne Geräte trifft niemanden.</Note>
+          <Note>{t.tagEmpty}</Note>
         )}
         <form
           className="flex min-w-0 gap-2"
@@ -450,7 +443,7 @@ export function TagPanel({
         >
           <select
             id="acl-tag-device"
-            aria-label="Gerät wählen"
+            aria-label={t.chooseDevice}
             className="wc-input min-w-0 flex-1 truncate px-2.5! py-1.5!"
             value={chosen}
             onChange={(event) => setPick(event.target.value)}
@@ -462,14 +455,12 @@ export function TagPanel({
             ))}
           </select>
           <button type="submit" className="wc-btn wc-btn-primary flex-none px-4! py-1.5!" disabled={!chosen}>
-            Hinzufügen
+            {t.add}
           </button>
         </form>
-        <Note>Hinter jedem Gerät steht, wozu es jetzt zählt: seinem Besitzer oder seinen anderen Tags.</Note>
+        <Note>{t.tagCountsNote}</Note>
       </div>
-      {wearing.length === 0 && usedIn === 0 ? (
-        <Note>Ein Tag, den kein Gerät trägt und keine Regel nennt, wird nicht gespeichert.</Note>
-      ) : null}
+      {wearing.length === 0 && usedIn === 0 ? <Note>{t.tagUnsaved}</Note> : null}
       <button
         type="button"
         className={dangerButton}
@@ -478,7 +469,7 @@ export function TagPanel({
           actions.selectNode(null);
         }}
       >
-        Tag löschen{usedIn > 0 ? ` (mit ${plural(usedIn, "Verbindung", "Verbindungen")})` : ""}
+        {t.deleteTag(usedIn)}
       </button>
     </>
   );
@@ -493,6 +484,7 @@ export function CreatePanel({
   exists: (id: string) => boolean;
   actions: PanelActions;
 }) {
+  const t = aclMessages(useLocale());
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const prefix = kind === "tag" ? "tag:" : "group:";
@@ -502,11 +494,11 @@ export function CreatePanel({
     const clean = name.trim().toLowerCase();
     const id = prefix + clean;
     if (!NAME_PATTERN.test(clean)) {
-      setError("Kleinbuchstaben, Ziffern und -, am Anfang kein -, höchstens 63 Zeichen.");
+      setError(t.nameRule);
       return;
     }
     if (exists(id)) {
-      setError(`${id} gibt es schon.`);
+      setError(t.exists(id));
       return;
     }
     actions.change((d) => {
@@ -518,16 +510,12 @@ export function CreatePanel({
 
   return (
     <>
-      <Title>{kind === "tag" ? "Neuer Tag" : "Neue Gruppe"}</Title>
-      <Heading>{kind === "tag" ? "Tag hinzufügen" : "Gruppe hinzufügen"}</Heading>
-      <Note>
-        {kind === "tag"
-          ? "Ein Tag fasst Geräte zusammen, unabhängig davon, wem sie gehören. Geräte kommen im nächsten Schritt dazu."
-          : "Eine Gruppe fasst Mitglieder zusammen, damit eine Regel sie alle auf einmal meint. Mitglieder kommen im nächsten Schritt dazu."}
-      </Note>
+      <Title>{kind === "tag" ? t.newTag : t.newGroup}</Title>
+      <Heading>{kind === "tag" ? t.addTag : t.addGroup}</Heading>
+      <Note>{kind === "tag" ? t.createTagNote : t.createGroupNote}</Note>
       <form className="grid gap-2" onSubmit={submit} noValidate>
         <label htmlFor="acl-create-name" className="wc-label mb-0!">
-          Name
+          {t.name}
         </label>
         <div className="flex min-w-0 gap-2">
           <div
@@ -541,7 +529,7 @@ export function CreatePanel({
               className="w-full min-w-0 flex-1 px-1.5 py-1.5 font-mono text-body-sm outline-none"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder={kind === "tag" ? "drucker" : "familie"}
+              placeholder={kind === "tag" ? t.tagPlaceholder : t.groupPlaceholder}
               autoComplete="off"
               spellCheck={false}
               // biome-ignore lint/a11y/noAutofocus: the panel opens for exactly this field
@@ -549,38 +537,34 @@ export function CreatePanel({
             />
           </div>
           <button type="submit" className="wc-btn wc-btn-primary flex-none px-4! py-1.5!">
-            Anlegen
+            {t.create}
           </button>
         </div>
         {error ? <p className="text-[#dc2626] text-caption">{error}</p> : null}
       </form>
       <button type="button" className="wc-btn wc-btn-secondary" onClick={actions.cancelCreate}>
-        Abbrechen
+        {t.cancel}
       </button>
     </>
   );
 }
 
 export function HelpPanel() {
+  const t = aclMessages(useLocale());
   return (
     <>
-      <Title>So geht's</Title>
+      <Title>{t.howTo}</Title>
       <ol className="grid list-decimal gap-2 pl-5 text-body-sm text-navy marker:font-semibold marker:text-accent">
-        <li>
-          Vom <span className="text-accent">●</span> an einer Karte auf eine andere ziehen. Auf dem Telefon:
-          Punkt antippen, dann das Ziel. Der erste Pfeil schaltet die Policy ein — ab dann gilt nur noch, was
-          ein Pfeil erlaubt.
-        </li>
-        <li>Eine Kante antippen und Ports eintragen, wenn nicht alle gemeint sind.</li>
-        <li>
-          <b>Gruppe hinzufügen</b> für Mitglieder, <b>Tag hinzufügen</b> für Geräte — dann die Karte antippen
-          und füllen.
-        </li>
-        <li>Speichern. Bis dahin ändert sich nichts an den Geräten.</li>
+        <li>{rich(t.help1, { dot: <span className="text-accent">●</span> })}</li>
+        <li>{t.help2}</li>
+        <li>{rich(t.help3, { addGroup: <b>{t.addGroup}</b>, addTag: <b>{t.addTag}</b> })}</li>
+        <li>{t.help4}</li>
       </ol>
       <Note>
-        Karten lassen sich verschieben. <kbd className="font-mono">Entf</kbd> löscht die gewählte Kante,{" "}
-        <kbd className="font-mono">Esc</kbd> bricht ab.
+        {rich(t.help5, {
+          del: <kbd className="font-mono">{t.deleteKey}</kbd>,
+          esc: <kbd className="font-mono">Esc</kbd>,
+        })}
       </Note>
     </>
   );

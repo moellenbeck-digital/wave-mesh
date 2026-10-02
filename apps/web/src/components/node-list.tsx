@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useLocale } from "@/components/locale-provider";
+import { appMessages } from "@/i18n/app";
+import { rich } from "@/i18n/rich";
 import type { Node, Service, Wave } from "@/lib/control";
 import { formatDate, osName, timeAgo } from "@/lib/format";
 
@@ -90,6 +93,8 @@ function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove:
   // Zeile, nicht der Liste: ein Push ersetzt die Geräte, und ein aufgeklapptes
   // bleibt über `key={node.id}` genau dort, wo es der Mensch gelassen hat.
   const [open, setOpen] = useState(false);
+  const locale = useLocale();
+  const t = appMessages(locale);
   const hasServices = node.services.length > 0;
   const listId = `services-${node.id}`;
   const columns = mayRemove
@@ -102,17 +107,17 @@ function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove:
       <span className="truncate font-medium text-navy text-body-sm">{node.hostname}</span>
       {node.ephemeral ? (
         <span className="wc-badge" style={{ backgroundColor: "#0f27440f", color: "var(--color-slate)" }}>
-          flüchtig
+          {t.ephemeral}
         </span>
       ) : null}
       {node.approved ? null : (
         <span className="wc-badge" style={{ backgroundColor: "#dc26260f", color: "#dc2626" }}>
-          nicht freigegeben
+          {t.notApproved}
         </span>
       )}
       {hasServices ? (
         <span className="wc-badge" style={{ backgroundColor: "#0f6e6e14", color: "var(--color-accent)" }}>
-          {node.services.length} {node.services.length === 1 ? "Dienst" : "Dienste"}
+          {t.services(node.services.length)}
         </span>
       ) : null}
     </>
@@ -143,14 +148,14 @@ function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove:
           Ein Client von vor den Updates sagt seine Version nie; dann steht
           dort, dass sie unbekannt ist, statt einer geratenen. */}
       <div className="text-caption text-slate">
-        <div>{osName(node.os)}</div>
+        <div>{osName(node.os, locale)}</div>
         <div
           className="font-mono"
-          title={node.updateChannel ? `Update-Kanal: ${node.updateChannel}` : undefined}
+          title={node.updateChannel ? t.updateChannel(node.updateChannel) : undefined}
         >
           {node.clientVersion
             ? `v${node.clientVersion}${node.updateChannel ? ` · ${node.updateChannel}` : ""}`
-            : "Version unbekannt"}
+            : t.versionUnknown}
         </div>
       </div>
 
@@ -166,17 +171,17 @@ function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove:
           Unterschied also nicht. */}
       <div
         className="text-caption text-slate md:text-right"
-        title={formatDate(node.lastSeenAt)}
+        title={formatDate(node.lastSeenAt, locale)}
         suppressHydrationWarning
       >
-        {node.online ? "verbunden" : timeAgo(node.lastSeenAt)}
+        {node.online ? t.online : timeAgo(node.lastSeenAt, locale)}
       </div>
 
       {mayRemove ? (
         <div className="md:text-right">
           <form method="post" action={`/waves/${wave.id}/nodes/${node.id}/remove`}>
             <button type="submit" className="wc-btn wc-btn-secondary">
-              Entfernen
+              {t.remove}
             </button>
           </form>
         </div>
@@ -188,15 +193,16 @@ function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove:
 }
 
 export function NodeList({ nodes, wave, mayRemove }: { nodes: Node[]; wave: Wave; mayRemove: boolean }) {
+  const t = appMessages(useLocale());
   if (nodes.length === 0) {
     return (
       <div className="py-6 text-center">
-        <p className="text-body-sm text-slate">In diesem Wave ist noch kein Gerät angemeldet.</p>
+        <p className="text-body-sm text-slate">{t.noDevices}</p>
         <pre
           className="mx-auto mt-4 inline-block rounded-lg px-4 py-2.5 text-caption text-navy"
           style={{ backgroundColor: "#0f27440a" }}
         >
-          wave up
+          wave login &lt;control-server-url&gt;
         </pre>
       </div>
     );
@@ -212,8 +218,7 @@ export function NodeList({ nodes, wave, mayRemove }: { nodes: Node[]; wave: Wave
 
       {mayRemove ? (
         <p className="mt-3 text-caption text-slate">
-          Ein entferntes Gerät verliert den Zugang sofort — für die anderen ist es aus der Netzkarte, und es
-          selbst muss mit <code>wave login</code> neu freigegeben werden.
+          {rich(t.removeDeviceHint, { command: <code>wave login</code> })}
         </p>
       ) : null}
     </>

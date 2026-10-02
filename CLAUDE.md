@@ -67,6 +67,7 @@ User-Namespace neu und legen dort Netns, veth, NAT und TUN an. Voraussetzungen:
 | `packages/disco` | authentifizierte Discovery-Pakete (X25519 + XChaCha20-Poly1305) |
 | `packages/magicsock` | UDP-Multiplexer vor WireGuard, STUN-Client, Relay-Client |
 | `packages/dns` | DNS-Codec und Split-DNS-Resolver |
+| `packages/i18n` | welche Sprache jemand liest: Cookie, `Accept-Language`, Systemsprache, Rückfall Englisch |
 | `apps/tray` | Tray-Icon: Linux über D-Bus, macOS über `bun:ffi` und Cocoa |
 | `apps/connector` | Cluster-Seite von D11: leitet die Dienstadressen des Waves an den internen Ingress-Controller weiter |
 | `apps/operator` | liest `Ingress`/`HTTPRoute` der Klasse `wave` und meldet die Namen dem Control-Server |
@@ -118,6 +119,60 @@ dieselben `wc-*`-Komponenten. Eigen ist nur der Akzent — dort Gold, hier Petro
 hinzufügt, das keine Seite trägt, lässt es besser weg. Farben, Typografie,
 Komponenten und Regeln für Web und Tray sind in `DESIGN.md` zusammengefasst —
 wer dort oder an den Tokens etwas ändert, zieht das andere nach.
+
+## Sprachen
+
+Alles, was ein Mensch liest, gibt es auf **Deutsch und Englisch** — Web,
+die eigenen Seiten des Control-Servers, CLI, Tray, `wave-admin` und die beiden
+Apps. **Englisch ist der Rückfall**, für jede Sprache, die keine von beiden ist,
+und für `LANG=C` auf einem Server. Im Deutschen wird geduzt, und es heißt
+*der* Wave.
+
+Wer welche Sprache bekommt, steht an genau einer Stelle, in `@wave/i18n`
+(`packages/i18n`), und sonst nirgends:
+
+- **Im Browser** gilt das Cookie `wave_lang` (der Umschalter DE | EN in der
+  Kopfzeile), dann `Accept-Language`, dann Englisch — `requestLocale()`. Web
+  und Control-Server fragen beide diese Funktion, denn sie liefern Seiten unter
+  derselben Herkunft aus; zwei Regeln hießen zwei Sprachen auf einem Bildschirm.
+- **Auf der Maschine** gilt `WAVE_LANG`, dann `LANGUAGE`/`LC_ALL`/
+  `LC_MESSAGES`/`LANG`, dann die Einstellung von macOS bzw. Windows —
+  `systemLocale()` in `@wave/i18n/system`. Ein Tray, das launchd oder der
+  Aufgabenplaner startet, hat kein `LANG`; dort ist die Systemeinstellung die
+  einzige Quelle.
+
+Die Texte selbst liegen beim jeweiligen Programm, als Katalog
+`const en = {…}` und `const de: typeof en = {…}` — ein fehlender oder
+überzähliger Schlüssel im Deutschen ist damit ein Typfehler, kein leeres
+Etikett. Keine Bibliothek: der Client wird mit `bun build --compile` gebaut,
+und genau dort zerlegen sich Abhängigkeiten still (siehe Tray).
+
+Was daran festliegt:
+
+- **Logs bleiben englisch**, überall: Journal, Daemon-Log, die `recent`-Zeilen
+  in `wave status`, die Logs des Control-Servers. Sie werden gesucht, in Issues
+  kopiert und von den E2E-Skripten gegrept; eine Zeile, die sich mit der
+  Sprache dessen ändert, der den Dienst gestartet hat, taugt für nichts davon.
+  Das Maschinenprotokoll (`/v1/*`, die Control-WebSocket) bleibt es ebenso.
+- **Der Daemon kennt keine Sprache.** Er läuft als root ohne das `LANG` von
+  irgendwem, und systemd gibt Diensten das aus `/etc/locale.conf` mit — deshalb
+  setzt `cli.ts` für `wave daemon` ausdrücklich keine. Was er einem Menschen
+  sagt, schickt er als **Code mit Parametern** (`notice` in `@wave/ipc`,
+  `notice.ts`), CLI und Tray sagen es in ihrer Sprache. Daneben steht immer der
+  englische Satz in `message`: ein älterer Client liest nur den, und das
+  Journal bekommt dieselben Worte. Ein Grund, der aus Netz oder Dateisystem
+  kommt, bleibt, wie er kam — ihn zu übersetzen hieße raten.
+- **Gemeinsame Wörter liegen einmal in `@wave/ipc`** (`words.ts`): wie ein Peer
+  erreicht wird und „wartet auf Freigabe im Browser“. CLI, Tray-Menü und
+  Tray-Fenster sagten sie vorher dreimal.
+- **Tests sehen Englisch.** Kein Test setzt eine Sprache, also gilt der
+  Rückfall, und die englischen Zusicherungen bleiben, wie sie sind. Die
+  E2E-Skripte setzen `WAVE_LANG=en` in `lib.sh`, weil sie an einer Stelle
+  CLI-Ausgabe lesen.
+- **Die Apps nehmen die Sprache des Telefons**, über String Catalog (iOS) und
+  `values-de/strings.xml` (Android); einen Umschalter gibt es dort nicht.
+  Ungeprüft wie alles Mobile: die Schlüssel interpolierter Strings unter iOS
+  müssen in Xcode einmal nachgesehen werden (`mobile/README.md`).
 
 ## Die Geräteliste lebt
 

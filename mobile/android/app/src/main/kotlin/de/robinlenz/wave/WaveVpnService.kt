@@ -186,11 +186,11 @@ class WaveVpnService : VpnService(), Callbacks {
     private fun startInForeground() {
         val manager = getSystemService(NotificationManager::class.java)
         manager?.createNotificationChannel(
-            NotificationChannel(CHANNEL, "wave", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW)
         )
         val notification: Notification = Notification.Builder(this, CHANNEL)
-            .setContentTitle("wave")
-            .setContentText("the tunnel is running")
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.notification_running))
             .setSmallIcon(android.R.drawable.stat_sys_vpn_ic)
             .build()
         startForeground(NOTIFICATION_ID, notification)
@@ -225,14 +225,14 @@ class WaveVpnService : VpnService(), Callbacks {
             // Blocks until somebody approves the device in a browser, so it
             // never runs on the thread that asked.
             runCatching { core?.login(controlURL, "") }
-                .onFailure { onFailure(it.message ?: "login failed") }
+                .onFailure { onFailure(it.message ?: getString(R.string.login_failed)) }
         }
     }
 
     fun logout(controlURL: String, onFailure: (String) -> Unit) {
         scope.launch {
             runCatching { core?.logout(controlURL) }
-                .onFailure { onFailure(it.message ?: "logout failed") }
+                .onFailure { onFailure(it.message ?: getString(R.string.logout_failed)) }
         }
     }
 

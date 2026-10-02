@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import { appMessages } from "@/i18n/app";
 import { fetchDeviceRequest } from "@/lib/control";
 import { osName } from "@/lib/format";
+import { getLocale } from "@/lib/i18n";
 
 /**
  * Wohin `/machine/authorize` führt — immer, nicht nur bei mehreren Waves.
@@ -23,19 +25,18 @@ export default async function ChooseWavePage({
   if (!pending) redirect("/devices/expired");
 
   const { request, waves } = pending;
+  const locale = await getLocale();
+  const t = appMessages(locale);
   const only = waves.length === 1 ? waves[0] : undefined;
 
   return (
     <div className="mx-auto max-w-md">
       <div className="mb-10 text-center">
         <h1 className="animate-fade-in font-display text-display-sm text-navy">
-          {only ? `${request.hostname} aufnehmen?` : `In welchen Wave soll ${request.hostname}?`}
+          {only ? t.chooseOne(request.hostname) : t.chooseMany(request.hostname)}
         </h1>
         <p className="animate-fade-in mt-2 text-body-sm text-slate" style={{ animationDelay: "0.1s" }}>
-          {osName(request.os)} ·{" "}
-          {only
-            ? "Es bekommt eine Adresse im Wave und ist danach für jedes Gerät darin sichtbar."
-            : "Ein Gerät gehört zu genau einem Wave. Für einen zweiten meldet es sich dort noch einmal an."}
+          {osName(request.os, locale)} · {only ? t.chooseOneText : t.chooseManyText}
         </p>
       </div>
 
@@ -74,7 +75,7 @@ export default async function ChooseWavePage({
           )}
 
           <button type="submit" className="wc-btn wc-btn-primary mt-3 w-full">
-            Gerät hinzufügen
+            {t.addDevice}
           </button>
         </form>
       </section>

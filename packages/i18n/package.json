@@ -1,0 +1,10 @@
+{
+  "name": "@wave/i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./system": "./src/system.ts"
+  }
+}

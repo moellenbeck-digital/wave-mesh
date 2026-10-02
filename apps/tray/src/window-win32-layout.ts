@@ -1,4 +1,5 @@
-import type { WindowView } from "./window-view.ts";
+import type { WindowLabels } from "./messages.ts";
+import { labelsOf, type WindowView } from "./window-view.ts";
 
 /**
  * The Windows card, worked out as geometry before a single GDI call.
@@ -183,6 +184,7 @@ export function windowLayout(
   const chrome: Paint[] = [];
   const list: Paint[] = [];
   const hits: Hit[] = [];
+  const labels = labelsOf(view);
 
   const expanded = options.expanded ?? new Set<string>();
   const rows = listRowsOf(view, expanded);
@@ -224,14 +226,14 @@ export function windowLayout(
   );
   y += SUBTITLE_HEIGHT;
 
-  y = sectionBreak(chrome, y, "CONNECTIONS");
+  y = sectionBreak(chrome, y, labels.connections);
   view.connections.forEach((row, index) => {
     const top = y + index * (ROW_HEIGHT + ROW_GAP);
     connectionRow(chrome, hits, row, top);
   });
   y += rowsHeight(view.connections.length);
 
-  y = sectionBreak(chrome, y, "MACHINES");
+  y = sectionBreak(chrome, y, labels.machines);
   const clip = { x: PAD, y, w: CONTENT_WIDTH, h: listHeight };
 
   if (view.machines.length === 0) {
@@ -253,7 +255,7 @@ export function windowLayout(
     // list short on a wave with many machines.
     if (top + entry.height < y || top > y + listHeight) continue;
     if (entry.kind === "machine") {
-      machineRow(list, hits, entry.row, top, clip, view.labelMachines, expanded.has(entry.row.key));
+      machineRow(list, hits, entry.row, top, clip, view.labelMachines, expanded.has(entry.row.key), labels);
     } else serviceRow(list, hits, entry.service, top, clip);
   }
 
@@ -331,6 +333,7 @@ function machineRow(
   clip: Rect,
   labelled: boolean,
   expanded: boolean,
+  labels: WindowLabels,
 ): void {
   const hasServices = row.services.length > 0;
   // The triangle takes its width out of the text's, so every row's name still
@@ -359,7 +362,7 @@ function machineRow(
     text(
       { x: PAD + ROW_INSET, y: top + 25, w: textWidth, h: 16 },
       hasServices
-        ? `${row.address} · ${row.services.length} ${row.services.length === 1 ? "service" : "services"}`
+        ? `${row.address} · ${labels.services(row.services.length)}`
         : `${row.address} · ${row.dnsName}`,
       "detail",
       PALETTE.muted,

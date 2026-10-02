@@ -1,18 +1,11 @@
 "use client";
 
 import { type PointerEvent, useRef, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
+import { aclMessages } from "@/i18n/acl";
 import { type Edge, type GraphNode, NODE_H, NODE_W, VIEW_W } from "./model";
 
 type Point = { x: number; y: number };
-
-const KIND_LABEL: Record<GraphNode["kind"], string> = {
-  user: "BENUTZER",
-  group: "GRUPPE",
-  role: "ROLLE",
-  any: "ALLE",
-  tag: "TAG",
-  svc: "DIENST",
-};
 
 /** Fill and stroke per kind: what is derived (roles, `*`) is dashed, what is drawn is solid. */
 const BOX: Record<GraphNode["kind"], { fill: string; stroke: string; dash?: string }> = {
@@ -81,6 +74,7 @@ export function Graph(props: GraphProps) {
   const { nodes, positions, edges, height } = props;
   const svg = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const t = aclMessages(useLocale());
 
   function toSvg(event: PointerEvent): Point {
     const el = svg.current;
@@ -171,7 +165,7 @@ export function Graph(props: GraphProps) {
       ref={svg}
       viewBox={`0 0 ${VIEW_W} ${height}`}
       role="img"
-      aria-label="Graph der Zugriffsregeln"
+      aria-label={t.graphLabel}
       className="block h-auto w-full min-w-[680px] touch-none select-none"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -234,7 +228,7 @@ export function Graph(props: GraphProps) {
         if (!a || !b) return null;
         const { d, mid } = edgePath(a, b, has(edge.dst, edge.src));
         const selected = props.selectedEdge === edge.id;
-        const label = short(edge.ports.length > 0 ? edge.ports.join(", ") : "alle Ports", 22);
+        const label = short(edge.ports.length > 0 ? edge.ports.join(", ") : t.allPorts, 22);
         const width = label.length * 6.7 + 16;
         return (
           <g key={edge.id} data-edge={edge.id} className="cursor-pointer">
@@ -299,8 +293,8 @@ export function Graph(props: GraphProps) {
         const stroke = active || target ? "#0f6e6e" : props.isolated.has(node.id) ? "#dc262650" : box.stroke;
         const kind =
           node.kind === "user" && node.role
-            ? `${KIND_LABEL.user} · ${node.role.toUpperCase()}`
-            : KIND_LABEL[node.kind];
+            ? `${t.kindLabel("user")} · ${node.role.toUpperCase()}`
+            : t.kindLabel(node.kind);
         return (
           <g
             key={node.id}
@@ -331,7 +325,7 @@ export function Graph(props: GraphProps) {
               {kind}
             </text>
             <text x={14} y={38} fontSize={14} fontWeight={600} className="font-display" fill="#0f2744">
-              {short(node.kind === "user" ? node.id.slice(5) : node.id === "*" ? "* alle" : node.id, 22)}
+              {short(node.kind === "user" ? node.id.slice(5) : node.id === "*" ? t.anyCard : node.id, 22)}
             </text>
             <text x={14} y={54} fontSize={11.5} fill="#7c8b9a">
               {short(props.subtitles[node.id] ?? "…", 30)}

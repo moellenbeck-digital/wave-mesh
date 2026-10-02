@@ -20,6 +20,7 @@
         "@wave/crypto": "workspace:*",
         "@wave/disco": "workspace:*",
         "@wave/dns": "workspace:*",
+        "@wave/i18n": "workspace:*",
         "@wave/ipc": "workspace:*",
         "@wave/magicsock": "workspace:*",
         "@wave/proto": "workspace:*",
@@ -42,6 +43,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@wave/crypto": "workspace:*",
+        "@wave/i18n": "workspace:*",
         "@wave/proto": "workspace:*",
         "arctic": "^3.7.0",
         "drizzle-orm": "^0.45.3",
@@ -80,6 +82,7 @@
       "name": "@wave/tray",
       "version": "0.0.0",
       "dependencies": {
+        "@wave/i18n": "workspace:*",
         "@wave/ipc": "workspace:*",
         "dbus-next": "^0.10.2",
         "debug": "^4.4.0",
@@ -89,6 +92,7 @@
       "name": "@wave/web",
       "version": "0.0.0",
       "dependencies": {
+        "@wave/i18n": "workspace:*",
         "next": "^16.3.5",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
@@ -129,10 +133,15 @@
       "name": "@wave/dns",
       "version": "0.0.0",
     },
+    "packages/i18n": {
+      "name": "@wave/i18n",
+      "version": "0.0.0",
+    },
     "packages/ipc": {
       "name": "@wave/ipc",
       "version": "0.0.0",
       "dependencies": {
+        "@wave/i18n": "workspace:*",
         "zod": "^4.1.13",
       },
     },
@@ -389,6 +398,8 @@
     "@wave/disco": ["@wave/disco@workspace:packages/disco"],
 
     "@wave/dns": ["@wave/dns@workspace:packages/dns"],
+
+    "@wave/i18n": ["@wave/i18n@workspace:packages/i18n"],
 
     "@wave/ipc": ["@wave/ipc@workspace:packages/ipc"],
 

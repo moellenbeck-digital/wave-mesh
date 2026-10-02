@@ -2,7 +2,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { generateKeyPair } from "@wave/crypto";
-import { waveLabel } from "@wave/ipc";
+import { type Notice, notice, waveLabel } from "@wave/ipc";
 import { UpdateChannel } from "@wave/proto";
 import { z } from "zod";
 
@@ -245,9 +245,12 @@ export function matchProfiles(profiles: Profile[], wanted: string): Profile[] {
 }
 
 /** What to say when what was typed fits more than one wave. */
-export const describeAmbiguity = (wanted: string, found: Profile[]): string =>
-  `${wanted} fits ${found.length} waves (${found.map((p) => p.controlUrl).join(", ")}); ` +
-  "name the full address";
+export const ambiguity = (wanted: string, found: Profile[]): Notice =>
+  notice("ambiguous-wave", {
+    name: wanted,
+    count: String(found.length),
+    urls: found.map((p) => p.controlUrl).join(", "),
+  });
 
 /**
  * The lowest interface number no profile holds. Each wave needs its own

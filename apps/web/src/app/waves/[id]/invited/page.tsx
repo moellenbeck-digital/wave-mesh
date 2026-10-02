@@ -1,4 +1,7 @@
 import { headers } from "next/headers";
+import { appMessages } from "@/i18n/app";
+import { rich } from "@/i18n/rich";
+import { getLocale } from "@/lib/i18n";
 
 /**
  * Where creating an invitation lands. The link is shown here and nowhere else:
@@ -15,7 +18,8 @@ export default async function InvitedPage({
   const token = value("token");
   const email = value("email");
   const wave = value("wave");
-  const role = value("role") === "admin" ? "Administrator" : "Mitglied";
+  const t = appMessages(await getLocale());
+  const role = t.asRole(value("role") === "admin" ? "admin" : "member");
 
   // The browser talks to the control server, which proxies this page; these
   // headers are the only way to know the address it used.
@@ -27,7 +31,7 @@ export default async function InvitedPage({
   return (
     <div className="mx-auto max-w-lg">
       <h1 className="animate-fade-in font-display text-display-sm text-navy">
-        {email ? `${email} ist eingeladen` : "Einladung erstellt"}
+        {email ? t.invitedTitle(email) : t.invitedCreated}
       </h1>
 
       <section
@@ -37,13 +41,10 @@ export default async function InvitedPage({
         <div className="absolute top-0 right-0 left-0 h-1 rounded-t-lg bg-accent" />
 
         <p className="text-body-sm text-slate">
-          {wave ? (
-            <>
-              Als {role} in <strong className="font-medium text-navy">{wave}</strong>.{" "}
-            </>
-          ) : null}
-          Schicke diesen Link weiter — es wird keine E-Mail verschickt. Er gilt einmal und nur für die
-          eingeladene Adresse.
+          {wave
+            ? rich(t.invitedAs, { role, wave: <strong className="font-medium text-navy">{wave}</strong> })
+            : null}
+          {t.invitedShare}
         </p>
 
         {link ? (
@@ -55,17 +56,14 @@ export default async function InvitedPage({
           </pre>
         ) : (
           <p className="wc-alert-error mt-6" role="alert">
-            Der Link fehlt in der Adresse. Lade die Einladung noch einmal an.
+            {t.invitedNoLink}
           </p>
         )}
 
-        <p className="mt-6 text-caption text-slate">
-          Solange niemand beigetreten ist, steht die Einladung in der Personenliste und kann dort
-          zurückgezogen werden.
-        </p>
+        <p className="mt-6 text-caption text-slate">{t.invitedPending}</p>
 
         <a href="/" className="wc-btn wc-btn-primary mt-8">
-          Zur Übersicht
+          {t.toOverview}
         </a>
       </section>
     </div>

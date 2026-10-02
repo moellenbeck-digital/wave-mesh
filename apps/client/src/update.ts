@@ -2,7 +2,15 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { RELEASE_PUBLIC_KEYS, verifyRelease } from "@wave/crypto";
-import { isDevVersion, PLATFORM, type UpdateStatus, VERSION } from "@wave/ipc";
+import {
+  englishText,
+  isDevVersion,
+  type Notice,
+  notice,
+  PLATFORM,
+  type UpdateStatus,
+  VERSION,
+} from "@wave/ipc";
 import {
   archiveName,
   channelAccepts,
@@ -79,8 +87,8 @@ export function updateBlocker(options: {
   os: NodeJS.Platform;
   /** Where `wave install` puts the binary; only the tests say otherwise. */
   installedPath?: string;
-}): string | null {
-  if (!options.compiled || isDevVersion(options.version)) return "this is a development build, not a release";
+}): Notice | null {
+  if (!options.compiled || isDevVersion(options.version)) return notice("update-dev-build");
   let path = options.execPath;
   try {
     path = realpathSync(path);
@@ -88,11 +96,11 @@ export function updateBlocker(options: {
     // Keep what we were told; the comparison below then decides.
   }
   if (PACKAGE_MANAGED.some((pattern) => pattern.test(path))) {
-    return `${path} belongs to a package manager, which updates it`;
+    return notice("update-package-managed", { path });
   }
   const installed = options.installedPath ?? defaultBinaryPath(options.os);
   if (path !== installed) {
-    return `${path} is not the installed copy; only ${installed}, where \`wave install\` puts it, updates itself`;
+    return notice("update-not-installed-copy", { path, installed });
   }
   return null;
 }
@@ -311,11 +319,11 @@ export class Updater {
   private timer?: ReturnType<typeof setTimeout>;
   private scheduledAt: Date | null = null;
   private installing = false;
-  private message: string | null = null;
+  private message: Notice | null = null;
   private trial?: { pending: NonNullable<UpdateSettings["pending"]>; timer: ReturnType<typeof setTimeout> };
   /** What has been said about rejected offers, so each is logged once. */
   private readonly said = new Set<string>();
-  private readonly blocker: string | null;
+  private readonly blocker: Notice | null;
 
   private readonly version: string;
   private readonly platform: string;
@@ -509,23 +517,23 @@ export class Updater {
   }
 
   /** `wave update`: the best offer, now rather than after the delay. */
-  async installNow(): Promise<string> {
-    if (this.blocker) return `this device does not update itself: ${this.blocker}`;
-    if (this.installing) return "an update is already being installed";
+  async installNow(): Promise<Notice> {
+    if (this.blocker) return this.blocker;
+    if (this.installing) return notice("update-busy");
     const choice = this.choose();
-    if (!choice) return `${this.version} is the newest release on offer`;
+    if (!choice) return notice("update-newest", { version: this.version });
     this.unschedule();
     // Not awaited past the download: on success the process ends, and the
     // caller would never get an answer anyway.
     const failure = await this.install(choice);
-    return failure ?? `installing ${choice.signed.manifest.version}`;
+    return failure ?? notice("update-installing", { version: choice.signed.manifest.version });
   }
 
   /** Returns why it failed; on success it does not return at all. */
-  private async install(choice: Choice): Promise<string | null> {
+  private async install(choice: Choice): Promise<Notice | null> {
     const version = choice.signed.manifest.version;
     this.installing = true;
-    this.message = `installing ${version}`;
+    this.message = notice("update-installing", { version });
     const installDir = dirname(realpathSync(this.execPath));
     // Beside the binary rather than in a temp directory: a rename only works
     // within one filesystem, and the swap is nothing but renames.
@@ -571,8 +579,8 @@ export class Updater {
     } catch (error) {
       rmSync(staging, { recursive: true, force: true });
       this.installing = false;
-      this.message = `the update to ${version} failed: ${describe(error)}`;
-      this.options.log(this.message);
+      this.message = notice("update-failed", { version, reason: describe(error) });
+      this.options.log(englishText(this.message));
       return this.message;
     }
 
@@ -631,7 +639,8 @@ export class Updater {
           : this.scheduledAt
             ? "scheduled"
             : "idle",
-      message: this.blocker ?? this.message,
+      message: this.blocker || this.message ? englishText((this.blocker ?? this.message) as Notice) : null,
+      notice: this.blocker ?? this.message,
       scheduledAt: this.scheduledAt?.toISOString() ?? null,
     };
   }

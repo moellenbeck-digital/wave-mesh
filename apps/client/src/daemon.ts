@@ -6,7 +6,10 @@ import {
   type CertWaiting,
   DEFAULT_SOCKET_PATH,
   encodeMessage,
+  englishText,
   LineReader,
+  type Notice,
+  notice,
   PLATFORM,
   type ProfileStatus,
   profileStatusFromSnapshot,
@@ -21,7 +24,7 @@ import { up as bringUp, type EngineOptions, type Tunnel } from "./engine.ts";
 import { platformLink } from "./link-platform.ts";
 import { describeConflict, findConflict } from "./overlap.ts";
 import {
-  describeAmbiguity,
+  ambiguity,
   ensureProfile,
   loadProfiles,
   matchProfiles,
@@ -202,23 +205,19 @@ export class Daemon {
   }
 
   /** Without a name: every profile that asked to come up on its own. */
-  async up(name?: string): Promise<string | null> {
+  async up(name?: string): Promise<Notice | null> {
     const profiles = await this.sync();
 
     // Nothing to bring up is not a failure -- it is a device that has not
     // joined a wave yet, and `up` is not how it joins one.
     if (!name && profiles.length === 0) {
-      return this.refuse("not in any wave yet — `wave login <control-server-url>` joins one");
+      return this.refuse(notice("not-enrolled"));
     }
 
     const wanted = name ? matchProfiles(profiles, name) : profiles.filter((p) => p.autoStart);
 
     if (name && wanted.length !== 1) {
-      return this.refuse(
-        wanted.length === 0
-          ? `not in a wave at ${name}; \`wave profiles\` lists the ones there are`
-          : describeAmbiguity(name, wanted),
-      );
+      return this.refuse(wanted.length === 0 ? notice("no-such-wave", { name }) : ambiguity(name, wanted));
     }
     // Sequentially: two enrolments starting at once would race for the same
     // interface number, and the second would want a link the first just took.
@@ -231,10 +230,11 @@ export class Daemon {
    * printed "left ..." over a logout that had removed nothing, because the
    * only answer it ever got back was "ok".
    */
-  private async refuse(message: string): Promise<string> {
-    this.log(message);
+  private async refuse(refusal: Notice): Promise<Notice> {
+    // The journal in English, the caller as a code: see notice.ts.
+    this.log(englishText(refusal));
     await this.publish();
-    return message;
+    return refusal;
   }
 
   /**
@@ -320,15 +320,13 @@ export class Daemon {
     await (this.options.link ?? platformLink()).remove(tunnel.linkName).catch(() => {});
   }
 
-  async down(wanted?: string): Promise<string | null> {
+  async down(wanted?: string): Promise<Notice | null> {
     let matched: Set<string> | null = null;
     if (wanted) {
       const found = matchProfiles(await this.sync(), wanted);
       if (found.length !== 1) {
         return this.refuse(
-          found.length === 0
-            ? `not in a wave at ${wanted}; \`wave profiles\` lists the ones there are`
-            : describeAmbiguity(wanted, found),
+          found.length === 0 ? notice("no-such-wave", { name: wanted }) : ambiguity(wanted, found),
         );
       }
       matched = new Set(found.map((p) => p.controlUrl));
@@ -346,14 +344,12 @@ export class Daemon {
   }
 
   /** Leaves one wave and forgets its keys; the others are untouched. */
-  async logout(wanted: string): Promise<string | null> {
+  async logout(wanted: string): Promise<Notice | null> {
     const found = matchProfiles(await this.sync(), wanted);
     // Never a bulk operation, and never a guess: this throws keys away.
     if (found.length !== 1) {
       return this.refuse(
-        found.length === 0
-          ? `not in a wave at ${wanted}; \`wave profiles\` lists the ones there are`
-          : describeAmbiguity(wanted, found),
+        found.length === 0 ? notice("no-such-wave", { name: wanted }) : ambiguity(wanted, found),
       );
     }
 
@@ -375,9 +371,9 @@ export class Daemon {
    * attempted, so a device that gets interrupted mid-enrolment can simply be
    * told `wave up` again rather than starting over.
    */
-  async login(wanted: string, authKey?: string): Promise<string | null> {
+  async login(wanted: string, authKey?: string): Promise<Notice | null> {
     const controlUrl = normaliseControlUrl(wanted);
-    if (!controlUrl) return this.refuse(`${wanted} is not a control server address`);
+    if (!controlUrl) return this.refuse(notice("not-a-control-url", { name: wanted }));
 
     const profile = await ensureProfile(this.options.statePath, controlUrl);
     await this.sync();
@@ -398,20 +394,20 @@ export class Daemon {
     names?: string[],
     hook?: string,
     wildcard?: boolean,
-  ): Promise<CertificateStatus[] | { waiting: CertWaiting } | string> {
+  ): Promise<CertificateStatus[] | { waiting: CertWaiting } | Notice> {
     const profiles = await this.sync();
     if (profiles.length === 0) {
-      return this.refuse("not in any wave yet — `wave login <control-server-url>` joins one");
+      return this.refuse(notice("not-enrolled"));
     }
 
     const found = wanted ? matchProfiles(profiles, wanted) : profiles;
     if (found.length !== 1) {
       return this.refuse(
         found.length === 0
-          ? `not in a wave at ${wanted}; \`wave profiles\` lists the ones there are`
+          ? notice("no-such-wave", { name: wanted ?? "" })
           : wanted
-            ? describeAmbiguity(wanted, found)
-            : `this device is in ${found.length} waves; name the one the certificate is for`,
+            ? ambiguity(wanted, found)
+            : notice("cert-which-wave", { count: String(found.length) }),
       );
     }
 
@@ -438,8 +434,13 @@ export class Daemon {
       // names at all -- the suffix comes from the netmap, which is exactly what
       // a failure here may not have got to -- so an empty list is not "no name"
       // but "the wildcard", and without either it is the wave itself.
-      const asked = names?.length ? names.join(", ") : wildcard ? "the wave's wildcard" : profile.controlUrl;
-      return this.refuse(`no certificate for ${asked}: ${describe(error)}`);
+      return this.refuse(
+        notice("cert-failed", {
+          ...(names?.length ? { names: names.join(", ") } : wildcard ? { wildcard: "1" } : {}),
+          controlUrl: profile.controlUrl,
+          reason: describe(error),
+        }),
+      );
     }
   }
 
@@ -561,10 +562,11 @@ export class Daemon {
 
   private async handle(socket: Socket, client: ClientData, line: string): Promise<void> {
     const reply = (message: unknown) => socket.write(encodeMessage(message));
+    const refusal = (said: Notice) => ({ type: "error", message: englishText(said), notice: said });
 
     const parsed = Request.safeParse(JSON.parse(line));
     if (!parsed.success) {
-      reply({ type: "error", message: "unknown command" });
+      reply(refusal(notice("unknown-command")));
       return;
     }
 
@@ -581,23 +583,23 @@ export class Daemon {
       }
       case "up": {
         const refused = await this.up(parsed.data.controlUrl);
-        if (refused) reply({ type: "error", message: refused });
+        if (refused) reply(refusal(refused));
         else reply({ type: "status", status: await this.status() });
         return;
       }
       case "down": {
         const refused = await this.down(parsed.data.controlUrl);
-        reply(refused ? { type: "error", message: refused } : { type: "ok" });
+        reply(refused ? refusal(refused) : { type: "ok" });
         return;
       }
       case "logout": {
         const refused = await this.logout(parsed.data.controlUrl);
-        reply(refused ? { type: "error", message: refused } : { type: "ok" });
+        reply(refused ? refusal(refused) : { type: "ok" });
         return;
       }
       case "login": {
         const refused = await this.login(parsed.data.controlUrl, parsed.data.authKey);
-        if (refused) reply({ type: "error", message: refused });
+        if (refused) reply(refusal(refused));
         else reply({ type: "status", status: await this.status() });
         return;
       }
@@ -608,7 +610,7 @@ export class Daemon {
           parsed.data.hook,
           parsed.data.wildcard,
         );
-        if (typeof result === "string") reply({ type: "error", message: result });
+        if ("code" in result) reply(refusal(result));
         else if ("waiting" in result) reply({ type: "cert-waiting", waiting: result.waiting });
         else reply({ type: "certs", certs: result });
         return;
@@ -619,7 +621,7 @@ export class Daemon {
       case "update": {
         const updater = this.options.updater;
         if (!updater) {
-          reply({ type: "error", message: "this daemon does not update itself (it runs from source)" });
+          reply(refusal(notice("updates-from-source")));
           return;
         }
         const { channel, autoUpdate, install } = parsed.data;
@@ -631,8 +633,8 @@ export class Daemon {
         }
         // On success the process ends here and the caller hears nothing but
         // the socket closing -- which is what "restarting" looks like.
-        const message = install ? await updater.installNow() : null;
-        reply({ type: "update", update: updater.status(), message });
+        const said = install ? await updater.installNow() : null;
+        reply({ type: "update", update: updater.status(), message: said && englishText(said), notice: said });
         return;
       }
     }

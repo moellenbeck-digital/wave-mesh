@@ -4,7 +4,9 @@ import { LoginThrottle, verifyLogin } from "../auth/password.ts";
 import { createSession, setSessionCookie } from "../auth/session.ts";
 import type { Database } from "../db/client.ts";
 import type { Config } from "../env.ts";
+import { type Locale, localeOf } from "../i18n.ts";
 import { peerAddress } from "../net/peer.ts";
+import { pageMessages } from "./messages.ts";
 import { safeNext } from "./next.ts";
 
 export interface PasswordRouteDeps {
@@ -13,7 +15,8 @@ export interface PasswordRouteDeps {
   throttle?: LoginThrottle;
 }
 
-const page = (body: ReturnType<typeof html>) => html`<!doctype html>
+const page = (locale: Locale, body: ReturnType<typeof html>) => html`<!doctype html>
+  <html lang="${locale}">
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body { font: 16px system-ui, sans-serif; margin: 4rem auto; max-width: 22rem; padding: 0 1rem; }
@@ -24,17 +27,22 @@ const page = (body: ReturnType<typeof html>) => html`<!doctype html>
   </style>
   ${body}`;
 
-const loginForm = (next: string | undefined, error?: string) =>
-  page(html`<h1>Sign in</h1>
+const loginForm = (locale: Locale, next: string | undefined, error?: string) => {
+  const m = pageMessages(locale);
+  return page(
+    locale,
+    html`<h1>${m.signIn}</h1>
     <form method="post" action="/auth/password/login">
       ${next ? raw(`<input type="hidden" name="next" value="${Bun.escapeHTML(next)}" />`) : ""}
-      <label for="email">Email</label>
+      <label for="email">${m.email}</label>
       <input id="email" name="email" type="email" autocomplete="username" required autofocus />
-      <label for="password">Password</label>
+      <label for="password">${m.password}</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required />
-      <button type="submit">Sign in</button>
+      <button type="submit">${m.signIn}</button>
       ${error ? html`<p class="error">${error}</p>` : ""}
-    </form>`);
+    </form>`,
+  );
+};
 
 export function passwordRoutes({ db, config, throttle }: PasswordRouteDeps) {
   const app = new Hono();
@@ -55,7 +63,7 @@ export function passwordRoutes({ db, config, throttle }: PasswordRouteDeps) {
 
   app.get("/auth/password/login", (c) => {
     const next = safeNext(c.req.query("next"));
-    return config.webUrl ? toLoginPage(c, next) : c.html(loginForm(next));
+    return config.webUrl ? toLoginPage(c, next) : c.html(loginForm(localeOf(c), next));
   });
 
   app.post("/auth/password/login", async (c) => {
@@ -67,7 +75,7 @@ export function passwordRoutes({ db, config, throttle }: PasswordRouteDeps) {
 
     if (limiter.blocked(email, source)) {
       if (config.webUrl) return toLoginPage(c, next, "throttled");
-      return c.html(loginForm(next, "Too many attempts. Try again later."), 429);
+      return c.html(loginForm(localeOf(c), next, pageMessages(localeOf(c)).tooManyAttempts), 429);
     }
 
     const result = await verifyLogin(db, email, password);
@@ -75,7 +83,7 @@ export function passwordRoutes({ db, config, throttle }: PasswordRouteDeps) {
       limiter.fail(email, source);
       // One message for both causes: which addresses exist is not public.
       if (config.webUrl) return toLoginPage(c, next, "invalid");
-      return c.html(loginForm(next, "Wrong email or password."), 401);
+      return c.html(loginForm(localeOf(c), next, pageMessages(localeOf(c)).wrongCredentials), 401);
     }
     limiter.succeed(email, source);
 

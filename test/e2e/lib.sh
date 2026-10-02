@@ -3,6 +3,11 @@
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WG_BIN="${WAVE_WIREGUARD_GO:-$(command -v wireguard-go || echo "$HOME/go/bin/wireguard")}"
 
+# The scripts read what `wave` prints in a few places, and the CLI speaks the
+# language of the machine it runs on. Pinned, so a run on a German desktop
+# reads the same words as one in CI. Log lines are English regardless.
+export WAVE_LANG=en
+
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok()   { printf '\033[32m  ok\033[0m %s\n' "$*"; }
 fail() {

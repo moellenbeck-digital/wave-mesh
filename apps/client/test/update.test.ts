@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateKeyPair, signRelease } from "@wave/crypto";
+import { englishText } from "@wave/ipc";
 import type { SignedRelease, UpdateChannel } from "@wave/proto";
 import type { UpdateOffer } from "../src/control-socket.ts";
 import {
@@ -23,6 +24,12 @@ import {
   updateBlocker,
   updateFiles,
 } from "../src/update.ts";
+
+/** A blocker as the English sentence the journal gets. */
+const blocked = (options: Parameters<typeof updateBlocker>[0]): string | null => {
+  const said = updateBlocker(options);
+  return said && englishText(said);
+};
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -155,10 +162,10 @@ describe("who may update", () => {
       installedPath: installed,
     };
     expect(updateBlocker(base)).toBeNull();
-    expect(updateBlocker({ ...base, compiled: false })).toMatch(/development build/);
-    expect(updateBlocker({ ...base, version: "0.0.0-dev" })).toMatch(/development build/);
-    expect(updateBlocker({ ...base, execPath: join(dir, "elsewhere") })).toMatch(/not the installed copy/);
-    expect(updateBlocker({ ...base, execPath: "/usr/bin/wave" })).toMatch(/package manager/);
+    expect(blocked({ ...base, compiled: false })).toMatch(/development build/);
+    expect(blocked({ ...base, version: "0.0.0-dev" })).toMatch(/development build/);
+    expect(blocked({ ...base, execPath: join(dir, "elsewhere") })).toMatch(/not the installed copy/);
+    expect(blocked({ ...base, execPath: "/usr/bin/wave" })).toMatch(/package manager/);
   });
 });
 
@@ -444,7 +451,7 @@ describe("the updater", () => {
     const { instance, exits } = updater(env, { compiled: false });
     await instance.init();
     instance.receive(env.controlUrl, offer(env.release));
-    expect(await instance.installNow()).toMatch(/development build/);
+    expect(englishText(await instance.installNow())).toMatch(/development build/);
     expect(instance.status().state).toBe("unavailable");
     expect(exits).toEqual([]);
   });
@@ -454,7 +461,7 @@ describe("the updater", () => {
     const { instance, exits } = updater(env);
     await instance.init();
     instance.receive(env.controlUrl, offer(signed("0.2.0", { archive: Buffer.from("not this") })));
-    expect(await instance.installNow()).toMatch(/failed/);
+    expect(englishText(await instance.installNow())).toMatch(/failed/);
     expect(readFileSync(join(env.installDir, "wave"), "utf8")).toBe("wave 0.1.0");
     expect((await loadUpdateSettings(env.statePath)).pending).toBeNull();
     expect(existsSync(join(env.installDir, ".wave-update-0.2.0"))).toBe(false);

@@ -2,8 +2,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { intlTag } from "@wave/i18n";
 import type { UpdateStatus } from "@wave/ipc";
 import { BRAND_COLOUR, markPixmap } from "./icon.ts";
+import { locale, t } from "./messages.ts";
 import { icoFromPngs, pngFromPixmap } from "./png.ts";
 
 /**
@@ -40,28 +42,47 @@ export interface UpdatePrompt {
 export interface PromptText {
   title: string;
   body: string;
+  /**
+   * The two buttons, in the tray's language. Part of the text rather than
+   * constants, because osascript answers with the *name* of the button that
+   * was clicked: the label shown and the label compared have to be the same
+   * string, and carrying them together is what keeps them so. Optional for a
+   * text built by hand, which then gets the English ones.
+   */
+  install?: string;
+  later?: string;
 }
+
+// The English labels, for a text that brought none; t() says them otherwise.
+const INSTALL = "Install now";
+const LATER = "Later";
+
+/** The button labels of a text, English where it brought none. */
+const buttonsOf = (text: Pick<PromptText, "install" | "later">) => ({
+  install: text.install ?? INSTALL,
+  later: text.later ?? LATER,
+});
 
 /** What the popup says. Pure, so the wording is tested once for all three. */
 export function promptText(update: UpdateStatus, current: string, now: Date = new Date()): PromptText | null {
   if (!update.available || update.state === "installing" || update.state === "unavailable") return null;
   const when =
-    update.state === "scheduled" && update.scheduledAt
-      ? ` It installs by itself at ${formatTime(update.scheduledAt, now)}.`
-      : "";
+    update.state === "scheduled" && update.scheduledAt ? formatTime(update.scheduledAt, now) : null;
+  const words = t();
   return {
-    title: "wave update",
-    body:
-      `wave ${update.available} is available (this device runs ${current}).${when}\n\n` +
-      "Install it now? The tunnels drop for a few seconds while the service restarts.",
+    title: words.promptTitle,
+    body: words.promptBody(update.available, current, when),
+    install: words.promptInstall,
+    later: words.promptLater,
   };
 }
 
 /** A time today is just the time; anything further away gets its date. */
 function formatTime(iso: string, now: Date): string {
   const at = new Date(iso);
-  const time = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return at.toDateString() === now.toDateString() ? time : `${at.toLocaleDateString()} ${time}`;
+  const tag = intlTag(locale());
+  const time = at.toLocaleTimeString(tag, { hour: "2-digit", minute: "2-digit" });
+  return at.toDateString() === now.toDateString() ? time : `${at.toLocaleDateString(tag)} ${time}`;
 }
 
 /**
@@ -113,9 +134,6 @@ function promptIcon(): PromptIcon | null {
   return written;
 }
 
-const INSTALL = "Install now";
-const LATER = "Later";
-
 /**
  * The osascript invocation. "Later" is the cancel button, so Escape means
  * later; the dialog gives up after an hour so a forgotten one does not stand
@@ -126,16 +144,24 @@ const LATER = "Later";
  */
 export function macosDialog(icon: PromptIcon | null): string[] {
   const symbol = icon ? '(POSIX file (system attribute "WAVE_PROMPT_ICON"))' : "note";
+  // The labels come from the environment like the text: they are ours, but a
+  // translation with a quote in it would otherwise be a syntax error.
+  const later = '(system attribute "WAVE_PROMPT_LATER")';
+  const install = '(system attribute "WAVE_PROMPT_INSTALL")';
   const script =
     'display dialog (system attribute "WAVE_PROMPT_BODY") with title (system attribute "WAVE_PROMPT_TITLE") ' +
-    `buttons {"${LATER}", "${INSTALL}"} default button "${INSTALL}" cancel button "${LATER}" ` +
+    `buttons {${later}, ${install}} default button ${install} cancel button ${later} ` +
     `with icon ${symbol} giving up after 3600`;
   return ["osascript", "-e", script];
 }
 
-/** "button returned:Install now, gave up:false" -- or nothing, on Later. */
-export const parseMacosAnswer = (stdout: string): boolean =>
-  stdout.includes(`button returned:${INSTALL}`) && !stdout.includes("gave up:true");
+/**
+ * "button returned:Install now, gave up:false" -- or nothing, on Later. The
+ * name is compared with the label this dialog was shown with, so a German
+ * "Jetzt installieren" counts as the same yes.
+ */
+export const parseMacosAnswer = (stdout: string, text: Pick<PromptText, "install"> = {}): boolean =>
+  stdout.includes(`button returned:${buttonsOf(text).install}`) && !stdout.includes("gave up:true");
 
 /**
  * The PowerShell invocation: a small WinForms dialog rather than a MessageBox,
@@ -171,9 +197,11 @@ export function windowsDialog(): string[] {
     "  $f.Controls.AddRange(@($p, $l))",
     "  $y = [Math]::Max(68, 20 + $l.PreferredSize.Height) + 20",
     "  $yes = New-Object System.Windows.Forms.Button",
-    `  $yes.Text = '${INSTALL}'; $yes.DialogResult = 'Yes'; $yes.SetBounds(228, $y, 104, 28)`,
+    // Wide enough for "Jetzt installieren" in the message box font; the
+    // right edge stays where it was, next to Later.
+    "  $yes.Text = $env:WAVE_PROMPT_INSTALL; $yes.DialogResult = 'Yes'; $yes.SetBounds(196, $y, 136, 28)",
     "  $no = New-Object System.Windows.Forms.Button",
-    `  $no.Text = '${LATER}'; $no.DialogResult = 'No'; $no.SetBounds(340, $y, 84, 28)`,
+    "  $no.Text = $env:WAVE_PROMPT_LATER; $no.DialogResult = 'No'; $no.SetBounds(340, $y, 84, 28)",
     "  $f.Controls.AddRange(@($yes, $no))",
     "  $f.AcceptButton = $yes; $f.CancelButton = $no",
     "  $f.ClientSize = New-Object System.Drawing.Size(444, ($y + 48))",
@@ -192,7 +220,13 @@ export const parseWindowsAnswer = (stdout: string): boolean => stdout.trim() ===
 
 /** What a dialog process gets to read; the icon variables only when there is an icon. */
 export function promptEnv(text: PromptText, icon: PromptIcon | null): Record<string, string> {
-  const env: Record<string, string> = { WAVE_PROMPT_TITLE: text.title, WAVE_PROMPT_BODY: text.body };
+  const buttons = buttonsOf(text);
+  const env: Record<string, string> = {
+    WAVE_PROMPT_TITLE: text.title,
+    WAVE_PROMPT_BODY: text.body,
+    WAVE_PROMPT_INSTALL: buttons.install,
+    WAVE_PROMPT_LATER: buttons.later,
+  };
   if (icon) {
     env.WAVE_PROMPT_ICON = icon.png;
     env.WAVE_PROMPT_ICO = icon.ico;
@@ -204,7 +238,7 @@ export function promptEnv(text: PromptText, icon: PromptIcon | null): Record<str
 class ProcessPrompt implements UpdatePrompt {
   constructor(
     private readonly command: (icon: PromptIcon | null) => string[],
-    private readonly parse: (stdout: string) => boolean,
+    private readonly parse: (stdout: string, text: PromptText) => boolean,
   ) {}
 
   async ask(text: PromptText): Promise<boolean> {
@@ -216,7 +250,7 @@ class ProcessPrompt implements UpdatePrompt {
         env: { ...process.env, ...promptEnv(text, icon) },
       });
       const [stdout] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-      return this.parse(stdout);
+      return this.parse(stdout, text);
     } catch (error) {
       // No dialog is not an error worth more than a line: the menu has the
       // same button.
@@ -281,7 +315,9 @@ export class NotificationPrompt implements UpdatePrompt {
         icon ? pathToFileURL(icon.png).href : "system-software-update",
         text.title,
         text.body,
-        ["default", INSTALL, "install", INSTALL],
+        // The keys are identifiers the server hands back; only the labels
+        // beside them are for a person, and so in their language.
+        ["default", buttonsOf(text).install, "install", buttonsOf(text).install],
         {},
         0,
       );

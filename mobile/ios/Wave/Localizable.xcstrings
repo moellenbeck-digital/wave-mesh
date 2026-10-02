@@ -1,0 +1,161 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%@ · %lld ms": {
+      "comment": "Path of a peer: how it is reached (\"relay\" or an address) and its round-trip time.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld ms"
+          }
+        }
+      }
+    },
+    "Connect": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinden"
+          }
+        }
+      }
+    },
+    "Disconnect": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trennen"
+          }
+        }
+      }
+    },
+    "Join a wave": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einem Wave beitreten"
+          }
+        }
+      }
+    },
+    "Leave this wave": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diesen Wave verlassen"
+          }
+        }
+      }
+    },
+    "Log in": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmelden"
+          }
+        }
+      }
+    },
+    "Open the enrolment link": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmeldelink öffnen"
+          }
+        }
+      }
+    },
+    "This device is in no wave yet. `wave login` is the only way in — there is no second one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät ist noch in keinem Wave. `wave login` ist der einzige Weg hinein — einen zweiten gibt es nicht."
+          }
+        }
+      }
+    },
+    "Waiting for approval": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warte auf Freigabe"
+          }
+        }
+      }
+    },
+    "control server address": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse des Control-Servers"
+          }
+        }
+      }
+    },
+    "no control connection; peers will stop being updated": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "keine Verbindung zum Control-Server; die Peers werden nicht mehr aktualisiert"
+          }
+        }
+      }
+    },
+    "no fixed path": {
+      "comment": "No confirmed path yet; packets still flow to every known candidate.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "kein fester Pfad"
+          }
+        }
+      }
+    },
+    "relay": {
+      "comment": "A peer reached through the relay server rather than directly.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay"
+          }
+        }
+      }
+    },
+    "the tunnel interface has no descriptor; the extension cannot carry traffic": {
+      "comment": "Tunnel extension: shown by iOS when the tunnel fails to start.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "das Tunnel-Interface hat keinen Deskriptor; die Extension kann keinen Verkehr tragen"
+          }
+        }
+      }
+    },
+    "the wave core did not start": {
+      "comment": "Tunnel extension: shown by iOS when the tunnel fails to start.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "der wave-Kern ist nicht gestartet"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

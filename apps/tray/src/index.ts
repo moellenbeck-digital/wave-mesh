@@ -1,6 +1,8 @@
 import { hostname } from "node:os";
+import { systemLocale } from "@wave/i18n/system";
 import { DaemonClient, defaultSocketPath, isDevVersion, type Status, VERSION } from "@wave/ipc";
 import { createTrayBackend, type TrayBackend, UnsupportedPlatform } from "./backend.ts";
+import { setLocale, t } from "./messages.ts";
 import { createUpdatePrompt, promptText } from "./prompt.ts";
 import { actionForId, iconFor, menuFor, tooltipFor, type Unreachable } from "./view.ts";
 import { createTrayWindow, NoWindowBackend, type TrayWindow } from "./window.ts";
@@ -28,6 +30,11 @@ function openCommand(target: string): string[] {
 const open = (target: string) => Bun.spawn(openCommand(target), { stdout: "ignore", stderr: "ignore" });
 
 export async function runTray(options: TrayOptions = {}): Promise<void> {
+  // Once, before anything is worded. The tray runs as the person in their
+  // session, so its environment -- or, under launchd and the Task Scheduler,
+  // which pass no LANG, the system settings -- is their language. The daemon
+  // has none of its own and says what it means as notices (see @wave/ipc).
+  setLocale(systemLocale());
   const socketPath = options.socketPath ?? process.env.WAVE_SOCKET ?? defaultSocketPath();
 
   let status: Status | null = null;
@@ -54,7 +61,7 @@ export async function runTray(options: TrayOptions = {}): Promise<void> {
     console.error(error instanceof NoWindowBackend ? error.message : error);
     // Without a window a left click has nothing to open, so say where the rest
     // of it still is rather than leaving the icon looking dead.
-    console.error("Everything is still in the icon's menu: open it with the right button.");
+    console.error(t().menuStillThere);
     return null;
   });
 

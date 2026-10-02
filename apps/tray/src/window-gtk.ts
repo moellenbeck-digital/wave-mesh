@@ -21,8 +21,9 @@ import {
   pumpEvents,
   setClipboard,
 } from "./gtk.ts";
+import { t, type WindowLabels } from "./messages.ts";
 import type { TrayWindow, TrayWindowOptions } from "./window.ts";
-import type { WindowView } from "./window-view.ts";
+import { labelsOf, type WindowView } from "./window-view.ts";
 
 /** Long enough to feel responsive, short enough not to starve the socket. */
 const PUMP_INTERVAL_MS = 30;
@@ -75,6 +76,11 @@ export class GtkWindow implements TrayWindow {
   private window: Pointer;
   private titleLabel: Pointer;
   private subtitleLabel: Pointer;
+  /** Built once with the card, but worded by every view: the language comes with it. */
+  private connectionsHeading: Pointer;
+  private machinesHeading: Pointer;
+  /** What the rows of the view being built are worded with. */
+  private labels: WindowLabels = t().window;
   private connectionsBox: Pointer;
   private machinesBox: Pointer;
   private pump?: ReturnType<typeof setInterval>;
@@ -137,7 +143,8 @@ export class GtkWindow implements TrayWindow {
     gtk.symbols.gtk_box_append(root, gtk.symbols.gtk_separator_new(ORIENTATION.horizontal));
     gtk.symbols.gtk_box_append(root, spacer(12));
 
-    gtk.symbols.gtk_box_append(root, label("CONNECTIONS", "section"));
+    this.connectionsHeading = label("", "section");
+    gtk.symbols.gtk_box_append(root, this.connectionsHeading);
     gtk.symbols.gtk_box_append(root, spacer(6));
     this.connectionsBox = box(ORIENTATION.vertical, 2);
     gtk.symbols.gtk_box_append(root, this.connectionsBox);
@@ -146,7 +153,8 @@ export class GtkWindow implements TrayWindow {
     gtk.symbols.gtk_box_append(root, gtk.symbols.gtk_separator_new(ORIENTATION.horizontal));
     gtk.symbols.gtk_box_append(root, spacer(12));
 
-    gtk.symbols.gtk_box_append(root, label("MACHINES", "section"));
+    this.machinesHeading = label("", "section");
+    gtk.symbols.gtk_box_append(root, this.machinesHeading);
     gtk.symbols.gtk_box_append(root, spacer(6));
 
     // The machine list is the only part that can grow, so it is the only part
@@ -268,6 +276,9 @@ export class GtkWindow implements TrayWindow {
     this.applying = true;
     gtk.symbols.gtk_label_set_text(this.titleLabel, cstr(view.title));
     gtk.symbols.gtk_label_set_text(this.subtitleLabel, cstr(view.subtitle.toUpperCase()));
+    this.labels = labelsOf(view);
+    gtk.symbols.gtk_label_set_text(this.connectionsHeading, cstr(this.labels.connections));
+    gtk.symbols.gtk_label_set_text(this.machinesHeading, cstr(this.labels.machines));
 
     this.connectionRows = this.replace(this.connectionsBox, this.connectionRows, () =>
       view.connections.map((row) => this.connectionRow(row)),
@@ -339,7 +350,7 @@ export class GtkWindow implements TrayWindow {
 
     const copyText = row.dnsName;
     const detail = hasServices
-      ? `${row.address} · ${row.services.length} ${row.services.length === 1 ? "service" : "services"}`
+      ? `${row.address} · ${this.labels.services(row.services.length)}`
       : `${row.address} · ${row.dnsName}`;
     const sub = label(detail, "row-detail");
     gtk.symbols.gtk_label_set_ellipsize(sub, ELLIPSIZE_END);
@@ -369,7 +380,7 @@ export class GtkWindow implements TrayWindow {
     gtk.symbols.gtk_button_set_has_frame(copy, false);
     gtk.symbols.gtk_widget_add_css_class(copy, cstr("copy"));
     gtk.symbols.gtk_widget_set_valign(copy, ALIGN.center);
-    gtk.symbols.gtk_widget_set_tooltip_text(copy, cstr(`Copy ${copyText}`));
+    gtk.symbols.gtk_widget_set_tooltip_text(copy, cstr(this.labels.copy(copyText)));
     gtk.symbols.gtk_box_append(line, copy);
 
     callbacks.push(
@@ -389,7 +400,7 @@ export class GtkWindow implements TrayWindow {
       const button = need(gtk.symbols.gtk_button_new(), "a button");
       gtk.symbols.gtk_button_set_has_frame(button, false);
       gtk.symbols.gtk_widget_add_css_class(button, cstr("flat"));
-      gtk.symbols.gtk_widget_set_tooltip_text(button, cstr(`Open ${service.url}`));
+      gtk.symbols.gtk_widget_set_tooltip_text(button, cstr(this.labels.open(service.url)));
 
       const inner = box(ORIENTATION.vertical, 1);
       gtk.symbols.gtk_widget_add_css_class(inner, cstr("service"));

@@ -69,9 +69,14 @@ struct WaveView: View {
                     }
                 }
             }
-            .navigationTitle("wave")
+            // The product name is a name, not a word: it stays as it is in
+            // every language, so it does not go through the catalog.
+            .navigationTitle(Text(verbatim: "wave"))
             .toolbar {
-                Button(model.status.running ? "Disconnect" : "Connect") {
+                // Spelled out rather than as a ternary of literals: which
+                // initializer a ternary picks is up to the type checker, and
+                // the String one would silently skip the catalog.
+                Button(model.status.running ? LocalizedStringKey("Disconnect") : LocalizedStringKey("Connect")) {
                     model.status.running ? model.disconnect() : model.connect()
                 }
             }
@@ -98,9 +103,16 @@ private struct PeerRow: View {
     /// every packet is sprayed at all known candidates, which carries -- it is
     /// only wasteful and unmeasured. Saying "connecting" here would claim the
     /// tunnel is down while a ping over it answers in 16 ms.
+    ///
+    /// A plain `String`, so every piece goes through `String(localized:)`
+    /// explicitly -- `Text(path)` would show it verbatim.
     private var path: String {
-        if peer.via.isEmpty { return "no fixed path" }
-        if peer.rttMs > 0 { return "\(peer.via) · \(peer.rttMs) ms" }
-        return peer.via
+        if peer.via.isEmpty { return String(localized: "no fixed path") }
+        // The core says "relay" or the address of the direct path; only the
+        // word is translated, an address is the same in every language.
+        let via = peer.via == "relay" ? String(localized: "relay") : peer.via
+        // Catalog key: "%@ · %lld ms" (String becomes %@, Int becomes %lld).
+        if peer.rttMs > 0 { return String(localized: "\(via) · \(peer.rttMs) ms") }
+        return via
     }
 }

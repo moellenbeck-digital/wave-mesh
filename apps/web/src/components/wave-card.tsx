@@ -1,24 +1,24 @@
+import type { Locale } from "@wave/i18n";
 import { LiveConnectedCount, LiveDeviceCount, LiveNodeList } from "@/components/device-feed";
 import { MemberList } from "@/components/member-list";
+import { appMessages } from "@/i18n/app";
+import { rich } from "@/i18n/rich";
 import { canManage, type Membership, type Node, type Wave } from "@/lib/control";
-
-const ROLE_NAMES: Record<Wave["role"], string> = {
-  owner: "Eigentümer",
-  admin: "Administrator",
-  member: "Mitglied",
-};
 
 export function WaveCard({
   wave,
   nodes,
   membership,
   delay,
+  locale,
 }: {
   wave: Wave;
   nodes: Node[];
   membership: Membership;
   delay: number;
+  locale: Locale;
 }) {
+  const t = appMessages(locale);
   const people = membership.members.length;
 
   return (
@@ -35,15 +35,13 @@ export function WaveCard({
           <p className="mt-1 font-mono text-caption text-slate">{wave.dnsSuffix}</p>
         </div>
         <div className="flex items-center gap-3 text-caption text-slate">
-          <span>{ROLE_NAMES[wave.role]}</span>
+          <span>{t.roleName(wave.role)}</span>
           <span aria-hidden>·</span>
           {/* Die Zahlen hängen am Socket, nicht am Seitenaufruf: ein Gerät,
               das sich verbindet, ändert sie ohne Neuladen. */}
           <LiveConnectedCount wave={wave} initial={nodes} />
           <span aria-hidden>·</span>
-          <span>
-            {people} {people === 1 ? "Person" : "Personen"}
-          </span>
+          <span>{t.people(people)}</span>
         </div>
       </header>
 
@@ -53,7 +51,7 @@ export function WaveCard({
           Slug bleibt er trotzdem, weil `admin.ts` einen Wave daran erkennt. */}
       {canManage(membership.role) ? (
         <details className="mb-6 border-line border-b pb-6">
-          <summary className="cursor-pointer text-caption text-slate">Namen ändern</summary>
+          <summary className="cursor-pointer text-caption text-slate">{t.rename}</summary>
           <form
             method="post"
             action={`/waves/${wave.id}/name`}
@@ -61,7 +59,7 @@ export function WaveCard({
           >
             <div className="flex-1">
               <label className="wc-label" htmlFor={`name-${wave.id}`}>
-                Name
+                {t.name}
               </label>
               <input
                 className="wc-input"
@@ -75,13 +73,10 @@ export function WaveCard({
               />
             </div>
             <button type="submit" className="wc-btn wc-btn-secondary">
-              Übernehmen
+              {t.apply}
             </button>
           </form>
-          <p className="mt-3 text-caption text-slate">
-            Kleinbuchstaben, Ziffern und Bindestriche; Umlaute und Leerzeichen werden ersetzt. Die Geräte
-            merken davon nichts — ihre Namen hängen an der Domain, nicht am Wave-Namen.
-          </p>
+          <p className="mt-3 text-caption text-slate">{t.renameHint}</p>
         </details>
       ) : null}
 
@@ -91,7 +86,7 @@ export function WaveCard({
           beim Umzug von der Platzhalter-Domain auf eine echte. */}
       {canManage(membership.role) ? (
         <details className="mb-8 border-line border-b pb-6">
-          <summary className="cursor-pointer text-caption text-slate">Domain ändern</summary>
+          <summary className="cursor-pointer text-caption text-slate">{t.changeDomain}</summary>
           <form
             method="post"
             action={`/waves/${wave.id}/domain`}
@@ -99,7 +94,7 @@ export function WaveCard({
           >
             <div className="flex-1">
               <label className="wc-label" htmlFor={`domain-${wave.id}`}>
-                Domain
+                {t.domain}
               </label>
               <input
                 className="wc-input"
@@ -112,13 +107,13 @@ export function WaveCard({
               />
             </div>
             <button type="submit" className="wc-btn wc-btn-secondary">
-              Übernehmen
+              {t.apply}
             </button>
           </form>
           <p className="mt-3 text-caption text-slate">
-            Danach heißt jedes Gerät <code className="font-mono">&lt;name&gt;.&lt;domain&gt;</code>.
-            Verbundene Geräte übernehmen das mit der nächsten Netzkarte; ein Zertifikat gibt es nur für eine
-            Domain, die dir gehört.
+            {rich(t.domainChangeHint, {
+              pattern: <code className="font-mono">&lt;name&gt;.&lt;domain&gt;</code>,
+            })}
           </p>
         </details>
       ) : null}
@@ -129,12 +124,12 @@ export function WaveCard({
       {canManage(membership.role) ? (
         <p className="mb-6 text-caption">
           <a href={`/waves/${wave.id}/access`} className="text-accent">
-            Zugriff: wer wen erreicht →
+            {t.accessLink}
           </a>
         </p>
       ) : null}
 
-      <h3 className="wc-section-title">Geräte</h3>
+      <h3 className="wc-section-title">{t.devicesTitle}</h3>
       {/* Wer Mitglieder verwalten darf, darf auch ein einzelnes Gerät
           entfernen -- das ist der kleinere der beiden Schnitte. */}
       <LiveNodeList wave={wave} initial={nodes} mayRemove={canManage(membership.role)} />
@@ -142,8 +137,8 @@ export function WaveCard({
       {/* Alle Geräte eines Waves sehen sich gegenseitig -- wer hier steht, ist
           im Netz. Deshalb steht die Liste neben den Geräten, nicht auf einer
           eigenen Seite. */}
-      <h3 className="wc-section-title mt-8">Personen</h3>
-      <MemberList wave={wave} membership={membership} />
+      <h3 className="wc-section-title mt-8">{t.peopleTitle}</h3>
+      <MemberList wave={wave} membership={membership} locale={locale} />
 
       {/* Nur der Eigentümer, nicht jeder, der verwalten darf: ein Admin
           entfernt Leute und Geräte, und das lässt sich durch Wiederaufnehmen
@@ -152,7 +147,7 @@ export function WaveCard({
           ist einen Fehlgriff von einem Abend Neuanmelden entfernt. */}
       {wave.role === "owner" ? (
         <details className="mt-8 border-line border-t pt-6">
-          <summary className="cursor-pointer text-caption text-slate">Wave löschen</summary>
+          <summary className="cursor-pointer text-caption text-slate">{t.deleteWave}</summary>
           <form
             method="post"
             action={`/waves/${wave.id}/delete`}
@@ -160,7 +155,7 @@ export function WaveCard({
           >
             <div className="flex-1">
               <label className="wc-label" htmlFor={`delete-${wave.id}`}>
-                Zum Bestätigen <span className="font-mono">{wave.name}</span> eintippen
+                {rich(t.deleteConfirm, { name: <span className="font-mono">{wave.name}</span> })}
               </label>
               <input
                 className="wc-input"
@@ -172,14 +167,15 @@ export function WaveCard({
               />
             </div>
             <button type="submit" className="wc-btn wc-btn-secondary">
-              Endgültig löschen
+              {t.deleteForGood}
             </button>
           </form>
           <p className="mt-3 text-caption text-slate">
-            Nimmt <LiveDeviceCount wave={wave} initial={nodes} /> und {people}{" "}
-            {people === 1 ? "Person" : "Personen"} mit. Jedes Gerät verliert seine Anmeldung und muss neu
-            freigegeben werden, und <code className="font-mono">{wave.dnsSuffix}</code> ist danach wieder
-            frei. Rückgängig geht das nicht.
+            {rich(t.deleteHint, {
+              devices: <LiveDeviceCount wave={wave} initial={nodes} />,
+              people: t.people(people),
+              suffix: <code className="font-mono">{wave.dnsSuffix}</code>,
+            })}
           </p>
         </details>
       ) : null}

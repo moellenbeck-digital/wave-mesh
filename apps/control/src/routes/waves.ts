@@ -3,6 +3,7 @@ import { type Context, Hono } from "hono";
 import { html, raw } from "hono/html";
 import { describeReach, enforcementText } from "../acl/describe.ts";
 import { compilePolicy } from "../acl/evaluate.ts";
+import { aclMessages } from "../acl/messages.ts";
 import { previewPolicy } from "../acl/preview.ts";
 import { aclSubjects, getPolicy, invalidTags, removePolicy, setPolicy, setTags } from "../acl/store.ts";
 import { checkPolicy } from "../acl/validate.ts";
@@ -13,6 +14,7 @@ import { createSession, setSessionCookie } from "../auth/session.ts";
 import type { Database } from "../db/client.ts";
 import { users, waves } from "../db/schema.ts";
 import type { Config } from "../env.ts";
+import { type Locale, localeOf } from "../i18n.ts";
 import {
   acceptInvite,
   createInvite,
@@ -27,6 +29,7 @@ import { removeNode } from "../waves/nodes.ts";
 import {
   createWave,
   deleteWave,
+  InvalidInputError,
   normaliseDnsSuffix,
   normaliseWaveName,
   renameWave,
@@ -35,6 +38,7 @@ import {
   waveSetup,
 } from "../waves/provision.ts";
 import type { NetmapHub } from "./control-ws.ts";
+import { type PageMessages, pageMessages } from "./messages.ts";
 import { safeNext } from "./next.ts";
 
 /** Same floor as `admin.ts set-password`; an invite is not a weaker door. */
@@ -62,11 +66,33 @@ type Vars = { user: SessionUser | null };
 export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
   const app = new Hono<{ Variables: Vars }>();
 
-  const page = (title: string, body: string, status: 400 | 401 | 403 | 404 | 409 | 410) =>
-    new Response(`<h1>${Bun.escapeHTML(title)}</h1><p>${Bun.escapeHTML(body)}</p>`, {
-      status,
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+  /** The words of this request's language, for pages and JSON errors alike. */
+  const say = (c: Context) => pageMessages(localeOf(c));
+
+  /**
+   * A refusal as a page. Shown to browsers even with the web app in front:
+   * its forms post straight here, so this is the page a person lands on.
+   */
+  const page = (
+    c: Context,
+    words: (m: PageMessages) => [title: string, body: string],
+    status: 400 | 401 | 403 | 404 | 409 | 410,
+  ) => {
+    const locale = localeOf(c);
+    const [title, body] = words(pageMessages(locale));
+    return new Response(
+      `<!doctype html><html lang="${locale}"><h1>${Bun.escapeHTML(title)}</h1><p>${Bun.escapeHTML(body)}</p>`,
+      { status, headers: { "content-type": "text/html; charset=utf-8" } },
+    );
+  };
+
+  /** What a name or domain that cannot be stored is called, in the reader's language. */
+  const invalidText = (m: PageMessages, err: unknown): string =>
+    err instanceof InvalidInputError
+      ? m.invalidInput(err.kind, err.input)
+      : err instanceof Error
+        ? err.message
+        : m.invalid;
 
   /** The wave and the caller's standing in it, or the refusal to hand out. */
   async function authorize(
@@ -75,12 +101,12 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     need: "member" | "manage",
   ): Promise<{ user: SessionUser; role: Awaited<ReturnType<typeof roleOf>> } | Response> {
     const user = c.get("user");
-    if (!user) return c.json({ error: "unauthenticated" }, 401);
+    if (!user) return c.json({ error: say(c).apiUnauthenticated }, 401);
     const role = await roleOf(db, waveId, user.id);
     // A wave the caller is not in is indistinguishable from one that does not
     // exist -- who is a member of what is not public.
-    if (!role) return c.json({ error: "unknown wave" }, 404);
-    if (need === "manage" && !canManage(role)) return c.json({ error: "not allowed" }, 403);
+    if (!role) return c.json({ error: say(c).apiUnknownWave }, 404);
+    if (need === "manage" && !canManage(role)) return c.json({ error: say(c).apiNotAllowed }, 403);
     return { user, role };
   }
 
@@ -105,35 +131,34 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       const setup = await waveSetup(db, user.id, user.email);
       const suggestion = suggestWave(user.email ?? user.name);
       const next = safeNext(c.req.query("next"));
+      const m = say(c);
       const waiting =
         setup.state === "invited"
           ? html`<p>
-              An invitation into <strong>${setup.wave}</strong> is waiting for you. Opening that link
-              puts your devices in there — make a wave of your own only if you want a second network.
+              ${raw(m.invitationWaitingHtml(setup.wave))}
             </p>`
           : "";
 
-      return c.html(html`<h1>Create your wave</h1>
+      return c.html(html`<h1>${m.createYourWave}</h1>
         ${waiting}
         <form method="post" action="/waves">
           ${next ? raw(`<input type="hidden" name="next" value="${Bun.escapeHTML(next)}" />`) : ""}
-          <label for="name">Name</label>
+          <label for="name">${m.name}</label>
           <input id="name" name="name" value="${suggestion.name}" required />
-          <label for="suffix">Domain</label>
+          <label for="suffix">${m.domain}</label>
           <input id="suffix" name="suffix" value="${suggestion.dnsSuffix}" required />
-          <p>Devices will be called <code>&lt;host&gt;.${suggestion.dnsSuffix}</code>.</p>
+          <p>${raw(m.devicesCalledHtml(suggestion.dnsSuffix))}</p>
           <p>
-            Keep the suggestion if you have no domain of your own. A public certificate needs one you
-            own — you can change this later, which renames every device in the wave.
+            ${m.keepSuggestion}
           </p>
-          <button type="submit">Create wave</button>
+          <button type="submit">${m.createWave}</button>
         </form>`);
     });
   }
 
   app.post("/waves", async (c) => {
     const user = c.get("user");
-    if (!user) return c.json({ error: "unauthenticated" }, 401);
+    if (!user) return c.json({ error: say(c).apiUnauthenticated }, 401);
 
     const form = await c.req.formData();
     let name: string;
@@ -142,7 +167,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       name = normaliseWaveName(String(form.get("name") ?? ""));
       dnsSuffix = normaliseDnsSuffix(String(form.get("suffix") ?? ""));
     } catch (err) {
-      return page("That will not work as a name", err instanceof Error ? err.message : "Invalid.", 400);
+      return page(c, (m) => [m.notWorkingAsName, invalidText(m, err)], 400);
     }
 
     const created = await createWave(db, {
@@ -154,7 +179,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     // Two waves under one zone would answer for the same names, and a device in
     // both could not tell whose `laptop` it reached.
     if ("conflict" in created) {
-      return page("That domain is taken", `Another wave already answers for ${dnsSuffix}.`, 409);
+      return page(c, (m) => [m.domainTaken, m.domainTakenBody(dnsSuffix)], 409);
     }
 
     return c.redirect(safeNext(String(form.get("next") ?? "")) ?? "/", 303);
@@ -177,10 +202,10 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     try {
       result = await renameWave(db, waveId, String(form.get("name") ?? ""));
     } catch (err) {
-      return page("That is not a wave name", err instanceof Error ? err.message : "Invalid.", 400);
+      return page(c, (m) => [m.notAWaveName, invalidText(m, err)], 400);
     }
     // Found by id a moment ago, so neither can happen here.
-    if (!result || "ambiguous" in result) return page("Unknown wave", "Nothing to change.", 404);
+    if (!result || "ambiguous" in result) return page(c, (m) => [m.unknownWave, m.nothingToChange], 404);
 
     await audit(db, waveId, userActor(auth.user), {
       action: "wave.rename",
@@ -208,12 +233,12 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     try {
       result = await setWaveDomain(db, waveId, domain);
     } catch (err) {
-      return page("That is not a domain", err instanceof Error ? err.message : "Invalid.", 400);
+      return page(c, (m) => [m.notADomain, invalidText(m, err)], 400);
     }
     // The wave was found by id a moment ago, so neither can happen here.
-    if (!result || "ambiguous" in result) return page("Unknown wave", "Nothing to change.", 404);
+    if (!result || "ambiguous" in result) return page(c, (m) => [m.unknownWave, m.nothingToChange], 404);
     if ("conflict" in result) {
-      return page("That domain is taken", `Another wave already answers for ${domain}.`, 409);
+      return page(c, (m) => [m.domainTaken, m.domainTakenBody(domain)], 409);
     }
 
     await audit(db, waveId, userActor(auth.user), { action: "wave.domain", target: domain });
@@ -243,7 +268,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const email = normaliseEmail(String(form.get("email") ?? ""));
     const role = String(form.get("role") ?? "member") === "admin" ? "admin" : "member";
     if (!looksLikeEmail(email)) {
-      return page("That is not an email address", `Cannot invite ${email || "an empty address"}.`, 400);
+      return page(c, (m) => [m.notAnEmail, m.cannotInvite(email)], 400);
     }
 
     const rows = await db.select({ name: waves.name }).from(waves).where(eq(waves.id, waveId)).limit(1);
@@ -268,10 +293,11 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       const query = new URLSearchParams({ token: invite.token, email, role, wave: waveName });
       return c.redirect(`/waves/${encodeURIComponent(waveId)}/invited?${query}`, 303);
     }
-    return c.html(html`<h1>${email} is invited to ${waveName}</h1>
-      <p>Send them this link. It works once and expires ${invite.expiresAt.toISOString()}.</p>
+    const m = say(c);
+    return c.html(html`<h1>${m.invited(email, waveName)}</h1>
+      <p>${m.sendLink(invite.expiresAt.toISOString())}</p>
       <p><code>${invite.url}</code></p>
-      <p><a href="/">Back</a></p>`);
+      <p><a href="/">${m.back}</a></p>`);
   });
 
   app.post("/waves/:id/invites/:inviteId/revoke", async (c) => {
@@ -294,16 +320,12 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     if (auth instanceof Response) return auth;
 
     const result = await removeMember(db, waveId, auth.role ?? "member", c.req.param("userId"));
-    if (result === "not-a-member") return page("Not a member", "Nothing to remove.", 404);
+    if (result === "not-a-member") return page(c, (m) => [m.notAMember, m.nothingToRemove], 404);
     if (result === "owner") {
-      return page(
-        "The owner stays",
-        "A wave without its owner could not be administered. Hand ownership over first.",
-        403,
-      );
+      return page(c, (m) => [m.ownerStays, m.ownerStaysBody], 403);
     }
     if (result === "forbidden") {
-      return page("Not allowed", "Only the owner can remove another administrator.", 403);
+      return page(c, (m) => [m.notAllowed, m.onlyOwnerRemovesAdmins], 403);
     }
 
     await audit(db, waveId, userActor(auth.user), { action: "member.remove", target: c.req.param("userId") });
@@ -328,7 +350,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const removed = await removeNode(db, waveId, c.req.param("nodeId"));
     // Already gone, or never in this wave -- the same answer either way, for
     // the same reason a wave one is not in looks like one that does not exist.
-    if (!removed) return page("No such device", "It is not in this wave.", 404);
+    if (!removed) return page(c, (m) => [m.noSuchDevice, m.notInThisWave], 404);
 
     // Cut first, push second: the device learns it is out, and the ones that
     // stay lose it from their netmap -- that is what drops the peer entry from
@@ -351,7 +373,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
   const isJson = (c: Context<{ Variables: Vars }>) =>
     (c.req.header("content-type") ?? "").split(";")[0]?.trim() === "application/json";
 
-  async function reachOf(waveId: string) {
+  async function reachOf(waveId: string, locale: Locale) {
     const stored = await getPolicy(db, waveId);
     const subjects = await aclSubjects(db, waveId);
     // Always, policy or not: tags are set before the policy that uses them.
@@ -367,7 +389,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
         role: node.role,
         tags: node.tags,
         // Only meaningful under a policy; without one there is nothing to hold.
-        ports: stored ? enforcementText(node) : null,
+        ports: stored ? enforcementText(node, locale) : null,
         enforced: node.filterEnforced === true,
       }));
     // Members too, not only the owners of devices: a rule for someone whose
@@ -384,7 +406,11 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       policy: stored.document,
       version: stored.version,
       updatedAt: stored.updatedAt.toISOString(),
-      reach: describeReach(compilePolicy(stored.document, subjects.nodes, subjects.services), subjects.nodes),
+      reach: describeReach(
+        compilePolicy(stored.document, subjects.nodes, subjects.services),
+        subjects.nodes,
+        locale,
+      ),
       ...base,
     };
   }
@@ -393,22 +419,22 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const waveId = c.req.param("id");
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
-    return c.json(await reachOf(waveId));
+    return c.json(await reachOf(waveId, localeOf(c)));
   });
 
   app.put("/api/waves/:id/acl", async (c) => {
     const waveId = c.req.param("id");
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
-    if (!isJson(c)) return c.json({ error: "expected application/json" }, 415);
+    if (!isJson(c)) return c.json({ error: say(c).apiExpectedJson }, 415);
 
     let raw: unknown;
     try {
       raw = await c.req.json();
     } catch {
-      return c.json({ error: "not JSON" }, 400);
+      return c.json({ error: say(c).apiNotJson }, 400);
     }
-    const check = checkPolicy(raw, await aclSubjects(db, waveId));
+    const check = checkPolicy(raw, await aclSubjects(db, waveId), localeOf(c));
     if (!check.policy) return c.json({ errors: check.errors, warnings: check.warnings }, 400);
 
     const version = await setPolicy(db, waveId, check.policy, auth.user.id);
@@ -422,7 +448,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     // Pushed, not left to the heartbeat: whoever just took access away expects
     // it gone now, not within thirty seconds.
     await hub?.broadcast(waveId);
-    return c.json({ ...(await reachOf(waveId)), warnings: check.warnings });
+    return c.json({ ...(await reachOf(waveId, localeOf(c))), warnings: check.warnings });
   });
 
   /**
@@ -435,12 +461,12 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const waveId = c.req.param("id");
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
-    if (!isJson(c)) return c.json({ error: "expected application/json" }, 415);
+    if (!isJson(c)) return c.json({ error: say(c).apiExpectedJson }, 415);
 
     const body = (await c.req.json().catch(() => undefined)) as
       | { policy?: unknown; tags?: unknown; selectors?: unknown }
       | undefined;
-    if (!body || typeof body !== "object") return c.json({ error: "not JSON" }, 400);
+    if (!body || typeof body !== "object") return c.json({ error: say(c).apiNotJson }, 400);
     const tags: Record<string, string[]> = {};
     if (body.tags && typeof body.tags === "object") {
       for (const [id, list] of Object.entries(body.tags as Record<string, unknown>)) {
@@ -448,14 +474,16 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       }
     }
     const selectors = Array.isArray(body.selectors) ? body.selectors.map(String) : [];
-    return c.json(previewPolicy(body.policy ?? null, await aclSubjects(db, waveId), tags, selectors));
+    return c.json(
+      previewPolicy(body.policy ?? null, await aclSubjects(db, waveId), tags, selectors, localeOf(c)),
+    );
   });
 
   app.delete("/api/waves/:id/acl", async (c) => {
     const waveId = c.req.param("id");
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
-    if (!(await removePolicy(db, waveId))) return c.json({ error: "no policy" }, 404);
+    if (!(await removePolicy(db, waveId))) return c.json({ error: say(c).apiNoPolicy }, 404);
     await audit(db, waveId, userActor(auth.user), { action: "acl.remove" });
     await hub?.broadcast(waveId);
     return c.json({ policy: null });
@@ -473,16 +501,16 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const waveId = c.req.param("id");
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
-    if (!isJson(c)) return c.json({ error: "expected application/json" }, 415);
+    if (!isJson(c)) return c.json({ error: say(c).apiExpectedJson }, 415);
 
     const body = (await c.req.json().catch(() => null)) as { tags?: unknown } | null;
     const tags = Array.isArray(body?.tags) ? body.tags.map(String) : null;
-    if (!tags) return c.json({ error: "expected { tags: [...] }" }, 400);
+    if (!tags) return c.json({ error: say(c).apiExpectedTags }, 400);
     const bad = invalidTags(tags);
-    if (bad.length > 0) return c.json({ error: `not a tag: ${bad.join(", ")}` }, 400);
+    if (bad.length > 0) return c.json({ error: aclMessages(localeOf(c)).notATag(bad) }, 400);
 
     const updated = await setTags(db, waveId, c.req.param("nodeId"), tags);
-    if (!updated) return c.json({ error: "no such device" }, 404);
+    if (!updated) return c.json({ error: say(c).apiNoSuchDevice }, 404);
     await audit(db, waveId, userActor(auth.user), {
       action: "device.tags",
       target: updated.hostname,
@@ -511,22 +539,22 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
     if (auth.role !== "owner") {
-      return page("Not allowed", "Only the wave's owner can delete it.", 403);
+      return page(c, (m) => [m.notAllowed, m.onlyOwnerDeletes], 403);
     }
 
     const rows = await db.select({ name: waves.name }).from(waves).where(eq(waves.id, waveId)).limit(1);
     const wave = rows[0];
     // Gone already is the state that was asked for, but the name below has
     // nothing to compare against -- so it is the same 404 as an unknown wave.
-    if (!wave) return page("Unknown wave", "Nothing to delete.", 404);
+    if (!wave) return page(c, (m) => [m.unknownWave, m.nothingToDelete], 404);
 
     const form = await c.req.formData();
     if (String(form.get("name") ?? "").trim() !== wave.name) {
-      return page("That is not its name", `Type ${wave.name} to confirm. Nothing was deleted.`, 400);
+      return page(c, (m) => [m.notItsName, m.typeToConfirm(wave.name)], 400);
     }
 
     const deleted = await deleteWave(db, waveId);
-    if (!deleted) return page("Unknown wave", "Nothing to delete.", 404);
+    if (!deleted) return page(c, (m) => [m.unknownWave, m.nothingToDelete], 404);
 
     // Cut every device, and no broadcast afterwards: a netmap belongs to a
     // wave, and there is no longer one to build. A socket left open would go
@@ -569,7 +597,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const invite = await loadInvite(db, token);
     if (!invite) {
       if (config.webUrl) return c.redirect("/join/gone");
-      return page("This invitation is gone", "It was used, withdrawn or has expired.", 410);
+      return page(c, (m) => [m.invitationGone, m.invitationGoneBody], 410);
     }
 
     const user = c.get("user");
@@ -578,10 +606,11 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       // one; this route keeps the token, so signing in can come back to it.
       if (config.webUrl) return c.redirect(`/join/${encodeURIComponent(token)}`);
       const next = encodeURIComponent(`/invite/${token}`);
-      return c.html(html`<h1>Join ${invite.waveName}</h1>
-        <p>You were invited as <code>${invite.email}</code>. Sign in with that address to accept.</p>
+      const m = say(c);
+      return c.html(html`<h1>${m.join(invite.waveName)}</h1>
+        <p>${raw(m.invitedAsHtml(invite.email))}</p>
         <ul>
-          <li><a href="/auth/password/login?next=${next}">Sign in with email and password</a></li>
+          <li><a href="/auth/password/login?next=${next}">${m.signInWithPassword}</a></li>
         </ul>`);
     }
 
@@ -599,12 +628,12 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
   app.post("/invite/:token/claim", async (c) => {
     const token = c.req.param("token");
     const invite = await loadInvite(db, token);
-    if (!invite) return page("This invitation is gone", "It was used, withdrawn or has expired.", 410);
+    if (!invite) return page(c, (m) => [m.invitationGone, m.invitationGoneBody], 410);
 
     const form = await c.req.formData();
     const password = String(form.get("password") ?? "");
     if (password.length < MIN_PASSWORD_LENGTH) {
-      return page("Password too short", `Use at least ${MIN_PASSWORD_LENGTH} characters.`, 400);
+      return page(c, (m) => [m.passwordTooShort, m.useAtLeast(MIN_PASSWORD_LENGTH)], 400);
     }
 
     const existing = await db
@@ -613,7 +642,7 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       .where(eq(users.email, invite.email))
       .limit(1);
     if (existing[0]) {
-      return page("There is already an account", `Sign in as ${invite.email} and open the link again.`, 409);
+      return page(c, (m) => [m.accountExists, m.signInAsAndReopen(invite.email)], 409);
     }
 
     // The address counts as verified because a manager of the wave vouched for
@@ -647,8 +676,9 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     await audit(db, joined.waveId, userActor(user), { action: "member.join", detail: { role: joined.role } });
 
     if (config.webUrl) return c.redirect(`/?joined=${encodeURIComponent(joined.waveName)}`);
-    return c.html(html`<h1>You are in ${waveName}</h1>
-      <p>Run <code>wave login ${config.baseUrl}</code> to bring a device into it.</p>`);
+    const m = say(c);
+    return c.html(html`<h1>${m.youAreIn(waveName)}</h1>
+      <p>${raw(m.bringDeviceHtml(config.baseUrl))}</p>`);
   }
 
   function refusal(c: Context<{ Variables: Vars }>, token: string, reason: string) {
@@ -656,20 +686,12 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       return c.redirect(`/join/${encodeURIComponent(token)}?error=${encodeURIComponent(reason)}`);
     }
     if (reason === "wrong-address") {
-      return page(
-        "This invitation is for another address",
-        "Sign out and sign in with the address it was sent to.",
-        403,
-      );
+      return page(c, (m) => [m.otherAddress, m.otherAddressBody], 403);
     }
     if (reason === "unverified-address") {
-      return page(
-        "Your address is not verified",
-        "The provider you signed in with does not vouch for it, so it cannot claim an invitation.",
-        403,
-      );
+      return page(c, (m) => [m.unverifiedAddress, m.unverifiedAddressBody], 403);
     }
-    return page("This invitation is gone", "It was used, withdrawn or has expired.", 410);
+    return page(c, (m) => [m.invitationGone, m.invitationGoneBody], 410);
   }
 
   return app;

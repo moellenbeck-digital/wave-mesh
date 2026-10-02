@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useLocale } from "@/components/locale-provider";
+import { aclMessages } from "@/i18n/acl";
 
 /**
  * The policy as a document, for whoever would rather type it than draw it (the
@@ -15,9 +17,9 @@ import { useState } from "react";
  * type, which no cross-site form can send.
  */
 
-const EXAMPLE = `{
+const example = (user: string) => `{
   "acls": [
-    { "src": ["user:ich@example.com"], "dst": ["*"] }
+    { "src": ["user:${user}"], "dst": ["*"] }
   ]
 }`;
 
@@ -42,7 +44,10 @@ async function send(method: "PUT" | "DELETE", path: string, body?: unknown) {
 
 export function PolicyEditor({ waveId, policy }: { waveId: string; policy: unknown | null }) {
   const router = useRouter();
-  const [text, setText] = useState(policy ? JSON.stringify(policy, null, 2) : EXAMPLE);
+  const t = aclMessages(useLocale());
+  // The example names a user in the reader's language; it is only ever a starting point.
+  const blank = example(t.exampleUser);
+  const [text, setText] = useState(policy ? JSON.stringify(policy, null, 2) : blank);
   const [problems, setProblems] = useState<Problems>({ errors: [], warnings: [] });
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -53,14 +58,14 @@ export function PolicyEditor({ waveId, policy }: { waveId: string; policy: unkno
     try {
       document = JSON.parse(text);
     } catch (error) {
-      setProblems({ errors: [`Kein gültiges JSON: ${(error as Error).message}`], warnings: [] });
+      setProblems({ errors: [t.invalidJson((error as Error).message)], warnings: [] });
       return;
     }
     setBusy(true);
     const { ok, payload } = await send("PUT", `/api/waves/${encodeURIComponent(waveId)}/acl`, document);
     setBusy(false);
     setProblems({
-      errors: ok ? [] : (payload.errors ?? [payload.error ?? "Der Server hat abgelehnt."]),
+      errors: ok ? [] : (payload.errors ?? [payload.error ?? t.refused]),
       warnings: payload.warnings ?? [],
     });
     if (ok) {
@@ -72,15 +77,15 @@ export function PolicyEditor({ waveId, policy }: { waveId: string; policy: unkno
   async function remove() {
     // Asked, because it opens everything at once: every device reaches every
     // other again, including the ones the policy was written to keep out.
-    if (!window.confirm("Policy entfernen? Danach erreicht wieder jedes Gerät jedes andere.")) return;
+    if (!window.confirm(t.confirmRemove)) return;
     setBusy(true);
     const { ok, payload } = await send("DELETE", `/api/waves/${encodeURIComponent(waveId)}/acl`);
     setBusy(false);
     if (!ok) {
-      setProblems({ errors: [payload.error ?? "Der Server hat abgelehnt."], warnings: [] });
+      setProblems({ errors: [payload.error ?? t.refused], warnings: [] });
       return;
     }
-    setText(EXAMPLE);
+    setText(blank);
     setProblems({ errors: [], warnings: [] });
     router.refresh();
   }
@@ -88,7 +93,7 @@ export function PolicyEditor({ waveId, policy }: { waveId: string; policy: unkno
   return (
     <div>
       <label className="wc-label" htmlFor={`policy-${waveId}`}>
-        Policy (JSON)
+        {t.policyLabel}
       </label>
       <textarea
         id={`policy-${waveId}`}
@@ -113,23 +118,23 @@ export function PolicyEditor({ waveId, policy }: { waveId: string; policy: unkno
       {problems.warnings.length > 0 ? (
         <ul className="mt-4 text-caption text-slate">
           {problems.warnings.map((warning) => (
-            <li key={warning}>Hinweis: {warning}</li>
+            <li key={warning}>{t.hint(warning)}</li>
           ))}
         </ul>
       ) : null}
       {saved ? (
         <p className="wc-alert-success mt-4" role="status">
-          Übernommen. Verbundene Geräte haben die neue Netzkarte schon.
+          {t.applied}
         </p>
       ) : null}
 
       <div className="mt-6 flex flex-wrap gap-3">
         <button type="button" className="wc-btn wc-btn-primary" onClick={save} disabled={busy}>
-          Speichern
+          {t.save}
         </button>
         {policy ? (
           <button type="button" className="wc-btn wc-btn-secondary" onClick={remove} disabled={busy}>
-            Policy entfernen
+            {t.removePolicy}
           </button>
         ) : null}
       </div>

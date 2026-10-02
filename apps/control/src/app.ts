@@ -3,7 +3,7 @@ import { generateCodeVerifier, generateState } from "arctic";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { html } from "hono/html";
+import { html, raw } from "hono/html";
 import { proxy } from "hono/proxy";
 import { resolveUser } from "./auth/identity.ts";
 import type { OAuthProvider } from "./auth/providers.ts";
@@ -20,6 +20,7 @@ import { CertificateService } from "./certs/issue.ts";
 import type { Database } from "./db/client.ts";
 import { waveMembers, waves } from "./db/schema.ts";
 import type { Config } from "./env.ts";
+import { localeOf } from "./i18n.ts";
 import { isWithin } from "./net/addressing.ts";
 import { peerAddress } from "./net/peer.ts";
 import type { SigningKey } from "./netmap/build.ts";
@@ -27,6 +28,7 @@ import { certRoutes } from "./routes/cert.ts";
 import { controlWebsocket, NetmapHub } from "./routes/control-ws.ts";
 import { DeviceFeed, deviceFeedRoutes } from "./routes/device-feed.ts";
 import { machineRoutes } from "./routes/machine.ts";
+import { pageMessages } from "./routes/messages.ts";
 import { safeNext } from "./routes/next.ts";
 import { passwordRoutes } from "./routes/password.ts";
 import { serviceRoutes } from "./routes/services.ts";
@@ -134,14 +136,15 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
   // one, "/" belongs to the frontend and falls through to the proxy below.
   if (!config.webUrl) {
     app.get("/", async (c) => {
+      const m = pageMessages(localeOf(c));
       const user = c.get("user");
       if (!user) {
         const next = safeNext(c.req.query("next"));
         const suffix = next ? `?next=${encodeURIComponent(next)}` : "";
         const links = [
-          html`<li><a href="/auth/password/login${suffix}">Sign in with email and password</a></li>`,
+          html`<li><a href="/auth/password/login${suffix}">${m.signInWithPassword}</a></li>`,
           ...[...providers.keys()].map(
-            (id) => html`<li><a href="/auth/${id}/start${suffix}">Login with ${id}</a></li>`,
+            (id) => html`<li><a href="/auth/${id}/start${suffix}">${m.signInWith(id)}</a></li>`,
           ),
         ];
         return c.html(html`<h1>wave-mesh</h1><ul>${links}</ul>`);
@@ -154,14 +157,11 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
       const rows = membership.map((w) => html`<li>${w.name} — <code>${w.dnsSuffix}</code></li>`);
       // Nothing to show is the state of a fresh account: it has no network
       // until its owner makes one, and this is the only way there.
-      const body =
-        membership.length > 0
-          ? html`<ul>${rows}</ul>`
-          : html`<p>No wave yet. <a href="/waves/new">Create one</a>.</p>`;
+      const body = membership.length > 0 ? html`<ul>${rows}</ul>` : html`<p>${raw(m.noWaveYetHtml)}</p>`;
       return c.html(html`<h1>wave-mesh</h1>
-        <p>Signed in as ${user.email ?? user.name ?? user.id}</p>
+        <p>${m.signedInAs(user.email ?? user.name ?? user.id)}</p>
         ${body}
-        <form method="post" action="/auth/logout"><button type="submit">Log out</button></form>`);
+        <form method="post" action="/auth/logout"><button type="submit">${m.logOut}</button></form>`);
     });
   }
 
@@ -232,11 +232,12 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
   app.get("/auth/dev/login", (c) => {
     if (!providers.has("dev")) return c.json({ error: "unknown provider" }, 404);
     const state = c.req.query("state") ?? "";
-    return c.html(html`<h1>Dev login</h1>
+    const m = pageMessages(localeOf(c));
+    return c.html(html`<h1>${m.devLogin}</h1>
       <form method="get" action="/auth/dev/callback">
         <input type="hidden" name="state" value="${state}" />
         <input type="email" name="code" placeholder="you@example.com" required />
-        <button type="submit">Sign in</button>
+        <button type="submit">${m.signIn}</button>
       </form>`);
   });
 

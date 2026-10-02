@@ -59,6 +59,22 @@ export const DEFAULT_DNS_BASE = "wave.internal";
 const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
 /**
+ * A name or domain that cannot be stored. Its own class, so a page can say it
+ * in the reader's language from `kind` and `input` instead of passing on an
+ * English message -- the message stays what the shell and the log have always
+ * read.
+ */
+export class InvalidInputError extends Error {
+  constructor(
+    readonly kind: "domain" | "wave-name",
+    readonly input: string,
+  ) {
+    super(kind === "domain" ? `not a domain name: ${input}` : `not a wave name: ${input}`);
+    this.name = "InvalidInputError";
+  }
+}
+
+/**
  * The stored form of a suffix someone typed. Leading and trailing dots go, case
  * goes -- DNS does not distinguish it and two spellings of one zone would be
  * two waves as far as the unique index is concerned.
@@ -70,7 +86,7 @@ export function normaliseDnsSuffix(input: string): string {
     .replace(/^\.+|\.+$/g, "");
   // 253 is the whole name; a node's own label still has to fit in front of it.
   if (normalized.length > 200 || !DOMAIN.test(normalized)) {
-    throw new Error(`not a domain name: ${input}`);
+    throw new InvalidInputError("domain", input);
   }
   return normalized;
 }
@@ -116,7 +132,7 @@ export function normaliseWaveName(input: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 24);
-  if (!name || !/^[a-z]/.test(name)) throw new Error(`not a wave name: ${input}`);
+  if (!name || !/^[a-z]/.test(name)) throw new InvalidInputError("wave-name", input);
   return name;
 }
 

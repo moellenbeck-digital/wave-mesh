@@ -1,3 +1,4 @@
+import { t } from "./messages.ts";
 import type { WindowView } from "./window-view.ts";
 
 /**
@@ -38,10 +39,7 @@ export interface TrayWindowOptions {
 
 export class NoWindowBackend extends Error {
   constructor(platform: NodeJS.Platform) {
-    super(
-      `wave has no tray window for ${platform} yet. ` +
-        "The icon and its menu still work, and so does `wave status`.",
-    );
+    super(t().noWindowBackend(platform));
   }
 }
 

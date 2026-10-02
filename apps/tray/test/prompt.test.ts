@@ -22,6 +22,7 @@ const update = (overrides: Partial<UpdateStatus> = {}): UpdateStatus => ({
   available: "0.2.0",
   state: "idle",
   message: null,
+  notice: null,
   scheduledAt: null,
   ...overrides,
 });

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { t } from "./messages.ts";
 
 /**
  * Finds the userspace WireGuard implementation.
@@ -137,15 +138,10 @@ export function missingWintunMessage(
   env: NodeJS.ProcessEnv = process.env,
   selfDir: string = dirname(process.execPath),
 ): string {
-  return [
-    `wave needs ${WINTUN_DLL} on Windows, and could not find it.`,
-    "",
-    "  Download https://www.wintun.net, and take the DLL for this machine's",
-    "  architecture out of bin\\<amd64|arm64>\\ in the zip.",
-    "",
-    `Then put it beside wave.exe, or point WAVE_WINTUN_DLL at it.`,
-    `Looked at: ${[env.WAVE_WINTUN_DLL, ...wintunSearchPaths(env, selfDir).slice(0, 4)].filter(Boolean).join(", ")}, …`,
-  ].join("\n");
+  const looked = [env.WAVE_WINTUN_DLL, ...wintunSearchPaths(env, selfDir).slice(0, 4)]
+    .filter(Boolean)
+    .join(", ");
+  return t().missingWintun(WINTUN_DLL, looked);
 }
 
 /** Said when it is missing, because "not in $PATH" helps nobody. */
@@ -160,8 +156,7 @@ export function missingMessage(
           "",
           // Without it the binary starts and fails at the first adapter, which
           // reads as a tunnel problem rather than a missing file.
-          "Windows also needs wintun.dll from https://www.wintun.net next to the",
-          "executable — wireguard-go cannot create an adapter without it.",
+          ...t().wintunToo,
         ]
       : [
           "  Arch:    pacman -S wireguard-go        (or from the AUR)",
@@ -169,12 +164,8 @@ export function missingMessage(
           "  macOS:   brew install wireguard-go",
           "  Any:     go install golang.zx2c4.com/wireguard@latest",
         ];
-  return [
-    "wave needs wireguard-go to create the tunnel, and could not find it.",
-    "",
-    ...install,
-    "",
-    "Then either put it on the PATH as wireguard-go, or point WAVE_WIREGUARD_GO at it.",
-    `Looked at: ${[env.WAVE_WIREGUARD_GO, ...searchPaths(env, platform).slice(0, 6)].filter(Boolean).join(", ")}, …`,
-  ].join("\n");
+  const looked = [env.WAVE_WIREGUARD_GO, ...searchPaths(env, platform).slice(0, 6)]
+    .filter(Boolean)
+    .join(", ");
+  return t().missingWireguard(install, looked);
 }

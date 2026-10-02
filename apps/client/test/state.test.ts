@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
+import { englishText } from "@wave/ipc";
 import {
+  ambiguity,
   defaultStatePath,
-  describeAmbiguity,
   ensureProfile,
   loadProfiles,
   matchProfiles,
@@ -99,7 +100,7 @@ describe("node state", () => {
 
     // The bare host fits both -- picking one would tear down the wrong tunnel.
     expect(matchProfiles(profiles, "control.example")).toHaveLength(2);
-    expect(describeAmbiguity("control.example", profiles)).toContain("name the full address");
+    expect(englishText(ambiguity("control.example", profiles))).toContain("name the full address");
     // With the port it is unambiguous again.
     expect(matchProfiles(profiles, "control.example:9090")).toEqual([
       expect.objectContaining({ controlUrl: "http://control.example:9090" }),

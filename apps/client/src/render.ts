@@ -1,4 +1,6 @@
-import { type ProfileStatus, pathKind, type Status, waveLabel } from "@wave/ipc";
+import { intlTag } from "@wave/i18n";
+import { type ProfileStatus, pathWords, type Status, waveLabel } from "@wave/ipc";
+import { locale, t } from "./messages.ts";
 
 /**
  * Renders the live status view. Kept pure so it can be tested without a
@@ -15,6 +17,8 @@ const yellow = (text: string) => `${ESC}[33m${text}${ESC}[0m`;
 
 const pad = (text: string, width: number) => text.padEnd(width);
 
+const tunnelConnecting = (): string => pathWords({ via: null, lastHandshakeSecondsAgo: null }, locale()).text;
+
 /** Visible width, ignoring the escape sequences used for colour. */
 const visibleLength = (text: string) => text.replace(ANSI, "").length;
 
@@ -22,12 +26,11 @@ const padVisible = (text: string, width: number) =>
   text + " ".repeat(Math.max(0, width - visibleLength(text)));
 
 function describePath(peer: ProfileStatus["peers"][number]): string {
-  const kind = pathKind(peer);
   // Sprayed to every candidate rather than sent down a confirmed one: slower
   // and noisier, but the tunnel is carrying traffic and should not read as down.
-  if (kind === "loose") return yellow("no fixed path");
-  if (kind === "none") return yellow("connecting…");
-  const label = kind === "relay" ? yellow("via relay") : green(`direct ${peer.via}`);
+  const { kind, text } = pathWords(peer, locale());
+  if (kind === "loose" || kind === "none") return yellow(text);
+  const label = kind === "relay" ? yellow(text) : green(text);
   return peer.rttMs === null ? label : `${label} ${dim(`${peer.rttMs.toFixed(0)}ms`)}`;
 }
 
@@ -44,17 +47,20 @@ const describeService = (service: ProfileStatus["peers"][number]["services"][num
 
 function describeHandshake(seconds: number | null): string {
   if (seconds === null) return dim("—");
-  return seconds < 180 ? `${seconds}s ago` : dim(`${Math.round(seconds / 60)}m ago`);
+  return seconds < 180 ? t().ago(seconds) : dim(t().minutesAgo(Math.round(seconds / 60)));
 }
 
 /** What the tunnel is doing when it is not simply up. */
 function describeState(snapshot: ProfileStatus): string {
+  const m = t();
   if (snapshot.state === "waiting-for-approval" && snapshot.authUrl) {
-    return `${yellow("Waiting for approval.")} Open this link to connect this device:\n\n    ${snapshot.authUrl}`;
+    return `${yellow(m.waitingForApproval)} ${m.openLink}\n\n    ${snapshot.authUrl}`;
   }
-  if (snapshot.state === "failed") return `\x1b[31m${snapshot.message ?? "failed"}\x1b[0m`;
-  if (snapshot.state === "starting") return yellow("Starting…");
-  return dim(snapshot.message ?? "Not connected.");
+  // The message is the error as it happened, from the network or the system;
+  // it stays in its own words (see @wave/ipc notice.ts).
+  if (snapshot.state === "failed") return `\x1b[31m${snapshot.message ?? m.failed}\x1b[0m`;
+  if (snapshot.state === "starting") return yellow(m.starting);
+  return dim(snapshot.message ?? m.notConnected);
 }
 
 /**
@@ -62,6 +68,7 @@ function describeState(snapshot: ProfileStatus): string {
  * whole screen, and {@link renderStatus} stacks them.
  */
 export function renderProfile(snapshot: ProfileStatus, events: string[] = snapshot.events): string[] {
+  const m = t();
   const lines: string[] = [];
 
   const self = snapshot.self;
@@ -69,24 +76,27 @@ export function renderProfile(snapshot: ProfileStatus, events: string[] = snapsh
   lines.push(
     `${bold(snapshot.interfaceName ?? "wave")}  ${green(self?.ipv4 ?? "—")}  ${dim(snapshot.addresses.join("  "))}`,
   );
-  if (self) lines.push(`${dim("name")}  ${self.dnsName}`);
+  if (self) lines.push(`${dim(m.name)}  ${self.dnsName}`);
   // This device fronting names means it is a connector; its own services are
   // in `addresses` as bare addresses and nowhere else by name.
   for (const service of self?.services ?? []) lines.push(describeService(service));
-  if (snapshot.dnsSuffix) lines.push(`${dim("dns")}   ${dim(`*.${snapshot.dnsSuffix}`)}`);
+  if (snapshot.dnsSuffix) lines.push(`${dim(m.dns)}   ${dim(`*.${snapshot.dnsSuffix}`)}`);
   if (snapshot.relay) {
-    const state = snapshot.relay.connected ? green("connected") : yellow("connecting…");
-    lines.push(`${dim("relay")} ${state} ${dim(snapshot.relay.url)}`);
+    const state = snapshot.relay.connected ? green(m.connected) : yellow(tunnelConnecting());
+    lines.push(`${dim(m.relay)} ${state} ${dim(snapshot.relay.url)}`);
   }
   lines.push("");
 
   if (snapshot.peers.length === 0) {
-    lines.push(dim("No peers yet. Run `wave up` on another device to add one."));
+    lines.push(dim(m.noPeers));
   } else {
-    const nameWidth = Math.max(4, ...snapshot.peers.map((p) => p.hostname.length));
-    const addressWidth = Math.max(7, ...snapshot.peers.map((p) => p.ipv4.length));
+    const columns = m.columns;
+    const nameWidth = Math.max(columns.peer.length, ...snapshot.peers.map((p) => p.hostname.length));
+    const addressWidth = Math.max(columns.address.length, ...snapshot.peers.map((p) => p.ipv4.length));
     lines.push(
-      dim(`${pad("PEER", nameWidth)}  ${pad("ADDRESS", addressWidth)}  ${pad("PATH", 34)}  HANDSHAKE`),
+      dim(
+        `${pad(columns.peer, nameWidth)}  ${pad(columns.address, addressWidth)}  ${pad(columns.path, 34)}  ${columns.handshake}`,
+      ),
     );
     for (const peer of snapshot.peers) {
       lines.push(
@@ -98,7 +108,7 @@ export function renderProfile(snapshot: ProfileStatus, events: string[] = snapsh
   }
 
   if (events.length > 0) {
-    lines.push("", dim("recent"));
+    lines.push("", dim(m.recent));
     for (const event of events) lines.push(dim(`  ${event}`));
   }
   return lines;
@@ -114,13 +124,14 @@ function describeDaemon(status: Status): string | null {
   if (!info) return null;
   const update = info.update;
   if (!update?.available) return dim(`wave ${info.version}`);
+  const m = t();
   const when =
     update.state === "installing"
-      ? "installing now"
+      ? m.renderInstallingNow
       : update.state === "scheduled" && update.scheduledAt
-        ? `installing at ${new Date(update.scheduledAt).toLocaleTimeString()}`
-        : "`wave update` installs it";
-  return `${dim(`wave ${info.version}`)}  ${yellow(`update to ${update.available}`)} ${dim(when)}`;
+        ? m.renderInstallingAt(new Date(update.scheduledAt).toLocaleTimeString(intlTag(locale())))
+        : m.renderUpdateInstalls;
+  return `${dim(`wave ${info.version}`)}  ${yellow(m.updateTo(update.available))} ${dim(when)}`;
 }
 
 /**
@@ -129,9 +140,9 @@ function describeDaemon(status: Status): string | null {
  * holds it. Passing null leaves the line out, for a single printed snapshot
  * that nobody is going to interrupt.
  */
-export function renderStatus(status: Status, hint: string | null = "Ctrl-C to disconnect."): string {
+export function renderStatus(status: Status, hint: string | null = t().disconnectHint): string {
   if (status.profiles.length === 0) {
-    const lines = [dim("No wave yet. Run `wave login --control <url>` to join one.")];
+    const lines = [dim(t().noWave)];
     for (const event of status.events) lines.push(dim(`  ${event}`));
     const daemon = describeDaemon(status);
     if (daemon) lines.push("", daemon);
@@ -151,7 +162,7 @@ export function renderStatus(status: Status, hint: string | null = "Ctrl-C to di
 
   // Daemon-level lines belong to no tunnel -- a refused profile, say.
   if (status.events.length > 0) {
-    lines.push("", dim("daemon"));
+    lines.push("", dim(t().daemon));
     for (const event of status.events) lines.push(dim(`  ${event}`));
   }
   const daemon = describeDaemon(status);

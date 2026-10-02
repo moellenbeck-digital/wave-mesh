@@ -1,5 +1,26 @@
-const relative = new Intl.RelativeTimeFormat("de", { numeric: "auto" });
-const absolute = new Intl.DateTimeFormat("de", { dateStyle: "medium", timeStyle: "short" });
+import { intlTag, type Locale } from "@wave/i18n";
+import { appMessages } from "@/i18n/app";
+
+/**
+ * Every function here takes the locale of the request rather than asking the
+ * browser: relative times are rendered on the server and again in the
+ * browser, and both must use the same language -- the one the texts around
+ * them are in. Formatters are built once per locale; `Intl` is not cheap.
+ */
+const formatters = new Map<Locale, { relative: Intl.RelativeTimeFormat; absolute: Intl.DateTimeFormat }>();
+
+function formatsFor(locale: Locale) {
+  let formats = formatters.get(locale);
+  if (!formats) {
+    const tag = intlTag(locale);
+    formats = {
+      relative: new Intl.RelativeTimeFormat(tag, { numeric: "auto" }),
+      absolute: new Intl.DateTimeFormat(tag, { dateStyle: "medium", timeStyle: "short" }),
+    };
+    formatters.set(locale, formats);
+  }
+  return formats;
+}
 
 const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["second", 60],
@@ -10,9 +31,10 @@ const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["month", 12],
 ];
 
-/** "vor 3 Minuten". Null is a node that has never reported in. */
-export function timeAgo(value: string | null): string {
-  if (!value) return "noch nie";
+/** "3 minutes ago". Null is a node that has never reported in. */
+export function timeAgo(value: string | null, locale: Locale): string {
+  if (!value) return appMessages(locale).never;
+  const { relative } = formatsFor(locale);
   let amount = (Date.now() - new Date(value).getTime()) / 1000;
   for (const [unit, size] of STEPS) {
     if (Math.abs(amount) < size) return relative.format(-Math.round(amount), unit);
@@ -21,15 +43,20 @@ export function timeAgo(value: string | null): string {
   return relative.format(-Math.round(amount), "year");
 }
 
-export function formatDate(value: string | null): string {
-  return value ? absolute.format(new Date(value)) : "—";
+export function formatDate(value: string | null, locale: Locale): string {
+  return value ? formatsFor(locale).absolute.format(new Date(value)) : "—";
+}
+
+/** The day alone, without the time `formatDate` adds. */
+export function formatDay(value: string, locale: Locale): string {
+  return new Date(value).toLocaleDateString(intlTag(locale), { dateStyle: "medium" });
 }
 
 const OS_NAMES: Record<string, string> = {
   linux: "Linux",
   darwin: "macOS",
   windows: "Windows",
-  other: "Unbekannt",
 };
 
-export const osName = (os: string): string => OS_NAMES[os] ?? os;
+export const osName = (os: string, locale: Locale): string =>
+  OS_NAMES[os] ?? (os === "other" ? appMessages(locale).osUnknown : os);

@@ -1,4 +1,5 @@
-import { type ProfileStatus, pathKind, type Status, waveLabel } from "@wave/ipc";
+import { type ProfileStatus, pathKind, pathWords, type Status, tunnelWords, waveLabel } from "@wave/ipc";
+import { locale, t, type WindowLabels } from "./messages.ts";
 import { updateNotice } from "./view.ts";
 
 /**
@@ -84,22 +85,35 @@ export interface WindowView {
   labelMachines: boolean;
   /** Shown instead of the machine list when there is nothing to show. */
   emptyMachines: string;
+  /**
+   * The words a backend draws on its own: section headings, the count of
+   * services, tooltips. Carried here so that GTK, Cocoa and the Windows card
+   * each render what they are given, in the tray's language, instead of each
+   * keeping an English copy of its own. Optional only for views built by hand
+   * -- the backends' own tests -- which then read English; {@link labelsOf}
+   * is the one place that decides that.
+   */
+  labels?: WindowLabels;
 }
 
+/** The labels of a view, English where it brought none. */
+export const labelsOf = (view: WindowView): WindowLabels => view.labels ?? t().window;
+
+/** The words for the path, and the RTT behind them only where there is a path to time. */
 const describePath = (peer: ProfileStatus["peers"][number]): string => {
-  const kind = pathKind(peer);
-  if (kind === "loose") return "no fixed path";
-  if (kind === "none") return "connecting…";
-  const via = kind === "relay" ? "via relay" : `direct ${peer.via}`;
-  return peer.rttMs === null ? via : `${via} · ${Math.round(peer.rttMs)} ms`;
+  const { kind, text } = pathWords(peer, locale());
+  if (kind === "loose" || kind === "none") return text;
+  return peer.rttMs === null ? text : `${text} · ${Math.round(peer.rttMs)} ms`;
 };
 
 function detailFor(profile: ProfileStatus): string {
-  if (profile.state === "up") return profile.self?.ipv4 ?? "connected";
-  if (profile.state === "waiting-for-approval") return "waiting for approval in the browser";
-  if (profile.state === "failed") return profile.message ?? "failed";
-  if (profile.state === "starting") return "connecting…";
-  return "not connected";
+  const words = t();
+  if (profile.state === "up") return profile.self?.ipv4 ?? words.connected;
+  if (profile.state === "waiting-for-approval") return tunnelWords(locale()).waitingInBrowser;
+  // A raw error from deeper down, shown as it came.
+  if (profile.state === "failed") return profile.message ?? words.failed;
+  if (profile.state === "starting") return tunnelWords(locale()).connecting;
+  return words.notConnected;
 }
 
 /** Kept as a name the window's own tests and callers use; one implementation. */
@@ -138,13 +152,14 @@ export function windowView(status: Status | null, deviceName: string): WindowVie
     })),
   );
 
+  const words = t();
   const state = !status
-    ? "waiting for the daemon"
+    ? words.waitingForDaemon
     : profiles.length === 0
-      ? "no wave yet — run `wave login`"
+      ? words.noWaveYet
       : profiles.length === 1
         ? detailFor(profiles[0] as ProfileStatus)
-        : `${up.length}/${profiles.length} waves connected`;
+        : words.wavesConnected(up.length, profiles.length);
   // On the subtitle, which every platform's card already draws: an update is
   // about the device, not about a wave or a machine, and this is the line that
   // speaks for the device. Installing is in the menu.
@@ -158,10 +173,7 @@ export function windowView(status: Status | null, deviceName: string): WindowVie
     machines,
     labelMachines: profiles.length > 1,
     emptyMachines:
-      profiles.length === 0
-        ? "Join a wave to see its machines."
-        : up.length === 0
-          ? "Connect to see the machines in this wave."
-          : "No other machines in this wave yet.",
+      profiles.length === 0 ? words.emptyNoWave : up.length === 0 ? words.emptyOffline : words.emptyAlone,
+    labels: words.window,
   };
 }

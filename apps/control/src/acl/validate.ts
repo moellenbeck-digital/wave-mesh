@@ -1,5 +1,7 @@
+import type { Locale } from "@wave/i18n";
 import { AclPolicy } from "@wave/proto";
 import type { AclNode, AclService } from "./evaluate.ts";
+import { aclMessages } from "./messages.ts";
 
 export interface PolicyCheck {
   policy: AclPolicy | null;
@@ -13,15 +15,22 @@ export interface PolicyCheck {
   warnings: string[];
 }
 
+/**
+ * Judges a policy document against the wave it is for. `locale` only changes
+ * the words of the errors and warnings, never which there are: English by
+ * default, which is what the shell and every existing caller read.
+ */
 export function checkPolicy(
   raw: unknown,
   subjects: { nodes: AclNode[]; services: AclService[] },
+  locale: Locale = "en",
 ): PolicyCheck {
+  const m = aclMessages(locale);
   const parsed = AclPolicy.safeParse(raw);
   if (!parsed.success) {
     return {
       policy: null,
-      errors: parsed.error.issues.map((issue) => `${issue.path.join(".") || "document"}: ${issue.message}`),
+      errors: parsed.error.issues.map((issue) => `${issue.path.join(".") || m.document}: ${issue.message}`),
       warnings: [],
     };
   }
@@ -41,20 +50,18 @@ export function checkPolicy(
     for (const selector of rule.src) {
       // A service has no keys and sends nothing of its own; what comes out of
       // a cluster comes from its connector, and that is `tag:`.
-      if (selector.startsWith("svc:"))
-        errors.push(`${where}.src: ${selector} is a service, which is never a source`);
+      if (selector.startsWith("svc:")) errors.push(m.serviceAsSource(where, selector));
     }
     for (const selector of [...rule.src, ...rule.dst]) {
       if (selector.startsWith("group:") && !(selector in groups)) {
-        errors.push(`${where}: ${selector} is not defined under groups`);
+        errors.push(m.undefinedGroup(where, selector));
       }
       if (selector.startsWith("user:") && !emails.has(selector.slice(5).toLowerCase())) {
-        warnings.add(`${selector} has no untagged device in this wave (yet)`);
+        warnings.add(m.userWithoutDevice(selector));
       }
-      if (selector.startsWith("tag:") && !tags.has(selector))
-        warnings.add(`no device wears ${selector} (yet)`);
+      if (selector.startsWith("tag:") && !tags.has(selector)) warnings.add(m.unwornTag(selector));
       if (selector.startsWith("svc:") && !services.has(selector.slice(4))) {
-        warnings.add(`no service called ${selector.slice(4)} (yet)`);
+        warnings.add(m.unknownService(selector.slice(4)));
       }
     }
   });

@@ -2,6 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
+import { aclMessages } from "@/i18n/acl";
+import { rich } from "@/i18n/rich";
 // Types only: `@/lib/control` reads the request's cookies on the server.
 import type { AclPreview, AclView } from "@/lib/control";
 import { Graph } from "./graph";
@@ -66,6 +69,7 @@ const clone = (draft: Draft): Draft => structuredClone(draft);
 
 export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
   const router = useRouter();
+  const t = aclMessages(useLocale());
   const base = `/api/waves/${encodeURIComponent(waveId)}`;
   const [draft, setDraft] = useState<Draft>(() => draftFrom(view));
   const [ui, setUi] = useState<Ui>(NONE);
@@ -132,7 +136,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
       confirm: null,
       edge: previous.edges.some((e) => e.id === u.edge) ? u.edge : null,
     }));
-    say("Rückgängig gemacht");
+    say(t.undone);
   }
 
   // ---- preview, debounced and cancelled when the next change comes ----
@@ -168,13 +172,13 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
   // ---- connecting ----
   function connect(src: string, dst: string) {
     if (kindOf(src) === "svc") {
-      say("Ein Dienst ist nur Ziel, nie Quelle");
+      say(t.svcOnlyTarget);
       return;
     }
     const existing = draft.edges.find((e) => e.src === src && e.dst === dst);
     if (existing) {
       setUi({ ...NONE, edge: existing.id });
-      say("Diese Verbindung gibt es schon");
+      say(t.edgeExists);
       return;
     }
     if (!draft.policy) {
@@ -206,7 +210,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
     selectNode: (id) => setUi({ ...NONE, node: id }),
     created: (id, kind) => {
       setUi({ ...NONE, node: id });
-      say(`${id} angelegt — jetzt ${kind === "tag" ? "Geräte" : "Mitglieder"} hinzufügen`);
+      say(t.created(id, kind));
     },
     cancelCreate: () => setUi(NONE),
   };
@@ -237,7 +241,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
     const name = new Map(view.devices.map((d) => [d.id, d.hostname]));
     for (const [id, tags] of Object.entries(changedTags(draft, view))) {
       const { ok, payload } = await send("PUT", `${base}/nodes/${encodeURIComponent(id)}/tags`, { tags });
-      if (!ok) errors.push(`${name.get(id) ?? id}: ${String(payload.error ?? "abgelehnt")}`);
+      if (!ok) errors.push(`${name.get(id) ?? id}: ${String(payload.error ?? t.refusedShort)}`);
     }
     if (errors.length === 0) {
       const policy = policyOf(draft);
@@ -246,11 +250,11 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
         warnings = (payload.warnings as string[] | undefined) ?? [];
         if (!ok)
           errors.push(
-            ...((payload.errors as string[] | undefined) ?? [String(payload.error ?? "abgelehnt")]),
+            ...((payload.errors as string[] | undefined) ?? [String(payload.error ?? t.refusedShort)]),
           );
       } else if (view.policy !== null) {
         const { ok, payload } = await send("DELETE", `${base}/acl`);
-        if (!ok) errors.push(String(payload.error ?? "abgelehnt"));
+        if (!ok) errors.push(String(payload.error ?? t.refusedShort));
       }
     }
     setBusy(false);
@@ -271,12 +275,11 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
   const subtitles: Record<string, string> = {};
   for (const node of nodes) {
     if (node.kind === "any") {
-      subtitles[node.id] = "alle Geräte und Dienste";
+      subtitles[node.id] = t.anySubtitle;
       continue;
     }
     if (node.kind === "svc") {
-      subtitles[node.id] =
-        view.services.find((s) => `svc:${s.name}` === node.id)?.ipv4 ?? "kein solcher Dienst";
+      subtitles[node.id] = view.services.find((s) => `svc:${s.name}` === node.id)?.ipv4 ?? t.noSuchService;
       continue;
     }
     const covers = preview?.covers[node.id];
@@ -284,10 +287,10 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
     const names = covers.nodes.map((id) => hostnames.get(id) ?? id);
     subtitles[node.id] =
       names.length === 0
-        ? "keine Geräte"
+        ? t.noDevices
         : names.length === 1
           ? (names[0] ?? "")
-          : `${names.length} Geräte: ${names.join(", ")}`;
+          : t.someDevices(names.length, names.join(", "));
   }
 
   const reached = new Set(preview?.reach?.flatMap((pair) => [pair.from, pair.to]) ?? []);
@@ -331,14 +334,14 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
           className="wc-btn wc-btn-primary px-4! py-2!"
           onClick={() => setUi({ ...NONE, creating: "group" })}
         >
-          Gruppe hinzufügen
+          {t.addGroup}
         </button>
         <button
           type="button"
           className="wc-btn wc-btn-primary px-4! py-2!"
           onClick={() => setUi({ ...NONE, creating: "tag" })}
         >
-          Tag hinzufügen
+          {t.addTag}
         </button>
         <button
           type="button"
@@ -346,7 +349,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
           onClick={undo}
           disabled={history.current.length === 0}
         >
-          Rückgängig
+          {t.undo}
         </button>
         <span className="flex-1" />
         <span
@@ -359,11 +362,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
                 : { backgroundColor: "#0f6e6e14", color: "#0f6e6e" }
           }
         >
-          {!draft.policy
-            ? "Keine Policy · voller Mesh"
-            : rules === 0
-              ? "Policy · nichts erlaubt"
-              : `Policy · ${rules} ${rules === 1 ? "Regel" : "Regeln"}`}
+          {!draft.policy ? t.badgeMesh : rules === 0 ? t.badgeNothing : t.badgeRules(rules)}
         </span>
         {draft.policy ? (
           <button
@@ -377,7 +376,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
               setUi(NONE);
             }}
           >
-            Policy entfernen
+            {t.removePolicy}
           </button>
         ) : null}
       </div>
@@ -387,29 +386,30 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
           {ui.confirm ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-line border-b bg-[#0f6e6e0f] px-4 py-3 text-accent-strong text-body-sm">
               <span className="min-w-0 break-words">
-                Der erste Pfeil schaltet die Policy ein. Dann gilt nur noch{" "}
-                <b>
-                  {ui.confirm.src} → {ui.confirm.dst}
-                </b>
-                , alles andere ist gesperrt.
+                {rich(t.confirmFirst, {
+                  pair: (
+                    <b>
+                      {ui.confirm.src} → {ui.confirm.dst}
+                    </b>
+                  ),
+                })}
               </span>
               <span className="ml-auto flex gap-2">
                 <button type="button" className="wc-btn wc-btn-primary px-4! py-1.5!" onClick={confirmFirst}>
-                  Regel anlegen
+                  {t.createRule}
                 </button>
                 <button
                   type="button"
                   className="wc-btn wc-btn-secondary px-4! py-1.5!"
                   onClick={() => setUi(NONE)}
                 >
-                  Abbrechen
+                  {t.cancel}
                 </button>
               </span>
             </div>
           ) : !draft.policy ? (
             <div className="border-line border-b bg-[#0f27440a] px-4 py-3 text-body-sm text-navy">
-              Ohne Policy erreicht jedes Gerät jedes andere, auf allen Ports — die gestrichelten Linien.
-              Ziehen Sie den ersten Pfeil: dann gilt nur noch, was ein Pfeil erlaubt.
+              {t.meshBanner}
             </div>
           ) : null}
           <div className="overflow-x-auto">
@@ -442,18 +442,14 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
               onTapHandle={(id) => {
                 const pending = ui.pending === id ? null : id;
                 setUi({ ...NONE, pending });
-                if (pending) say("Jetzt das Ziel antippen");
+                if (pending) say(t.tapTarget);
               }}
               onBackground={() => setUi(NONE)}
             />
           </div>
           <div className="flex flex-wrap gap-x-5 gap-y-1 border-line border-t px-4 py-2.5 text-caption text-slate">
-            <span>
-              Pfeil: wer eine Verbindung <em>beginnen</em> darf. Antworten und ICMP gehen immer zurück.
-            </span>
-            <span>
-              Gestrichelte Karten (Rollen, *) ergeben sich von selbst, Gruppen und Tags legen Sie an.
-            </span>
+            <span>{rich(t.legendArrow, { start: <em>{t.legendStart}</em> })}</span>
+            <span>{t.legendDashed}</span>
           </div>
         </div>
 
@@ -470,12 +466,10 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
           {dirty ? (
             <div className="flex flex-wrap items-center gap-3">
               <span className="min-w-0 flex-1 text-body-sm text-navy">
-                {!draft.policy && view.policy !== null
-                  ? "Speichern entfernt die Policy — danach erreicht wieder jedes Gerät jedes andere."
-                  : "Ungespeicherte Änderungen. Die Geräte merken davon erst etwas beim Speichern."}
+                {!draft.policy && view.policy !== null ? t.savingRemoves : t.unsaved}
               </span>
               <button type="button" className="wc-btn wc-btn-secondary" onClick={discard} disabled={busy}>
-                Verwerfen
+                {t.discard}
               </button>
               <button
                 type="button"
@@ -483,7 +477,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
                 onClick={save}
                 disabled={busy || !preview || preview.errors.length > 0}
               >
-                Speichern
+                {t.save}
               </button>
             </div>
           ) : null}
@@ -507,7 +501,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
           ) : null}
           {result.saved && !dirty ? (
             <p className="wc-alert-success" role="status">
-              Gespeichert. Verbundene Geräte haben die neue Netzkarte schon.
+              {t.saved}
             </p>
           ) : null}
         </div>
@@ -516,27 +510,23 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
       {preview && preview.warnings.length > 0 ? (
         <ul className="text-caption text-slate">
           {preview.warnings.map((warning) => (
-            <li key={warning}>Hinweis: {warning}</li>
+            <li key={warning}>{t.hint(warning)}</li>
           ))}
         </ul>
       ) : null}
 
       <div>
-        <h3 className="wc-section-title">Wer wen erreicht{dirty ? " (Entwurf)" : ""}</h3>
+        <h3 className="wc-section-title">{dirty ? t.reachDraft : t.reachTitle}</h3>
         {previewFailed ? (
-          <p className="text-body-sm text-[#dc2626]">
-            Der Server hat den Entwurf nicht ausgewertet. Neu laden hilft meist.
-          </p>
+          <p className="text-body-sm text-[#dc2626]">{t.previewFailed}</p>
         ) : !draft.policy ? (
-          <p className="text-body-sm text-navy">Jedes Gerät erreicht jedes andere, auf allen Ports.</p>
+          <p className="text-body-sm text-navy">{t.fullMesh}</p>
         ) : !preview?.reach ? (
-          <p className="text-body-sm text-slate">Wird ausgewertet …</p>
+          <p className="text-body-sm text-slate">{t.evaluating}</p>
         ) : (
           <ul className="max-h-[28rem] divide-y divide-line overflow-auto">
             {preview.reach.length === 0 ? (
-              <li className="py-2 text-body-sm text-slate">
-                Niemand erreicht jemanden. Ping und Antworten auf eigene Verbindungen gehen weiter.
-              </li>
+              <li className="py-2 text-body-sm text-slate">{t.nobody}</li>
             ) : (
               preview.reach.map((pair) => (
                 <li
@@ -553,9 +543,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
               ))
             )}
             {cut.length > 0 ? (
-              <li className="break-words py-2 text-[#dc2626] text-body-sm">
-                Abgeschnitten: {cut.join(", ")}
-              </li>
+              <li className="break-words py-2 text-[#dc2626] text-body-sm">{t.cutOff(cut.join(", "))}</li>
             ) : null}
           </ul>
         )}

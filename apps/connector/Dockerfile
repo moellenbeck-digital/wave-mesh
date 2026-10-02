@@ -38,6 +38,7 @@ COPY apps/web/package.json apps/web/
 COPY packages/crypto/package.json packages/crypto/
 COPY packages/disco/package.json packages/disco/
 COPY packages/dns/package.json packages/dns/
+COPY packages/i18n/package.json packages/i18n/
 COPY packages/ipc/package.json packages/ipc/
 COPY packages/magicsock/package.json packages/magicsock/
 COPY packages/proto/package.json packages/proto/

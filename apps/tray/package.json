@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {},
   "dependencies": {
+    "@wave/i18n": "workspace:*",
     "dbus-next": "^0.10.2",
     "debug": "^4.4.0",
     "@wave/ipc": "workspace:*"

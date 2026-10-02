@@ -1,3 +1,4 @@
+import { t, type WindowLabels } from "./messages.ts";
 import {
   cls,
   type Id,
@@ -19,7 +20,7 @@ import {
   sharedApplication,
 } from "./objc.ts";
 import type { TrayWindow, TrayWindowOptions } from "./window.ts";
-import type { WindowView } from "./window-view.ts";
+import { labelsOf, type WindowView } from "./window-view.ts";
 
 /**
  * The macOS window, through the same Objective-C runtime binding that draws
@@ -197,6 +198,11 @@ export class MacosWindow implements TrayWindow {
   private readonly handler: { instance: Id; keepAlive: unknown };
   private titleLabel: Id;
   private subtitleLabel: Id;
+  /** Built once with the card, but worded by every view: the language comes with it. */
+  private connectionsHeading: Id;
+  private machinesHeading: Id;
+  /** What the rows of the view being built are worded with. */
+  private labels: WindowLabels;
   private connectionsStack: Id;
   private machinesStack: Id;
   /** The one constraint that changes with the contents; see {@link resize}. */
@@ -239,6 +245,11 @@ export class MacosWindow implements TrayWindow {
     fixHeight(this.subtitleLabel, SUBTITLE_HEIGHT);
     this.connectionsStack = stack(ORIENTATION.vertical, ROW_GAP);
     this.machinesStack = stack(ORIENTATION.vertical, ROW_GAP);
+    // Empty until the first view says them; the height is fixed either way,
+    // so a longer German heading changes nothing that resize() adds up.
+    this.connectionsHeading = sectionLabel("");
+    this.machinesHeading = sectionLabel("");
+    this.labels = t().window;
 
     const scroller = this.scrollingMachines();
     this.listConstraint = fixHeight(scroller, rowsHeight(1));
@@ -251,13 +262,13 @@ export class MacosWindow implements TrayWindow {
       spacer(BEFORE_RULE),
       rule(),
       spacer(AFTER_RULE),
-      sectionLabel("CONNECTIONS"),
+      this.connectionsHeading,
       spacer(AFTER_SECTION),
       this.connectionsStack,
       spacer(BEFORE_RULE),
       rule(),
       spacer(AFTER_RULE),
-      sectionLabel("MACHINES"),
+      this.machinesHeading,
       spacer(AFTER_SECTION),
       scroller,
     ]) {
@@ -516,6 +527,9 @@ export class MacosWindow implements TrayWindow {
 
     msg1(this.titleLabel, "setStringValue:", nsString(view.title));
     msg1(this.subtitleLabel, "setStringValue:", nsString(view.subtitle.toUpperCase()));
+    this.labels = labelsOf(view);
+    msg1(this.connectionsHeading, "setStringValue:", nsString(this.labels.connections));
+    msg1(this.machinesHeading, "setStringValue:", nsString(this.labels.machines));
 
     this.toggles = [];
     this.connectionViews = this.replace(this.connectionsStack, this.connectionViews, () =>
@@ -615,7 +629,7 @@ export class MacosWindow implements TrayWindow {
     const name = labelled ? `${row.hostname}  ·  ${row.waveLabel}` : row.hostname;
     msg1(text, "addArrangedSubview:", label(name, 13, true, row.online ? PALETTE.text : PALETTE.offline));
     const detail = hasServices
-      ? `${row.address} · ${row.services.length} ${row.services.length === 1 ? "service" : "services"}`
+      ? `${row.address} · ${this.labels.services(row.services.length)}`
       : `${row.address} · ${row.dnsName}`;
     msg1(text, "addArrangedSubview:", label(detail, 11, false, PALETTE.muted));
 
@@ -684,7 +698,7 @@ export class MacosWindow implements TrayWindow {
     msgInt(button, "setTag:", TAG.expandBase + index);
     msgInt(button, "setBordered:", 0);
     msg1(button, "setContentTintColor:", nsColor(PALETTE.muted));
-    msg1(button, "setToolTip:", nsString(open ? "Hide services" : "Show services"));
+    msg1(button, "setToolTip:", nsString(open ? this.labels.hideServices : this.labels.showServices));
     fixWidth(button, DISCLOSURE_WIDTH);
     return button;
   }
@@ -714,7 +728,7 @@ export class MacosWindow implements TrayWindow {
     // Left, not centred: it reads as a line under its machine, not as a button.
     msgInt(button, "setAlignment:", 0);
     msg1(button, "setContentTintColor:", nsColor(PALETTE.service));
-    msg1(button, "setToolTip:", nsString(`Open ${service.url}`));
+    msg1(button, "setToolTip:", nsString(this.labels.open(service.url)));
     fixWidth(button, TEXT_WIDTH);
 
     const indent = spacer(0);
@@ -730,7 +744,7 @@ export class MacosWindow implements TrayWindow {
       cls("NSImage"),
       "imageWithSystemSymbolName:accessibilityDescription:",
       nsString("doc.on.doc"),
-      nsString(`Copy ${copyText}`),
+      nsString(this.labels.copy(copyText)),
     );
     const copy = need(
       image
@@ -744,7 +758,7 @@ export class MacosWindow implements TrayWindow {
         : msg3(
             cls("NSButton"),
             "buttonWithTitle:target:action:",
-            nsString("Copy"),
+            nsString(this.labels.copyButton),
             this.handler.instance,
             sel("onSelect:"),
           ),
@@ -753,7 +767,7 @@ export class MacosWindow implements TrayWindow {
     msgInt(copy, "setTag:", TAG.copyBase + index);
     msgInt(copy, "setBordered:", 0);
     msg1(copy, "setContentTintColor:", nsColor(PALETTE.muted));
-    msg1(copy, "setToolTip:", nsString(`Copy ${copyText}`));
+    msg1(copy, "setToolTip:", nsString(this.labels.copy(copyText)));
     fixWidth(copy, TRAILING_WIDTH);
     return copy;
   }

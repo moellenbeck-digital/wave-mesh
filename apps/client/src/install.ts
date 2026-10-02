@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { UpdateChannel } from "@wave/proto";
+import { t } from "./messages.ts";
 import { defaultStatePath, updateUpdateSettings } from "./state.ts";
 import {
   findWintun,
@@ -467,14 +468,7 @@ export function groupByHand(name: string, own: string | null): string {
   // was written for it is `users`, which is not something anyone guesses, and
   // an instruction with a placeholder in it is one more thing to look up. The
   // cost is said out loud, because on a NAS that group tends to be everyone.
-  const fallback = own
-    ? `, or hand the socket to a group you already have: sudo wave install --group ${own} ` +
-      `(which lets every member of '${own}' use it)`
-    : "";
-  return (
-    `The '${name}' group does not exist, so only root can use the control socket. ` +
-    `Create it and put your account in it${fallback}.`
-  );
+  return t().groupByHand(name, own);
 }
 
 /** Everything the install would do, without doing any of it. */
@@ -573,10 +567,7 @@ export function planInstall(options: InstallOptions = {}): InstallPlan {
         const enable = asUser(session("enable"));
         const start = asUser(session("start"));
         if (enable && start) optional.push(enable, start);
-        else
-          notes.push(
-            `Nothing here can run a command as ${user}; start the tray yourself: systemctl --user enable wave-tray && systemctl --user start wave-tray`,
-          );
+        else notes.push(t().noRunAs(user));
       }
     }
     // Only promise the logging-out cure where the group is actually being
@@ -584,7 +575,7 @@ export function planInstall(options: InstallOptions = {}): InstallPlan {
     // someone spends the evening on their session instead of on the note
     // above that says what really went wrong.
     if (!dedicated) {
-      notes.push(`The control socket belongs to group '${group}', which this account already has.`);
+      notes.push(t().groupAlready(group));
     }
     // Which note the dedicated group gets -- "log out and back in" or "make it
     // yourself" -- is not knowable here: it depends on whether the commands
@@ -675,17 +666,15 @@ export function planInstall(options: InstallOptions = {}): InstallPlan {
       // not start is not a tunnel that failed.
       optional: user ? [["schtasks.exe", "/run", "/tn", WINDOWS_TRAY_TASK]] : [],
       notes: [
-        "Run this from an elevated prompt: creating the task and a tunnel adapter both need Administrator.",
+        t().windowsElevated,
         // Said plainly because the failure it prevents reads as a network
         // fault: without LocalSystem, wireguard-go cannot own its UAPI pipe.
-        'The daemon runs as a scheduled task under LocalSystem, not as a service — `schtasks /query /tn "wave daemon"` is where to look, not services.msc.',
+        t().windowsTask,
         // Not an instruction any more: wireguard-go and wintun.dll are copied
         // beside the binary by the install itself, and their absence is
         // reported there. This only says where they ended up.
-        "wireguard-go and wintun.dll are installed beside wave.exe; the daemon looks there and nowhere else.",
-        user
-          ? `The tray icon runs as ${user}: started now, and again at every sign-in. If no icon appeared, this prompt belongs to another account — start it there with: wave tray`
-          : "No account to run the tray icon as, so none was set up. Start it yourself with: wave tray",
+        t().windowsBeside,
+        user ? t().windowsTrayAs(user) : t().windowsNoTray,
       ],
     };
   }
@@ -693,7 +682,7 @@ export function planInstall(options: InstallOptions = {}): InstallPlan {
   return {
     files: [],
     commands: [],
-    notes: [`wave install does not support ${platform} yet. Run \`wave daemon\` by hand for now.`],
+    notes: [t().unsupportedInstall(platform)],
   };
 }
 
@@ -784,7 +773,7 @@ export async function install(
 ): Promise<number> {
   const platform = options.platform ?? process.platform;
   if (platform !== "win32" && process.getuid?.() !== 0) {
-    log("wave install needs to run as root: sudo wave install");
+    log(t().needsRoot("install"));
     return 1;
   }
 
@@ -807,7 +796,7 @@ export async function install(
     const result = await run(command);
     if (result.code === 0 || expectedNoise(command, result.output)) return;
     if (fatal) failed++;
-    log(`${command.join(" ")} failed: ${result.output.trim() || result.code}`);
+    log(t().stepFailed(command.join(" "), result.output.trim() || String(result.code)));
   };
 
   // Best effort, and silent: see InstallPlan.before for why nothing here can
@@ -835,11 +824,11 @@ export async function install(
       return;
     }
     if (source === target) {
-      log(`${target} is already in place.`);
+      log(t().alreadyInPlace(target));
       return;
     }
     replaceFile(source, target);
-    log(`installed ${target} (from ${source})`);
+    log(t().installedFrom(target, source));
   };
 
   const wireguard = findWireguardGo({ platform, selfDir });
@@ -857,14 +846,13 @@ export async function install(
 
   if (self !== binary) {
     replaceFile(self, binary);
-    log(`installed ${binary}`);
+    log(t().installed(binary));
   } else {
     // Running `wave install` from the installed copy reinstalls that copy --
     // units, service, tray, all of it -- but cannot upgrade the binary, since
     // it is the binary. Saying so beats a silent no-op that looks like an
     // upgrade: the service restarts, and the old version comes back up.
-    log(`${binary} is the copy running right now, so it stays as it is.`);
-    log("To upgrade, run the new build instead:  sudo ./dist/wave install");
+    log(t().runningCopy(binary));
   }
 
   for (const file of plan.files) {
@@ -876,7 +864,7 @@ export async function install(
         ? Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(file.content, "utf16le")])
         : Buffer.from(file.content, "utf8");
     writeFileSync(file.path, content, { mode: file.mode ?? 0o644 });
-    log(`wrote ${file.path}`);
+    log(t().wrote(file.path));
   }
 
   if (options.update) {
@@ -884,13 +872,11 @@ export async function install(
     // that account's profile, which this elevated prompt cannot name with
     // any certainty -- so there the setting goes through the service itself.
     if (platform === "win32") {
-      log("Update settings are set through the service on Windows: wave update --channel … --auto-update …");
+      log(t().windowsUpdateSettings);
     } else {
       const statePath = options.statePath ?? defaultStatePath(platform, process.env, true);
       const settings = await updateUpdateSettings(statePath, options.update);
-      log(
-        `updates: ${settings.autoUpdate ? "on" : "off"}, channel ${settings.channel ?? "as the servers say"}`,
-      );
+      log(t().updatesSetting(settings.autoUpdate, settings.channel ?? null));
     }
   }
 
@@ -906,9 +892,7 @@ export async function install(
   // behind, and the person needs the same sentence either way.
   if (plan.requiresGroup) {
     if (groupExists(plan.requiresGroup, options.groupPath)) {
-      log(
-        `The '${plan.requiresGroup}' group applies only to sessions started after this one, so log out and back in — until then: sudo wave status`,
-      );
+      log(t().relogForGroup(plan.requiresGroup));
     } else {
       log(
         groupByHand(
@@ -919,10 +903,10 @@ export async function install(
     }
   }
   if (failed > 0) {
-    log(`${failed} step${failed === 1 ? "" : "s"} above failed; wave is not set up. The messages say why.`);
+    log(t().stepsFailed(failed));
     return 1;
   }
-  log("wave is installed and running. Try: wave status");
+  log(t().installedRunning);
   return 0;
 }
 
@@ -934,7 +918,7 @@ export async function uninstall(
 ): Promise<number> {
   const platform = options.platform ?? process.platform;
   if (platform !== "win32" && process.getuid?.() !== 0) {
-    log("wave uninstall needs to run as root: sudo wave uninstall");
+    log(t().needsRoot("uninstall"));
     return 1;
   }
 
@@ -958,11 +942,11 @@ export async function uninstall(
   for (const file of planInstall(options).files) {
     if (!existsSync(file.path)) continue;
     rmSync(file.path, { force: true });
-    log(`removed ${file.path}`);
+    log(t().removed(file.path));
   }
   if (platform === "linux") await run(["systemctl", "daemon-reload"]);
   // The binary and the keys stay: removing a service should not throw away an
   // enrolment the user may still want.
-  log("service removed. The binary and this device's keys are untouched.");
+  log(t().serviceRemoved);
   return 0;
 }

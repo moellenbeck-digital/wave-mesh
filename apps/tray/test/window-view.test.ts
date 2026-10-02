@@ -155,6 +155,7 @@ describe("the header", () => {
           available: "0.2.0",
           state: "idle",
           message: null,
+          notice: null,
           scheduledAt: null,
         },
       },

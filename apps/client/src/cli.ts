@@ -1,13 +1,16 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { systemLocale } from "@wave/i18n/system";
 import {
   type CertificateStatus,
   type CertWaiting,
   DAEMON_CLOSED,
   DaemonClient,
   DEFAULT_SOCKET_PATH,
+  type Notice,
   PLATFORM,
   profileStatusFromSnapshot,
+  readNotice,
   type Status,
   type UpdateStatus,
   VERSION,
@@ -17,10 +20,11 @@ import { UpdateChannel } from "@wave/proto";
 import { ControlClient } from "./api.ts";
 import { DEFAULT_MTU, resolveInterfaceName, up } from "./engine.ts";
 import { platformLink } from "./link-platform.ts";
+import { locale, setLocale, t } from "./messages.ts";
 import { paint, renderStatus, shouldWatch } from "./render.ts";
 import {
+  ambiguity,
   defaultStatePath,
-  describeAmbiguity,
   loadProfiles,
   matchProfiles,
   normaliseControlUrl,
@@ -55,6 +59,13 @@ const { values, positionals } = parseArgs({
 
 const command = positionals[0] ?? "help";
 
+// Once, before anything is said -- except for the daemon. It runs from this
+// same binary, and systemd hands services the LANG of /etc/locale.conf: set
+// here, the few texts it shares with the CLI (a missing wireguard-go) would
+// reach the journal in whatever language the machine was installed in. The
+// tray picks its own, from the session it belongs to.
+if (command !== "daemon") setLocale(systemLocale());
+
 // Until the tunnel is up, messages go straight to the terminal -- that is how
 // the connect link gets seen. Afterwards the live view owns the screen and
 // keeps the last few messages in a corner of it.
@@ -81,57 +92,7 @@ function parseStunServers(value: string): { ip: string; port: number }[] {
     });
 }
 
-const usage = `wave — mesh VPN client
-
-  wave install    set everything up: service, tray, autostart  (needs root)
-  wave uninstall  remove the service again                     (needs root)
-
-  wave login <url>   join the wave run by that control server
-                     (--auth-key <key> for a machine with no browser)
-  wave profiles      list the waves this device belongs to
-  wave up    [url]   connect and show the tunnels (all of them by default)
-  wave down  [url]   tear them down (keeps the enrolment)
-  wave status        watch the tunnels and their peers until Ctrl-C
-  wave logout <url>  leave one wave and forget its keys
-
-  wave cert  [name…] get a TLS certificate for this device and keep it renewed
-  wave certs         list the certificates this device holds
-
-  wave version    which build this is, and the service's update state
-  wave update     install the newest release on offer now, instead of later
-                  (--channel <name|server>, --auto-update on|off change settings)
-
-  wave daemon     run the privileged part in the foreground
-  wave tray       run the tray icon in the foreground
-
-"wave install" sets up the machine and knows no server; joining one is always
-"wave login <url>", and a device may join as many as it likes. A wave is always
-named by its control server -- there is no profile name to remember, and a
-command without one means every wave at once. After the install the everyday
-commands need no privileges. Without the service they do the work themselves
-and have to run as root.
-
-Options:
-  --control <url>   the server for "wave login", if not given as an argument
-  --state <path>    state file (default: ${defaultStatePath()})
-  --daemon <path>   daemon control socket (default: ${DEFAULT_SOCKET_PATH})
-  --no-daemon       do the work here even if a daemon is running
-  --once            print one status instead of watching (implied off a tty)
-  --socket <path>   WireGuard UAPI socket
-  --interface <n>   tunnel interface name (default: wave0)
-  --port <n>        WireGuard listen port (default: 41641)
-  --mtu <bytes>     tunnel MTU (default: ${DEFAULT_MTU})
-  --stun <list>     comma-separated STUN servers, e.g. relay.example:3478
-  --no-dns          do not serve the wave's names or touch resolver settings
-  --group <name>    group allowed to use the control socket (install)
-  --auth-key <key>  enrol without a browser, e.g. in a cluster (WAVE_AUTH_KEY)
-  --hook <cmd>      run this after every renewal, e.g. 'systemctl reload caddy'
-  --wildcard        ask for *.<wave domain> (an operator has to allow it first)
-  --control <url>   also picks the wave for "wave cert" on a multi-wave device
-  --channel <name>  update channel to ask for: stable, insiders, develop, or
-                    "server" to take each server's default (update, install)
-  --auto-update on|off  whether the service installs updates by itself
-`;
+const usage = t().usage(defaultStatePath(), DEFAULT_SOCKET_PATH, DEFAULT_MTU);
 
 /**
  * Reads --channel and --auto-update. Undefined means "not given"; a channel of
@@ -143,13 +104,13 @@ function updateFlags(): { channel?: UpdateChannel | null; autoUpdate?: boolean }
     if (values.channel === "server") flags.channel = null;
     else {
       const parsed = UpdateChannel.safeParse(values.channel);
-      if (!parsed.success) return `--channel takes ${UpdateChannel.options.join(", ")} or server`;
+      if (!parsed.success) return t().channelFlag(UpdateChannel.options.join(", "));
       flags.channel = parsed.data;
     }
   }
   const auto = values["auto-update"];
   if (auto !== undefined) {
-    if (auto !== "on" && auto !== "off") return "--auto-update takes on or off";
+    if (auto !== "on" && auto !== "off") return t().autoUpdateFlag;
     flags.autoUpdate = auto === "on";
   }
   return flags;
@@ -157,30 +118,33 @@ function updateFlags(): { channel?: UpdateChannel | null; autoUpdate?: boolean }
 
 /** The update state as a few lines, for `wave version` and `wave update`. */
 function describeUpdate(update: UpdateStatus): string[] {
-  const lines: string[] = [];
-  lines.push(
-    `auto-update ${update.autoUpdate ? "on" : "off"}, channel ${update.wish ?? "as the servers say"}`,
-  );
+  const m = t();
+  const lines: string[] = [m.autoUpdateLine(update.autoUpdate, update.wish)];
   for (const entry of update.channels) {
-    lines.push(`  ${waveLabel(entry.controlUrl)}: ${entry.channel} (offers ${entry.offered.join(", ")})`);
+    lines.push(m.channelOffers(waveLabel(entry.controlUrl), entry.channel, entry.offered.join(", ")));
   }
   if (update.available) {
     const when =
       update.state === "scheduled" && update.scheduledAt
-        ? `, installing at ${update.scheduledAt}`
+        ? m.installingAt(update.scheduledAt)
         : update.state === "installing"
-          ? ", installing now"
-          : "; `wave update` installs it now";
-    lines.push(`update to ${update.available} available${when}`);
+          ? m.installingNow
+          : m.updateInstallsNow;
+    lines.push(m.updateAvailable(update.available, when));
   } else {
-    lines.push("up to date with what the servers offer");
+    lines.push(m.upToDate);
   }
-  if (update.message) lines.push(update.message);
+  const said = readNotice(update, locale());
+  if (said) lines.push(said);
   return lines;
 }
 
+/** A refusal from the daemon, in this person's language when it sent a code. */
+const said = (response: { message: string; notice?: Notice | null }): string =>
+  readNotice(response, locale()) ?? response.message;
+
 /** Watching changes nothing, so Ctrl-C must not promise that it does. */
-const WATCH_HINT = "Ctrl-C to stop watching; the tunnels keep running.";
+const WATCH_HINT = t().watchHint;
 
 /** Resolves on Ctrl-C, which is how every live view here ends. */
 function untilInterrupted(): Promise<void> {
@@ -226,7 +190,7 @@ async function followDaemon(daemon: DaemonClient, controlUrl?: string): Promise<
   // link and then the connection. Only a refusal ends the wait early.
   const refused = new Promise<string>((resolve) => {
     void daemon.request({ command: "up", controlUrl }, 15 * 60 * 1000).then((response) => {
-      if (response.type === "error") resolve(response.message);
+      if (response.type === "error") resolve(said(response));
     });
   });
 
@@ -238,11 +202,7 @@ async function followDaemon(daemon: DaemonClient, controlUrl?: string): Promise<
     console.error(failure);
     return 1;
   }
-  console.log(
-    anyUp
-      ? "Detached. The tunnels keep running; use `wave down` to stop them."
-      : "Detached. Nothing is up; the service keeps trying.",
-  );
+  console.log(anyUp ? t().detachedUp : t().detachedNothing);
   return 0;
 }
 
@@ -253,20 +213,17 @@ async function followDaemon(daemon: DaemonClient, controlUrl?: string): Promise<
  */
 async function pickProfile(statePath: string, wanted?: string): Promise<Profile | string> {
   const profiles = await loadProfiles(statePath);
-  if (profiles.length === 0) return "not in any wave yet — `wave login <control-server-url>` joins one";
+  if (profiles.length === 0) return t().notEnrolled;
 
   if (wanted) {
     const found = matchProfiles(profiles, wanted);
-    if (found.length === 0) return `not in a wave at ${wanted}; \`wave profiles\` lists the ones there are`;
-    if (found.length > 1) return describeAmbiguity(wanted, found);
+    if (found.length === 0) return t().noSuchWave(wanted);
+    if (found.length > 1) return readNotice({ notice: ambiguity(wanted, found) }, locale()) ?? wanted;
     return found[0] as Profile;
   }
   const only = profiles[0];
   if (profiles.length === 1 && only) return only;
-  return (
-    `this device is in ${profiles.length} waves (${profiles.map((p) => waveLabel(p.controlUrl)).join(", ")}); ` +
-    "name one by its control server, or use the daemon, which handles them together"
-  );
+  return t().severalWaves(profiles.length, profiles.map((p) => waveLabel(p.controlUrl)).join(", "));
 }
 
 /**
@@ -365,15 +322,10 @@ async function main(): Promise<number> {
     } else if (attempt.reason === "denied") {
       // Quietly doing the work here instead would hide the real problem behind
       // a connection error against whatever default the fallback picked up.
-      console.error(
-        `The wave service is running, but this account may not use its control socket (${values.daemon}).\n` +
-          "The socket belongs to a group chosen when the service was installed. If you were added\n" +
-          "to that group during the install, this session predates it -- log out and back in.\n" +
-          `For right now:  sudo wave ${command}`,
-      );
+      console.error(t().socketDenied(values.daemon, command));
       return 1;
     } else if (attempt.reason === "unreachable") {
-      console.error(`A control socket exists at ${values.daemon} but nothing answers; doing the work here.`);
+      console.error(t().socketSilent(values.daemon));
     }
   }
 
@@ -386,8 +338,8 @@ async function main(): Promise<number> {
     const info = response.status.daemon;
     // The service is a separate process and can be another build: the one
     // before an update restarted it, or one installed from elsewhere.
-    if (!info) console.log("the service runs an older build that does not say its version");
-    else if (info.version !== VERSION) console.log(`the service runs ${info.version}`);
+    if (!info) console.log(t().serviceOlder);
+    else if (info.version !== VERSION) console.log(t().serviceRuns(info.version));
     if (info?.update) for (const line of describeUpdate(info.update)) console.log(line);
     return 0;
   }
@@ -401,9 +353,7 @@ async function main(): Promise<number> {
     // The daemon is the only process that may write the installation, and
     // the only one that holds the signed offers to decide from.
     if (!daemon) {
-      console.error(
-        "updating needs the service: it holds the offers and owns the installation (wave install)",
-      );
+      console.error(t().updateNeedsService);
       return 1;
     }
     const settingsOnly = Object.keys(flags).length > 0;
@@ -415,18 +365,19 @@ async function main(): Promise<number> {
     // The daemon ending before it answers is the new build being started:
     // a successful install never gets to reply.
     if (!settingsOnly && response.type === "error" && response.message === DAEMON_CLOSED) {
-      console.log("installed; the service is restarting with the new version");
+      console.log(t().installedRestarting);
       return 0;
     }
     if (response.type === "error") {
-      console.error(response.message);
+      console.error(said(response));
       return 1;
     }
     if (response.type !== "update") {
-      console.error("unexpected answer");
+      console.error(t().unexpectedAnswer);
       return 1;
     }
-    if (response.message) console.log(response.message);
+    const answer = readNotice(response, locale());
+    if (answer) console.log(answer);
     for (const line of describeUpdate(response.update)) console.log(line);
     return 0;
   }
@@ -436,14 +387,14 @@ async function main(): Promise<number> {
     // naming it, and may name several.
     const typed = positionals[1] ?? values.control;
     if (!typed) {
-      console.error("name the server: `wave login <control-server-url>`");
+      console.error(t().nameTheServer);
       return 1;
     }
     // Refused here rather than stored: an address that is not one becomes an
     // enrolment that can never come up and sits in the list looking real.
     const url = normaliseControlUrl(typed);
     if (!url) {
-      console.error(`${typed} is not a control server address`);
+      console.error(t().notAControlUrl(typed));
       return 1;
     }
     if (!daemon) return runHere(url, values["auth-key"] || undefined);
@@ -462,7 +413,7 @@ async function main(): Promise<number> {
     daemon.close();
     if (response.type !== "status") {
       if (process.stdout.isTTY) process.stdout.write("\n");
-      console.error(response.type === "error" ? response.message : "unexpected answer");
+      console.error(response.type === "error" ? said(response) : t().unexpectedAnswer);
       return 1;
     }
     paint(renderStatus(response.status));
@@ -500,7 +451,7 @@ async function main(): Promise<number> {
       const response = await daemon.request({ command: "status" });
       daemon.close();
       if (response.type !== "status") {
-        console.error(response.type === "error" ? response.message : "unexpected answer");
+        console.error(response.type === "error" ? said(response) : t().unexpectedAnswer);
         return 1;
       }
       // Nobody interrupts a single printed snapshot, so it gets no footer.
@@ -511,17 +462,17 @@ async function main(): Promise<number> {
       const response = await daemon.request({ command: "down", controlUrl: positionals[1] });
       daemon.close();
       if (response.type === "error") {
-        console.error(response.message);
+        console.error(said(response));
         return 1;
       }
-      console.log("down");
+      console.log(t().down);
       return 0;
     }
     if (command === "certs") {
       const response = await daemon.request({ command: "certs" });
       daemon.close();
       if (response.type !== "certs") {
-        console.error(response.type === "error" ? response.message : "unexpected answer");
+        console.error(response.type === "error" ? said(response) : t().unexpectedAnswer);
         return 1;
       }
       printCertificates(response.certs);
@@ -545,7 +496,7 @@ async function main(): Promise<number> {
         );
         if (response.type === "certs") return { certs: response.certs };
         if (response.type === "cert-waiting") return { waiting: response.waiting };
-        return { error: response.type === "error" ? response.message : "unexpected answer" };
+        return { error: response.type === "error" ? said(response) : t().unexpectedAnswer };
       });
       daemon.close();
       return code;
@@ -555,18 +506,16 @@ async function main(): Promise<number> {
       const url = positionals[1];
       if (!url) {
         // Never a bulk operation: it throws keys away.
-        console.error(
-          "name the wave to leave: `wave logout <control-server-url>` (`wave profiles` lists them)",
-        );
+        console.error(t().nameTheWaveToLeave);
         return 1;
       }
       const response = await daemon.request({ command: "logout", controlUrl: url });
       daemon.close();
       if (response.type === "error") {
-        console.error(response.message);
+        console.error(said(response));
         return 1;
       }
-      console.log(`left ${waveLabel(url)}`);
+      console.log(t().left(waveLabel(url)));
       return 0;
     }
   }
@@ -580,7 +529,7 @@ async function main(): Promise<number> {
       const response = await daemon.request({ command: "status" });
       daemon.close();
       if (response.type !== "status") {
-        console.error(response.type === "error" ? response.message : "unexpected answer");
+        console.error(response.type === "error" ? said(response) : t().unexpectedAnswer);
         return 1;
       }
       for (const profile of response.status.profiles) {
@@ -594,14 +543,14 @@ async function main(): Promise<number> {
       for (const profile of await loadProfiles(values.state)) {
         rows.push({
           label: waveLabel(profile.controlUrl),
-          where: profile.nodeId ? profile.interfaceName : "not enrolled",
+          where: profile.nodeId ? profile.interfaceName : t().notEnrolledRow,
           controlUrl: profile.controlUrl,
         });
       }
     }
 
     if (rows.length === 0) {
-      console.log("not in any wave yet — `wave login <control-server-url>` joins one");
+      console.log(t().notEnrolled);
       return 0;
     }
     const width = Math.max(...rows.map((row) => row.label.length));
@@ -699,15 +648,14 @@ async function main(): Promise<number> {
     // process runs the tunnel.
     const lines = async (): Promise<string[]> => {
       const device = await control.getDevice();
-      const out = [`interface ${linkName} (node ${state.nodeId ?? "unenrolled"}), port ${device.listenPort}`];
-      if (device.peers.length === 0) out.push("  no peers");
+      const m = t();
+      const out = [m.wgInterface(linkName, state.nodeId ?? null, device.listenPort)];
+      if (device.peers.length === 0) out.push(m.wgNoPeers);
       for (const peer of device.peers) {
         const handshake = peer.lastHandshakeSeconds
-          ? `${Math.round(Date.now() / 1000 - peer.lastHandshakeSeconds)}s ago`
-          : "never";
-        out.push(
-          `  ${peer.allowedIps.join(",")} via ${peer.endpoint ?? "no endpoint"} — handshake ${handshake}`,
-        );
+          ? m.wgAgo(Math.round(Date.now() / 1000 - peer.lastHandshakeSeconds))
+          : m.wgNever;
+        out.push(m.wgPeer(peer.allowedIps.join(","), peer.endpoint ?? null, handshake));
       }
       return out;
     };
@@ -722,7 +670,7 @@ async function main(): Promise<number> {
     // and keep watching, not something to crash on: it may well come back.
     const repaint = async () => {
       const body = await lines().catch((error: unknown) => [
-        `${linkName} is not answering (${error instanceof Error ? error.message : String(error)})`,
+        t().wgSilent(linkName, error instanceof Error ? error.message : String(error)),
       ]);
       paint([...body, "", WATCH_HINT].join("\n"));
     };
@@ -735,7 +683,7 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  console.error(`unknown command: ${command}\n\n${usage}`);
+  console.error(t().unknownCommand(command, usage));
   return 1;
 }
 
@@ -775,7 +723,7 @@ async function certAttempts(attempt: () => Promise<CertAttempt>): Promise<number
       announced = true;
     }
     if (Date.now() >= deadline) {
-      console.error("Still waiting for the record. Run `wave cert` again once it is live.");
+      console.error(t().stillWaiting);
       return 1;
     }
     await Bun.sleep(MANUAL_INTERVAL_MS);
@@ -784,27 +732,25 @@ async function certAttempts(attempt: () => Promise<CertAttempt>): Promise<number
 
 /** What somebody has to put in the zone, in the shape a DNS form asks for. */
 function printRecords(waiting: CertWaiting): void {
-  console.log(`\nThis wave answers dns-01 by hand, so ${waiting.name} needs a record first:\n`);
+  console.log(t().recordsIntro(waiting.name));
   for (const record of waiting.records) {
     console.log(`  name   ${record.name}`);
     console.log("  type   TXT");
     console.log(`  value  ${record.value}`);
     console.log("");
   }
-  console.log("A short TTL (60s) helps. Nothing else has to be changed, and the record");
-  console.log("can go again once the certificate is there.");
-  console.log("Waiting... Ctrl-C is safe: `wave cert` takes the same order up again.\n");
+  console.log(t().recordsOutro);
 }
 
 /** One line per certificate: what it is for, until when, and where it is. */
 function printCertificates(certs: CertificateStatus[]): void {
   if (certs.length === 0) {
-    console.log("no certificates yet — `wave cert` asks for one");
+    console.log(t().noCertificates);
     return;
   }
   const width = Math.max(...certs.map((cert) => cert.name.length));
   for (const cert of certs) {
-    console.log(`${cert.name.padEnd(width)}  until ${cert.notAfter}  ${cert.chainPath}`);
+    console.log(`${cert.name.padEnd(width)}  ${t().certUntil(cert.notAfter)}  ${cert.chainPath}`);
   }
 }
 

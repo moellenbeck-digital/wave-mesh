@@ -1,6 +1,8 @@
+import type { Locale } from "@wave/i18n";
 import { AclPolicy, AclSelector } from "@wave/proto";
 import { portText } from "./describe.ts";
 import { type AclNode, type AclService, compilePolicy, covers } from "./evaluate.ts";
+import { aclMessages } from "./messages.ts";
 import { invalidTags } from "./store.ts";
 import { checkPolicy } from "./validate.ts";
 
@@ -38,13 +40,15 @@ export function previewPolicy(
   subjects: { nodes: (AclNode & { hostname: string })[]; services: AclService[] },
   draftTags: Record<string, string[]>,
   selectors: string[],
+  locale: Locale = "en",
 ): Preview {
+  const m = aclMessages(locale);
   const errors: string[] = [];
   const nodes = subjects.nodes.map((node) => {
     const tags = draftTags[node.id];
     if (!tags) return node;
     const bad = invalidTags(tags);
-    if (bad.length > 0) errors.push(`${node.hostname}: not a tag: ${bad.join(", ")}`);
+    if (bad.length > 0) errors.push(`${node.hostname}: ${m.notATag(bad)}`);
     return { ...node, tags: [...new Set(tags)].sort() };
   });
   const judged = { nodes, services: subjects.services };
@@ -69,7 +73,7 @@ export function previewPolicy(
 
   if (raw === null) return { errors, warnings: [], reach: null, covers: coverage };
 
-  const check = checkPolicy(raw, judged);
+  const check = checkPolicy(raw, judged, locale);
   errors.push(...check.errors);
   if (!check.policy || errors.length > 0) {
     return { errors, warnings: check.warnings, reach: null, covers: coverage };
@@ -80,10 +84,10 @@ export function previewPolicy(
   const reach: ReachPair[] = [];
   for (const [from, entry] of compiled.reach) {
     for (const [to, ports] of entry.nodes) {
-      reach.push({ from: name.get(from) ?? from, to: name.get(to) ?? to, ports: portText(ports) });
+      reach.push({ from: name.get(from) ?? from, to: name.get(to) ?? to, ports: portText(ports, locale) });
     }
     for (const [service, ports] of entry.services) {
-      reach.push({ from: name.get(from) ?? from, to: `svc:${service}`, ports: portText(ports) });
+      reach.push({ from: name.get(from) ?? from, to: `svc:${service}`, ports: portText(ports, locale) });
     }
   }
   reach.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));

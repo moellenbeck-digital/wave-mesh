@@ -1,7 +1,9 @@
 "use client";
 
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
 import { NodeList } from "@/components/node-list";
+import { appMessages } from "@/i18n/app";
 import type { Node, Wave } from "@/lib/control";
 
 /**
@@ -32,6 +34,7 @@ export function DeviceFeed({ children }: { children: ReactNode }) {
   // Starts true so a page that is still connecting says nothing. Only a socket
   // that was closed makes a claim about the list being stale.
   const [live, setLive] = useState(true);
+  const t = appMessages(useLocale());
 
   useEffect(() => {
     let socket: WebSocket | undefined;
@@ -107,8 +110,7 @@ export function DeviceFeed({ children }: { children: ReactNode }) {
     <DevicesContext.Provider value={devices}>
       {live ? null : (
         <p className="mb-6 text-caption text-slate" role="status">
-          Keine Live-Verbindung — die Geräte stehen so da, wie sie beim Laden der Seite waren. Der nächste
-          Versuch läuft.
+          {t.feedOffline}
         </p>
       )}
       {children}
@@ -138,23 +140,15 @@ export function LiveNodeList({
   return <NodeList nodes={nodes} wave={wave} mayRemove={mayRemove} />;
 }
 
-/** "3 von 5 Geräten verbunden", the line in the card's header. */
+/** "3 of 5 devices connected", the line in the card's header. */
 export function LiveConnectedCount({ wave, initial }: { wave: Wave; initial: Node[] }) {
   const nodes = useDevices(wave.id, initial);
   const online = nodes.filter((node) => node.online).length;
-  return (
-    <span>
-      {online} von {nodes.length} {nodes.length === 1 ? "Gerät" : "Geräten"} verbunden
-    </span>
-  );
+  return <span>{appMessages(useLocale()).connectedCount(online, nodes.length)}</span>;
 }
 
 /** What deleting the wave would take with it, counted the same way. */
 export function LiveDeviceCount({ wave, initial }: { wave: Wave; initial: Node[] }) {
   const count = useDevices(wave.id, initial).length;
-  return (
-    <>
-      {count} {count === 1 ? "Gerät" : "Geräte"}
-    </>
-  );
+  return <>{appMessages(useLocale()).devices(count)}</>;
 }

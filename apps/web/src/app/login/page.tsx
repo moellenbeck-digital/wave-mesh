@@ -1,14 +1,12 @@
 import { redirect } from "next/navigation";
+import { type AppMessages, appMessages, providerName } from "@/i18n/app";
 import { fetchMe, fetchProviders } from "@/lib/control";
+import { getLocale } from "@/lib/i18n";
 
-const PROVIDER_NAMES: Record<string, string> = {
-  google: "Google",
-  dev: "Entwickler-Login",
-};
-
-const ERRORS: Record<string, string> = {
-  invalid: "E-Mail oder Passwort stimmt nicht.",
-  throttled: "Zu viele Versuche. Bitte später erneut probieren.",
+/** The codes the control server redirects back with, never its own wording. */
+const ERRORS: Record<string, (t: AppMessages) => string> = {
+  invalid: (t) => t.loginInvalid,
+  throttled: (t) => t.loginThrottled,
 };
 
 /** Only relative paths, so a crafted link cannot bounce the user off-site. */
@@ -24,7 +22,8 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const next = safeNext(typeof params.next === "string" ? params.next : undefined);
-  const error = typeof params.error === "string" ? ERRORS[params.error] : undefined;
+  const t = appMessages(await getLocale());
+  const error = typeof params.error === "string" ? ERRORS[params.error]?.(t) : undefined;
 
   const me = await fetchMe();
   if (me) redirect(next ?? "/");
@@ -35,9 +34,9 @@ export default async function LoginPage({
   return (
     <div className="mx-auto max-w-md">
       <div className="mb-10 text-center">
-        <h1 className="animate-fade-in font-display text-display-sm text-navy">Anmelden</h1>
+        <h1 className="animate-fade-in font-display text-display-sm text-navy">{t.signIn}</h1>
         <p className="animate-fade-in mt-2 text-body-sm text-slate" style={{ animationDelay: "0.1s" }}>
-          Mit deinem Konto verwaltest du die Geräte in deinem Wave.
+          {t.loginLead}
         </p>
       </div>
 
@@ -58,7 +57,7 @@ export default async function LoginPage({
 
           <div>
             <label className="wc-label" htmlFor="email">
-              E-Mail
+              {t.email}
             </label>
             <input
               className="wc-input"
@@ -72,7 +71,7 @@ export default async function LoginPage({
 
           <div>
             <label className="wc-label" htmlFor="password">
-              Passwort
+              {t.password}
             </label>
             <input
               className="wc-input"
@@ -85,7 +84,7 @@ export default async function LoginPage({
           </div>
 
           <button type="submit" className="wc-btn wc-btn-primary mt-2 w-full">
-            Anmelden
+            {t.signIn}
           </button>
         </form>
 
@@ -93,14 +92,14 @@ export default async function LoginPage({
           <>
             <div className="my-7 flex items-center gap-4">
               <span className="h-px flex-1 bg-line" />
-              <span className="text-label text-slate uppercase">oder</span>
+              <span className="text-label text-slate uppercase">{t.or}</span>
               <span className="h-px flex-1 bg-line" />
             </div>
 
             <div className="flex flex-col gap-3">
               {providers.map((id) => (
                 <a key={id} className="wc-btn wc-btn-secondary w-full" href={`/auth/${id}/start${suffix}`}>
-                  Weiter mit {PROVIDER_NAMES[id] ?? id}
+                  {t.continueWith(providerName(id, t))}
                 </a>
               ))}
             </div>

@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
+import { appMessages } from "@/i18n/app";
+import { rich } from "@/i18n/rich";
 import { fetchMe } from "@/lib/control";
+import { getLocale } from "@/lib/i18n";
 
 /** Only relative paths, so a crafted link cannot bounce the user off-site. */
 const safeNext = (value: string | undefined): string | undefined =>
@@ -24,14 +27,14 @@ export default async function NewWavePage({
   if (!me) redirect(`/login?next=${encodeURIComponent("/waves/new")}`);
 
   const waiting = me.invites[0];
+  const t = appMessages(await getLocale());
 
   return (
     <div className="mx-auto max-w-lg">
       <div className="mb-10">
-        <h1 className="animate-fade-in font-display text-display-sm text-navy">Wave anlegen</h1>
+        <h1 className="animate-fade-in font-display text-display-sm text-navy">{t.createWave}</h1>
         <p className="animate-fade-in mt-3 text-body-sm text-slate" style={{ animationDelay: "0.1s" }}>
-          Ein Wave ist dein Netz: jedes Gerät darin bekommt eine feste Adresse und einen Namen unter deiner
-          Domain.
+          {t.newLead}
         </p>
       </div>
 
@@ -40,9 +43,10 @@ export default async function NewWavePage({
           nicht: wer daneben ein eigenes Netz will, soll es anlegen können. */}
       {waiting ? (
         <p className="wc-alert-success mb-6" role="status">
-          Es wartet eine Einladung in <strong className="font-medium">{waiting.wave}</strong>
-          {waiting.invitedBy ? <> von {waiting.invitedBy}</> : null}. Öffne den Link, den du bekommen hast —
-          ein eigener Wave ist dafür nicht nötig.
+          {rich(t.newInviteWaiting, {
+            wave: <strong className="font-medium">{waiting.wave}</strong>,
+            by: waiting.invitedBy ? t.invitedBy(waiting.invitedBy) : null,
+          })}
         </p>
       ) : null}
 
@@ -57,7 +61,7 @@ export default async function NewWavePage({
 
           <div>
             <label className="wc-label" htmlFor="name">
-              Name
+              {t.name}
             </label>
             <input
               className="wc-input"
@@ -68,12 +72,12 @@ export default async function NewWavePage({
               maxLength={24}
               required
             />
-            <p className="mt-2 text-caption text-slate">Kleinbuchstaben, Ziffern und Bindestriche.</p>
+            <p className="mt-2 text-caption text-slate">{t.nameHint}</p>
           </div>
 
           <div>
             <label className="wc-label" htmlFor="suffix">
-              Domain
+              {t.domain}
             </label>
             <input
               className="wc-input"
@@ -85,14 +89,14 @@ export default async function NewWavePage({
               required
             />
             <p className="mt-2 text-caption text-slate">
-              Geräte heißen dann <code className="font-mono">&lt;name&gt;.{me.suggestion.dnsSuffix}</code>.
-              Behalte den Vorschlag, wenn du keine eigene Domain hast — ändern kannst du ihn später, das
-              benennt allerdings jedes Gerät im Wave um.
+              {rich(t.domainHint, {
+                pattern: <code className="font-mono">&lt;name&gt;.{me.suggestion.dnsSuffix}</code>,
+              })}
             </p>
           </div>
 
           <button type="submit" className="wc-btn wc-btn-primary mt-2 w-full">
-            Wave anlegen
+            {t.createWave}
           </button>
         </form>
       </section>

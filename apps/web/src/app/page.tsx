@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
 import { DeviceFeed } from "@/components/device-feed";
 import { WaveCard } from "@/components/wave-card";
+import { appMessages } from "@/i18n/app";
+import { rich } from "@/i18n/rich";
 import { fetchMe, fetchMembers, fetchNodes } from "@/lib/control";
 import { formatDate } from "@/lib/format";
+import { getLocale } from "@/lib/i18n";
 
 export default async function DashboardPage({
   searchParams,
@@ -14,6 +17,9 @@ export default async function DashboardPage({
 
   const me = await fetchMe();
   if (!me) redirect("/login");
+  const locale = await getLocale();
+  const t = appMessages(locale);
+  const invite = me.invites[0];
 
   const waves = await Promise.all(
     me.waves.map(async (wave) => ({
@@ -28,34 +34,32 @@ export default async function DashboardPage({
       {/* Keine sichtbare Einleitung: die Wave-Karten sind die Seite und stehen
           ganz oben. Die Überschrift bleibt für Screenreader, damit die Seite
           eine hat. */}
-      <h1 className="sr-only">Dein Netz</h1>
+      <h1 className="sr-only">{t.dashboardTitle}</h1>
 
       {joined ? (
         <p className="wc-alert-success mb-6" role="status">
-          Du bist jetzt in <strong className="font-medium">{joined}</strong>.
+          {rich(t.joined, { wave: <strong className="font-medium">{joined}</strong> })}
         </p>
       ) : null}
 
       {waves.length === 0 ? (
         <section className="wc-card animate-slide-up rounded-lg p-8 text-center">
-          <h2 className="font-display text-headline text-navy">Noch kein Wave</h2>
-          {me.invites.length > 0 ? (
+          <h2 className="font-display text-headline text-navy">{t.noWaveTitle}</h2>
+          {invite ? (
             /* Kein eigener Wave, weil eine Einladung wartet -- der Server legt
                dann keinen an. Den Link kennt nur der Eingeladene selbst. */
             <p className="mx-auto mt-3 max-w-md text-body-sm text-slate">
-              Es wartet eine Einladung in{" "}
-              <strong className="font-medium text-navy">{me.invites[0]?.wave}</strong>
-              {me.invites[0]?.invitedBy ? <> von {me.invites[0].invitedBy}</> : null}. Öffne den Link, den du
-              bekommen hast — er gilt bis {formatDate(me.invites[0]?.expiresAt ?? null)}.
+              {rich(t.inviteWaiting, {
+                wave: <strong className="font-medium text-navy">{invite.wave}</strong>,
+                by: invite.invitedBy ? t.invitedBy(invite.invitedBy) : null,
+                until: formatDate(invite.expiresAt, locale),
+              })}
             </p>
           ) : (
-            <p className="mx-auto mt-3 max-w-md text-body-sm text-slate">
-              Für dieses Konto ist noch kein Netz eingerichtet. Ein Wave entsteht nicht von selbst — die
-              Domain, unter der die Gerätenamen hängen, wählst du beim Anlegen.
-            </p>
+            <p className="mx-auto mt-3 max-w-md text-body-sm text-slate">{t.noWaveText}</p>
           )}
           <a href="/waves/new" className="wc-btn wc-btn-primary mt-6">
-            Wave anlegen
+            {t.createWave}
           </a>
         </section>
       ) : (
@@ -64,7 +68,14 @@ export default async function DashboardPage({
         <DeviceFeed>
           <div className="flex flex-col gap-6">
             {waves.map(({ wave, nodes, membership }, index) => (
-              <WaveCard key={wave.id} wave={wave} nodes={nodes} membership={membership} delay={index * 0.1} />
+              <WaveCard
+                key={wave.id}
+                wave={wave}
+                nodes={nodes}
+                membership={membership}
+                delay={index * 0.1}
+                locale={locale}
+              />
             ))}
           </div>
         </DeviceFeed>

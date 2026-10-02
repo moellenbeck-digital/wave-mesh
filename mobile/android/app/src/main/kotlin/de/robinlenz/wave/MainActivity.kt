@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.json.JSONObject
@@ -111,33 +112,33 @@ private fun WaveScreen(
 
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("wave", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall)
             Button(onClick = { if (running) onDisconnect() else onConnect() }) {
-                Text(if (running) "Disconnect" else "Connect")
+                Text(stringResource(if (running) R.string.disconnect else R.string.connect))
             }
         }
 
         pending?.let {
-            TextButton(onClick = onOpenAuthURL) { Text("Open the enrolment link") }
+            TextButton(onClick = onOpenAuthURL) { Text(stringResource(R.string.open_enrolment_link)) }
         }
 
         OutlinedTextField(
             value = controlURL,
             onValueChange = { controlURL = it },
-            label = { Text("control server address") },
+            label = { Text(stringResource(R.string.control_server_address)) },
             modifier = Modifier.fillMaxWidth(),
         )
         Button(
             onClick = { onLogin(controlURL); controlURL = "" },
             enabled = controlURL.isNotBlank(),
-        ) { Text("Log in") }
+        ) { Text(stringResource(R.string.log_in)) }
 
         if (waves.isEmpty()) {
             // Not in any wave is a different thing from a tunnel that is down,
             // and saying so is the difference between somebody looking for a
             // bug and somebody logging in.
             Text(
-                "This device is in no wave yet. Logging in is the only way in — there is no second one.",
+                stringResource(R.string.no_wave_yet),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -161,7 +162,7 @@ private fun WaveCard(wave: JSONObject, onLogout: (String) -> Unit) {
                 // connection -- the netmap is signed and already here -- so
                 // this is a warning, not an outage.
                 Text(
-                    "no control connection; peers will stop being updated",
+                    stringResource(R.string.no_control_connection),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -171,7 +172,7 @@ private fun WaveCard(wave: JSONObject, onLogout: (String) -> Unit) {
                 Text("${peer.optString("hostname")} — ${pathOf(peer)}", style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = { onLogout(wave.optString("controlUrl")) }) {
-                Text("Leave this wave")
+                Text(stringResource(R.string.leave_wave))
             }
         }
     }
@@ -181,9 +182,15 @@ private fun WaveCard(wave: JSONObject, onLogout: (String) -> Unit) {
 /// every packet is sprayed at all known candidates, which carries -- it is only
 /// wasteful and unmeasured. Saying "connecting" here would claim the tunnel is
 /// down while a ping over it answers in 16 ms.
+///
+/// Composable only for `stringResource`: the core reports "relay" or the
+/// address of the direct path, and only the word is translated -- an address is
+/// the same in every language.
+@Composable
 private fun pathOf(peer: JSONObject): String {
-    val via = peer.optString("via")
-    if (via.isEmpty()) return "no fixed path"
+    val raw = peer.optString("via")
+    if (raw.isEmpty()) return stringResource(R.string.path_none)
+    val via = if (raw == "relay") stringResource(R.string.path_relay) else raw
     val rtt = peer.optInt("rttMs", 0)
-    return if (rtt > 0) "$via · $rtt ms" else via
+    return if (rtt > 0) stringResource(R.string.path_with_rtt, via, rtt) else via
 }

@@ -288,6 +288,7 @@ describe("an update (D13)", () => {
         available: "0.2.0",
         state: "idle",
         message: null,
+        notice: null,
         scheduledAt: null,
         ...update,
       },

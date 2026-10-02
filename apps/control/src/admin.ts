@@ -10,11 +10,13 @@
  * ambiguous name is reported, never guessed.
  */
 import { basename } from "node:path";
+import { systemLocale } from "@wave/i18n/system";
 import { desc, eq } from "drizzle-orm";
 import { describeEnforcement, describeReach, enforcementText } from "./acl/describe.ts";
 import { compilePolicy } from "./acl/evaluate.ts";
 import { aclSubjects, getPolicy, invalidTags, removePolicy, setPolicy, setTags } from "./acl/store.ts";
 import { checkPolicy } from "./acl/validate.ts";
+import { adminMessages } from "./admin-messages.ts";
 import { audit, listAudit, shellActor } from "./audit.ts";
 import { setPassword } from "./auth/password.ts";
 import { createDb } from "./db/client.ts";
@@ -35,6 +37,14 @@ import { addMember, listMembers, removeMember } from "./waves/members.ts";
 import { findNode, listNodes, removeNode, setWildcardAllowed } from "./waves/nodes.ts";
 import { DEFAULT_DNS_BASE, deleteWave, ensureWaveForUser, setWaveDomain } from "./waves/provision.ts";
 import { listServices, removeService, serviceUrl } from "./waves/services.ts";
+
+/**
+ * The operator reads in the language of this machine (WAVE_LANG, then the
+ * locale variables), not of any browser: there is none. Only what is said to
+ * the person changes -- commands, flags and the audit entries stay as they are.
+ */
+const locale = systemLocale();
+const m = adminMessages(locale);
 
 /**
  * Reads one visible line, or the whole of a pipe when there is no terminal.
@@ -104,16 +114,15 @@ async function readSecret(prompt: string): Promise<string> {
  * stdin, so INWX cannot be asked in three parts there and takes its JSON whole.
  */
 async function readCredential(kind: AutomaticKind, suffix: string): Promise<string> {
-  if (kind === "ionos") return readSecret(`IONOS API key, <public prefix>.<secret> (${suffix}): `);
-  if (kind !== "inwx") return readSecret(`API token for ${kind} (${suffix}): `);
+  if (kind === "ionos") return readSecret(m.ionosPrompt(suffix));
+  if (kind !== "inwx") return readSecret(m.tokenPrompt(kind, suffix));
 
   if (!process.stdin.isTTY) return readSecret("");
-  console.log(`INWX signs in with an account rather than a token (${suffix}).`);
-  console.log("Worth knowing: it has nothing that can be scoped to one zone, so this credential can");
-  console.log("do everything the account can. A sub-account for this domain alone is the way to narrow it.");
-  const user = await readLine("  INWX username: ");
-  const password = await readSecret("  INWX password (not echoed): ");
-  const totpSecret = await readSecret("  TOTP shared secret, empty if the account has no 2FA: ");
+  console.log(m.inwxIntro(suffix));
+  console.log(m.inwxScope);
+  const user = await readLine(m.inwxUser);
+  const password = await readSecret(m.inwxPassword);
+  const totpSecret = await readSecret(m.inwxTotp);
   return JSON.stringify({ user, password, ...(totpSecret ? { totpSecret } : {}) });
 }
 
@@ -183,7 +192,7 @@ const CHANGES = new Set([
  */
 const invocation = Bun.main.endsWith(".ts") ? "bun src/admin.ts" : basename(process.execPath);
 
-const usage = `usage:
+const usage = `${m.usageTitle}
   ${invocation} set-password  <email>
   ${invocation} set-domain    <wave> <domain>
   ${invocation} members       <wave>
@@ -214,12 +223,7 @@ const usage = `usage:
   ${invocation} untag               <wave> <hostname|node-id> [tag:name...]
   ${invocation} audit               <wave> [--limit N]
 
-<wave> is a wave name, a wave id or the address of its owner.
-set-acl reads a policy from a file, or from a pipe with -; without one every device reaches
-every other. acl prints the policy and who reaches whom under it.
-set-dns-provider reads the credential from the terminal or from a pipe. cloudflare, hetzner and
-ionos take one token; inwx takes an account and asks for its parts, or reads
-{"user":"…","password":"…","totpSecret":"…"} from a pipe.`;
+${m.usageNotes}`;
 
 const [command, ...rest] = process.argv.slice(2);
 if (!command || !(COMMANDS as readonly string[]).includes(command)) {
@@ -255,12 +259,10 @@ async function done(code: number, message?: string): Promise<never> {
 async function wave(selector: string | undefined): Promise<FoundWave> {
   if (!selector) return done(1, usage);
   const found = await resolveWave(db, selector);
-  if (!found) return done(1, `no wave matches ${selector}`);
+  if (!found) return done(1, m.noWaveMatches(selector));
   if (isAmbiguous(found)) {
-    const list = found.ambiguous
-      .map((w) => `  ${w.name} (${w.id}), owner ${w.ownerEmail ?? "unknown"}`)
-      .join("\n");
-    return done(1, `${selector} matches several waves -- name one of them:\n${list}`);
+    const list = found.ambiguous.map((w) => m.ambiguousEntry(w.name, w.id, w.ownerEmail)).join("\n");
+    return done(1, m.severalWaves(selector, list));
   }
   touched = found;
   return found;
@@ -286,14 +288,13 @@ const asRole = (value: string | undefined): "admin" | "member" => (value === "ad
 async function main(): Promise<never> {
   if (command === "set-dns-provider") {
     const [selector, kind] = rest;
-    if (!kind || !isProviderKind(kind))
-      return done(1, `provider must be one of ${PROVIDER_KINDS.join(", ")}`);
+    if (!kind || !isProviderKind(kind)) return done(1, m.providerMustBe(PROVIDER_KINDS.join(", ")));
     const target = await wave(selector);
 
     // Refused before anything is asked for: `.internal` cannot be delegated,
     // so there is no zone anywhere that anybody could write this record in.
     if (target.dnsSuffix === DEFAULT_DNS_BASE || target.dnsSuffix.endsWith(`.${DEFAULT_DNS_BASE}`)) {
-      return done(1, `${target.name} still uses the placeholder ${target.dnsSuffix}; set-domain first`);
+      return done(1, m.placeholderSuffix(target.name, target.dnsSuffix));
     }
 
     // The way out of needing a provider at all: the server names the record and
@@ -302,17 +303,17 @@ async function main(): Promise<never> {
     // happens once per certificate instead of once here.
     if (!isAutomaticKind(kind)) {
       await storeDnsCredential(db, { waveId: target.id, provider: kind });
-      console.log(`${target.name} answers dns-01 by hand; no credential is stored.`);
-      console.log("`wave cert` on a device prints the record to create and waits for it.");
-      return done(0, "Renewals then need a person too -- a provider is the only way around that.");
+      console.log(m.manualMode(target.name));
+      console.log(m.manualRecord);
+      return done(0, m.manualRenewals);
     }
 
     if (!config.dnsSecret) {
-      return done(1, "WAVE_DNS_SECRET is not set; without it a token would have to be stored in the clear");
+      return done(1, m.noDnsSecret);
     }
 
     const token = await readCredential(kind, target.dnsSuffix);
-    if (!token) return done(1, "no credential given");
+    if (!token) return done(1, m.noCredential);
 
     // Tried before it is stored, and this is also the domain verification D6
     // asks for: in provider mode, being able to write the zone is the proof of
@@ -322,13 +323,13 @@ async function main(): Promise<never> {
     } catch (error) {
       return done(
         1,
-        `the credential could not write ${target.dnsSuffix}: ${error instanceof Error ? error.message : error}`,
+        m.credentialCannotWrite(target.dnsSuffix, error instanceof Error ? error.message : String(error)),
       );
     }
 
     await storeDnsCredential(db, { waveId: target.id, provider: kind, token, key: config.dnsSecret });
-    console.log(`${target.name} writes ${target.dnsSuffix} through ${kind}.`);
-    return done(0, "Devices can now ask for certificates with `wave cert`.");
+    console.log(m.writesThrough(target.name, target.dnsSuffix, kind));
+    return done(0, m.devicesCanAskCerts);
   }
 
   if (command === "services") {
@@ -342,9 +343,9 @@ async function main(): Promise<never> {
       // The scheme as the browser would use it, so the shell and the web view
       // say the same thing about the same name.
       const url = serviceUrl(service.name, target.dnsSuffix, service.scheme);
-      console.log(`  ${url.padEnd(48)} ${service.ipv4.padEnd(16)} via ${via}`);
+      console.log(`  ${url.padEnd(48)} ${service.ipv4.padEnd(16)} ${m.via(via)}`);
     }
-    if (services.length === 0) console.log("  no services");
+    if (services.length === 0) console.log(m.noServices);
     return done(0);
   }
 
@@ -357,9 +358,7 @@ async function main(): Promise<never> {
     // next round -- this is for a cluster that is gone, not one that disagrees.
     return done(
       removed ? 0 : 1,
-      removed
-        ? `${name} is gone from ${target.name}; a running operator would declare it again.`
-        : `no service called ${name} in ${target.name}`,
+      removed ? m.serviceRemoved(name, target.name) : m.noService(name, target.name),
     );
   }
 
@@ -371,7 +370,7 @@ async function main(): Promise<never> {
     const owner = target.ownerEmail ? await account(target.ownerEmail) : null;
     // The devices become somebody's, and on the shell that somebody is the
     // owner -- there is no operator account to attribute them to.
-    if (!owner) return done(1, `${target.name} has no owner account to enrol devices for`);
+    if (!owner) return done(1, m.noOwnerToEnrolFor(target.name));
 
     const days = Number(flags.find((flag) => flag.startsWith("--days="))?.split("=")[1] ?? 0) || undefined;
     const key = await createAuthKey(db, {
@@ -382,8 +381,8 @@ async function main(): Promise<never> {
       days,
     });
 
-    console.log(`This key enrols devices into ${target.name} until ${key.expiresAt.toISOString()}.`);
-    console.log("It is shown once; it cannot be read back, only replaced.");
+    console.log(m.keyEnrols(target.name, key.expiresAt.toISOString()));
+    console.log(m.keyShownOnce);
     console.log("");
     console.log(`  wave login ${config.baseUrl} --auth-key ${key.token}`);
     return done(0, "");
@@ -394,19 +393,19 @@ async function main(): Promise<never> {
     const keys = await listAuthKeys(db, target.id);
     console.log(`${target.name} (${target.dnsSuffix})`);
     for (const key of keys) {
-      const state = key.revokedAt
+      const state: "revoked" | "expired" | "used" | "usable" = key.revokedAt
         ? "revoked"
         : key.expiresAt.getTime() < Date.now()
           ? "expired"
           : !key.reusable && key.uses > 0
             ? "used"
             : "usable";
-      const kind = key.reusable ? "reusable" : "single use";
+      const kind = m.keyKind(key.reusable);
       console.log(
-        `  ${key.id}  ${state.padEnd(8)} ${kind.padEnd(11)} ${key.uses} device(s)  ${key.label ?? ""}`,
+        `  ${key.id}  ${m.keyState(state).padEnd(10)} ${kind.padEnd(11)} ${m.keyDevices(key.uses)}  ${key.label ?? ""}`,
       );
     }
-    if (keys.length === 0) console.log("  no pre-auth keys");
+    if (keys.length === 0) console.log(m.noKeys);
     return done(0);
   }
 
@@ -415,12 +414,7 @@ async function main(): Promise<never> {
     if (!id) return done(1, usage);
     const target = await wave(selector);
     const revoked = await revokeAuthKey(db, target.id, id);
-    return done(
-      revoked ? 0 : 1,
-      revoked
-        ? `${id} cannot enrol anything any more; devices that used it keep their place.`
-        : `no usable key ${id} in ${target.name}`,
-    );
+    return done(revoked ? 0 : 1, revoked ? m.keyRevoked(id) : m.noUsableKey(id, target.name));
   }
 
   if (command === "allow-wildcard" || command === "deny-wildcard") {
@@ -428,18 +422,17 @@ async function main(): Promise<never> {
     if (!host) return done(1, usage);
     const target = await wave(selector);
     const found = await findNode(db, target.id, host);
-    if (!found) return done(1, `no device called ${host} in ${target.name}`);
+    if (!found) return done(1, m.noDevice(host, target.name));
 
     const allowed = command === "allow-wildcard";
     const updated = await setWildcardAllowed(db, target.id, found.id, allowed);
-    if (!updated) return done(1, `no device called ${host} in ${target.name}`);
-    if (!allowed) return done(0, `${found.hostname} may no longer ask for *.${target.dnsSuffix}.`);
+    if (!updated) return done(1, m.noDevice(host, target.name));
+    if (!allowed) return done(0, m.wildcardDenied(found.hostname, target.dnsSuffix));
 
     // Said plainly, because it is the one grant here that reaches past the
     // device it is given to.
-    console.log(`${found.hostname} may now ask for *.${target.dnsSuffix} and ${target.dnsSuffix}.`);
-    console.log("Whoever holds that certificate's key can serve every name in the wave,");
-    return done(0, "so it belongs on a machine you would trust with all of them.");
+    console.log(m.wildcardAllowed(found.hostname, target.dnsSuffix));
+    return done(0, m.wildcardWarning);
   }
 
   if (command === "audit") {
@@ -447,32 +440,33 @@ async function main(): Promise<never> {
     const target = await wave(selector);
     const limit = flag === "--limit" ? Math.max(1, Number(value) || 50) : 50;
     const entries = await listAudit(db, target.id, limit);
-    console.log(`${target.name} (${target.dnsSuffix}), newest first`);
+    console.log(m.newestFirst(target.name, target.dnsSuffix));
     for (const entry of entries) {
       console.log(
         `  ${entry.at}  ${entry.actor.padEnd(24)} ${entry.action.padEnd(22)} ${entry.target ?? ""}`,
       );
     }
-    if (entries.length === 0) console.log("  nothing recorded yet");
+    if (entries.length === 0) console.log(m.nothingRecorded);
     return done(0);
   }
 
   if (command === "acl") {
     const target = await wave(rest[0]);
     const stored = await getPolicy(db, target.id);
-    if (!stored) return done(0, `${target.name} has no policy: every device reaches every other.`);
+    if (!stored) return done(0, m.noPolicy(target.name));
     const subjects = await aclSubjects(db, target.id);
     console.log(JSON.stringify(stored.document, null, 2));
-    console.log(`\nversion ${stored.version}, set ${stored.updatedAt.toISOString()}. Under it:`);
+    console.log(m.policyVersion(stored.version, stored.updatedAt.toISOString()));
     for (const line of describeReach(
       compilePolicy(stored.document, subjects.nodes, subjects.services),
       subjects.nodes,
+      locale,
     )) {
       console.log(line);
     }
-    const unenforced = describeEnforcement(subjects.nodes);
-    if (unenforced.length === 0) return done(0, "\nEvery device enforces its ports.");
-    console.log("\nThese devices are limited by the netmap only, not in their ports:");
+    const unenforced = describeEnforcement(subjects.nodes, locale);
+    if (unenforced.length === 0) return done(0, m.everyDeviceEnforces);
+    console.log(m.netmapOnly);
     for (const line of unenforced) console.log(line);
     return done(0);
   }
@@ -486,48 +480,44 @@ async function main(): Promise<never> {
     try {
       raw = JSON.parse(text);
     } catch (error) {
-      return done(1, `not JSON: ${(error as Error).message}`);
+      return done(1, m.notJson((error as Error).message));
     }
 
     const subjects = await aclSubjects(db, target.id);
-    const check = checkPolicy(raw, subjects);
-    for (const warning of check.warnings) console.log(`  note: ${warning}`);
-    if (!check.policy) return done(1, `refused:\n${check.errors.map((error) => `  ${error}`).join("\n")}`);
+    const check = checkPolicy(raw, subjects, locale);
+    for (const warning of check.warnings) console.log(m.note(warning));
+    if (!check.policy) return done(1, m.refused(check.errors.map((error) => `  ${error}`).join("\n")));
 
     const version = await setPolicy(db, target.id, check.policy, null);
     auditDetail = { version, policy: check.policy };
-    console.log(`${target.name}: policy version ${version}. Under it:`);
+    console.log(m.policySet(target.name, version));
     for (const line of describeReach(
       compilePolicy(check.policy, subjects.nodes, subjects.services),
       subjects.nodes,
+      locale,
     )) {
       console.log(line);
     }
     // Said, because it is the difference between the two stages of M7: who
     // may see whom is enforced by the netmap on every device already; which
     // ports is up to each device to enforce.
-    return done(0, "Connected devices get the new netmap within thirty seconds.");
+    return done(0, m.withinThirtySeconds);
   }
 
   if (command === "remove-acl") {
     const target = await wave(rest[0]);
     const removed = await removePolicy(db, target.id);
-    return done(
-      removed ? 0 : 1,
-      removed
-        ? `${target.name} has no policy any more: every device reaches every other.`
-        : `${target.name} had no policy`,
-    );
+    return done(removed ? 0 : 1, removed ? m.policyRemoved(target.name) : m.hadNoPolicy(target.name));
   }
 
   if (command === "tag" || command === "untag") {
     const [selector, host, ...names] = rest;
     if (!host || (command === "tag" && names.length === 0)) return done(1, usage);
     const bad = invalidTags(names);
-    if (bad.length > 0) return done(1, `not a tag: ${bad.join(", ")} (tags look like tag:nas)`);
+    if (bad.length > 0) return done(1, m.badTags(bad.join(", ")));
     const target = await wave(selector);
     const found = await findNode(db, target.id, host);
-    if (!found) return done(1, `no device called ${host} in ${target.name}`);
+    if (!found) return done(1, m.noDevice(host, target.name));
 
     const current = (await listNodes(db, target.id)).find((device) => device.id === found.id)?.tags ?? [];
     const next =
@@ -537,13 +527,12 @@ async function main(): Promise<never> {
           ? []
           : current.filter((tag) => !names.includes(tag));
     const updated = await setTags(db, target.id, found.id, next);
-    if (!updated) return done(1, `no device called ${host} in ${target.name}`);
-    if (updated.tags.length === 0)
-      return done(0, `${updated.hostname} has no tags: it counts as its owner's again.`);
+    if (!updated) return done(1, m.noDevice(host, target.name));
+    if (updated.tags.length === 0) return done(0, m.untagged(updated.hostname));
     // Said, because it is the part people do not expect: a tag replaces the
     // owner as far as the policy is concerned.
     console.log(`${updated.hostname}: ${updated.tags.join(" ")}`);
-    return done(0, "The policy now judges it by these tags alone, no longer as its owner's device.");
+    return done(0, m.judgedByTags);
   }
 
   if (command === "dns-provider") {
@@ -552,20 +541,20 @@ async function main(): Promise<never> {
     return done(
       0,
       credential
-        ? `${target.name} (${target.dnsSuffix}): ${credential.provider}, set ${credential.updatedAt.toISOString()}`
-        : `${target.name} (${target.dnsSuffix}): no DNS credential, so no certificates`,
+        ? m.providerSet(
+            target.name,
+            target.dnsSuffix,
+            credential.provider,
+            credential.updatedAt.toISOString(),
+          )
+        : m.noProvider(target.name, target.dnsSuffix),
     );
   }
 
   if (command === "remove-dns-provider") {
     const target = await wave(rest[0]);
     const removed = await removeDnsCredential(db, target.id);
-    return done(
-      removed ? 0 : 1,
-      removed
-        ? `${target.name} has no DNS credential any more; issued certificates keep working until they expire.`
-        : `${target.name} had no DNS credential`,
-    );
+    return done(removed ? 0 : 1, removed ? m.providerRemoved(target.name) : m.hadNoProvider(target.name));
   }
 
   if (command === "certs") {
@@ -580,7 +569,7 @@ async function main(): Promise<never> {
     console.log(`${target.name} (${target.dnsSuffix})`);
     for (const row of rows) {
       const until = row.order.expiresAt
-        ? `until ${row.order.expiresAt.toISOString()}`
+        ? m.certUntil(row.order.expiresAt.toISOString())
         : (row.order.error ?? "");
       console.log(
         `  ${row.hostname.padEnd(20)} ${row.order.status.padEnd(8)} ${row.order.names.join(", ")}  ${until}`,
@@ -592,7 +581,7 @@ async function main(): Promise<never> {
         console.log(`      TXT ${challenge.name}  ${challenge.value}`);
       }
     }
-    if (rows.length === 0) console.log("  no certificates");
+    if (rows.length === 0) console.log(m.noCertificates);
     return done(0);
   }
 
@@ -601,10 +590,10 @@ async function main(): Promise<never> {
     if (!domain) return done(1, usage);
     const target = await wave(selector);
     const updated = await setWaveDomain(db, target.id, domain);
-    if (!updated) return done(1, `no wave matches ${selector}`);
-    if ("conflict" in updated) return done(1, `another wave already answers for ${domain}`);
-    console.log(`${target.name}: names are now <host>.${domain}`);
-    return done(0, "Connected nodes pick this up with their next netmap.");
+    if (!updated) return done(1, m.noWaveMatches(selector ?? ""));
+    if ("conflict" in updated) return done(1, m.suffixTaken(domain));
+    console.log(m.namesNow(target.name, domain));
+    return done(0, m.nextNetmap);
   }
 
   if (command === "delete-wave") {
@@ -613,21 +602,16 @@ async function main(): Promise<never> {
     const members = await listMembers(db, target.id);
     // Said before it is asked, not after: the number of machines that will
     // have to be enrolled again is the whole of what this costs.
-    console.log(
-      `${target.name} (${target.dnsSuffix}) has ${devices.length} device(s) and ${members.length} member(s).`,
-    );
-    console.log("Deleting it cannot be undone: every device loses its enrolment.");
-    const typed = await readLine(`Type ${target.name} to confirm: `);
-    if (typed !== target.name) return done(1, "Not deleted.");
+    console.log(m.deleteSummary(target.name, target.dnsSuffix, devices.length, members.length));
+    console.log(m.deleteWarning);
+    const typed = await readLine(m.typeToConfirm(target.name));
+    if (typed !== target.name) return done(1, m.notDeleted);
 
     const deleted = await deleteWave(db, target.id);
-    if (!deleted) return done(1, `no wave matches ${rest[0]}`);
+    if (!deleted) return done(1, m.noWaveMatches(rest[0] ?? ""));
     // Connected devices are not told from here -- this process has no hub.
     // They find out when their control connection next asks for a netmap.
-    return done(
-      0,
-      `${deleted.name} is gone, with ${deleted.nodeIds.length} device(s). Connected ones drop on their next request.`,
-    );
+    return done(0, m.deleted(deleted.name, deleted.nodeIds.length));
   }
 
   if (command === "members") {
@@ -637,11 +621,11 @@ async function main(): Promise<never> {
 
     console.log(`${target.name} (${target.dnsSuffix})`);
     for (const member of members) {
-      const devices = `${member.nodeCount} ${member.nodeCount === 1 ? "device" : "devices"}`;
+      const devices = m.deviceCount(member.nodeCount);
       console.log(`  ${member.role.padEnd(6)} ${member.email ?? member.userId}  ${devices}`);
     }
     for (const invite of invites) {
-      console.log(`  invited ${invite.email} as ${invite.role}, until ${invite.expiresAt.toISOString()}`);
+      console.log(m.invitedLine(invite.email, invite.role, invite.expiresAt.toISOString()));
     }
     return done(0);
   }
@@ -654,20 +638,20 @@ async function main(): Promise<never> {
 
     console.log(`${target.name} (${target.dnsSuffix})`);
     for (const device of devices) {
-      const seen = device.lastSeenAt ? device.lastSeenAt.toISOString() : "never seen";
+      const seen = device.lastSeenAt ? device.lastSeenAt.toISOString() : m.neverSeen;
       const owner = device.email ?? device.userId;
       const wildcard = device.wildcardAllowed ? "  [wildcard]" : "";
       const tags = device.tags.length > 0 ? `  ${device.tags.join(" ")}` : "";
-      const ports = policy ? `  [${enforcementText(device)}]` : "";
+      const ports = policy ? `  [${enforcementText(device, locale)}]` : "";
       // Who is behind (D13). A client from before self-updates never says.
       const version = device.clientVersion
         ? `  v${device.clientVersion}${device.updateChannel ? ` (${device.updateChannel})` : ""}`
-        : "  version unknown";
+        : m.versionUnknown;
       console.log(
         `  ${device.hostname.padEnd(20)} ${device.ipv4.padEnd(16)} ${owner}  ${seen}${version}${wildcard}${tags}${ports}`,
       );
     }
-    if (devices.length === 0) console.log("  no devices");
+    if (devices.length === 0) console.log(m.noDevices);
     return done(0);
   }
 
@@ -676,13 +660,13 @@ async function main(): Promise<never> {
     if (!host) return done(1, usage);
     const target = await wave(selector);
     const found = await findNode(db, target.id, host);
-    if (!found) return done(1, `no device called ${host} in ${target.name}`);
+    if (!found) return done(1, m.noDevice(host, target.name));
 
     await removeNode(db, target.id, found.id);
-    console.log(`${found.hostname} is out of ${target.name}; it has to be let in again with wave login.`);
+    console.log(m.deviceRemoved(found.hostname, target.name));
     // The running server has the sockets, this process does not -- a device
     // that is connected right now learns it at its next heartbeat.
-    return done(0, "Nodes still running lose the peer with their next netmap.");
+    return done(0, m.peerGone);
   }
 
   if (command === "add-member") {
@@ -691,17 +675,14 @@ async function main(): Promise<never> {
     const target = await wave(selector);
     const found = await account(email);
     if (!found) {
-      return done(
-        1,
-        `no account for ${email}. Create one with set-password, or use invite to let them in themselves.`,
-      );
+      return done(1, m.noAccountHint(email));
     }
     const result = await addMember(db, target.id, found.id, asRole(role));
     return done(
       0,
       result.added
-        ? `${email} is now ${result.role} of ${target.name}.`
-        : `${email} was already in ${target.name}; role is ${result.role}.`,
+        ? m.memberAdded(email, result.role, target.name)
+        : m.memberExisted(email, target.name, result.role),
     );
   }
 
@@ -710,30 +691,30 @@ async function main(): Promise<never> {
     if (!email) return done(1, usage);
     const target = await wave(selector);
     const found = await account(email);
-    if (!found) return done(1, `no account for ${email}`);
+    if (!found) return done(1, m.noAccount(email));
 
     // The operator acts as the owner here: this is the shell of the server.
     const result = await removeMember(db, target.id, "owner", found.id);
-    if (result === "not-a-member") return done(1, `${email} is not in ${target.name}`);
+    if (result === "not-a-member") return done(1, m.notInWave(email, target.name));
     if (result === "owner") {
-      return done(1, `${email} owns ${target.name}; hand ownership over before removing them.`);
+      return done(1, m.ownsWave(email, target.name));
     }
-    if (result === "forbidden") return done(1, "not allowed");
+    if (result === "forbidden") return done(1, m.notAllowed);
 
-    console.log(`${email} is out of ${target.name}; ${result.removedNodes} device(s) removed with them.`);
-    return done(0, "Nodes still running lose the peers with their next netmap.");
+    console.log(m.memberRemoved(email, target.name, result.removedNodes));
+    return done(0, m.peersGone);
   }
 
   if (command === "invite") {
     const [selector, email, role] = rest;
     if (!email) return done(1, usage);
-    if (!looksLikeEmail(normaliseEmail(email))) return done(1, `not an email address: ${email}`);
+    if (!looksLikeEmail(normaliseEmail(email))) return done(1, m.notAnEmail(email));
     const target = await wave(selector);
 
     // Invitations are created by a member, and on the command line the owner is
     // who that is -- there is no operator account to attribute them to.
     const owner = target.ownerEmail ? await account(target.ownerEmail) : null;
-    if (!owner) return done(1, `${target.name} has no owner account to invite on behalf of`);
+    if (!owner) return done(1, m.noOwnerToInviteFor(target.name));
 
     const invite = await createInvite(db, {
       waveId: target.id,
@@ -743,7 +724,7 @@ async function main(): Promise<never> {
       invitedByUserId: owner.id,
       baseUrl: config.baseUrl,
     });
-    console.log(`Send ${invite.email} this link. It works once, until ${invite.expiresAt.toISOString()}:`);
+    console.log(m.sendLink(invite.email, invite.expiresAt.toISOString()));
     return done(0, invite.url);
   }
 
@@ -752,31 +733,26 @@ async function main(): Promise<never> {
     if (!email) return done(1, usage);
     const target = await wave(selector);
     const revoked = await revokeInvite(db, target.id, { email });
-    return done(
-      revoked ? 0 : 1,
-      revoked
-        ? `The invitation for ${email} no longer works.`
-        : `no open invitation for ${email} in ${target.name}`,
-    );
+    return done(revoked ? 0 : 1, revoked ? m.inviteRevoked(email) : m.noInvite(email, target.name));
   }
 
   // set-password, the only command that asks for input.
   const [email] = rest;
   if (!email) return done(1, usage);
 
-  const password = await readSecret(`Password for ${email}: `);
-  if (password.length < 12) return done(1, "Password must be at least 12 characters.");
+  const password = await readSecret(m.passwordFor(email));
+  if (password.length < 12) return done(1, m.passwordTooShort);
   if (process.stdin.isTTY) {
-    const again = await readSecret("Repeat: ");
-    if (again !== password) return done(1, "Passwords do not match.");
+    const again = await readSecret(m.repeat);
+    if (again !== password) return done(1, m.passwordsDiffer);
   }
 
   const { userId, created } = await setPassword(db, email, password);
   const provisioned = await ensureWaveForUser(db, userId, email, config.ipv4Container);
   const waveNote = provisioned.deferred
-    ? "no wave: an invitation is waiting for this address"
-    : `wave ${provisioned.waveId}${provisioned.created ? " created" : ""}`;
-  return done(0, `${created ? "Created" : "Updated"} ${email} (${userId}); ${waveNote}.`);
+    ? m.waveDeferred
+    : m.waveNote(provisioned.waveId ?? "", provisioned.created === true);
+  return done(0, m.accountSaved(created, email, userId, waveNote));
 }
 
 await main();
