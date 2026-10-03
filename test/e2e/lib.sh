@@ -125,8 +125,13 @@ start_node() {
 # secret, not the user's, so a link anybody can produce must not be an
 # approval on its own. The POST is what Lax does keep cross-site.
 approve_device() {
-  local jar="$1" url="$2"
-  curl -s -b "$jar" --data-urlencode "request=${url##*request=}" "${url%%\?*}" >/dev/null
+  local jar="$1" url="$2" code body="$WORK/approve-${url##*request=}.html"
+  code=$(curl -s -b "$jar" -o "$body" -w '%{http_code}' \
+    --data-urlencode "request=${url##*request=}" "${url%%\?*}")
+  # Said here rather than as a timeout a minute later: a refused approval used
+  # to surface only as "timed out waiting for the tunnel", with the server's
+  # answer thrown away. 2xx is the page that says so, 3xx a redirect to it.
+  [[ "$code" == 2* || "$code" == 3* ]] || fail "approving $url answered $code: $(head -c 400 "$body")"
 }
 
 # Adds a further wave to a node whose daemon is already running, and approves
