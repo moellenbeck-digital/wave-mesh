@@ -6,7 +6,24 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.5.0 ist nichts hinzugekommen.*
+*Seit v0.6.0 ist nichts hinzugekommen.*
+
+---
+
+## ✅ Stable v0.6.0 (03.10.2026)
+
+### Neue Funktionen (gegenüber v0.5.0)
+
+- **Anmeldung über Pocket ID** und jeden anderen OpenID-Connect-Provider
+  (Authelia, Authentik, Keycloak …). Der Betreiber trägt Issuer, Client-ID und
+  einen Namen ein; auf der Anmelde- und der Einladungsseite steht dann etwa
+  „Weiter mit Pocket ID". Mit Pocket ID meldet sich niemand mehr mit einem
+  Passwort an, nur noch mit einem Passkey.
+
+> Einladungen annehmen kann nur, wessen Adresse der Provider als bestätigt
+> meldet — in Pocket ID ist das die Einstellung „Emails Verified". An den
+> Clients hat sich nichts geändert; Geräte auf dem Kanal stable bekommen v0.6.0
+> trotzdem angeboten, mit demselben Code wie v0.5.0.
 
 ---
 
