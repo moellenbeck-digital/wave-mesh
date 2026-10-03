@@ -486,6 +486,52 @@ Was daran festliegt:
 legt den Wave inzwischen mit einem eigenen POST an. Wer an Login, `up` oder dem
 Daemon etwas ändert, fährt die E2E-Skripte.
 
+## Anmeldung über OIDC (Pocket ID)
+
+Neben Passwort und Google gibt es einen OpenID-Connect-Provider, geschrieben
+und getestet für [Pocket ID](https://pocket-id.org) — Passkeys und sonst
+nichts, also die Anmeldung, bei der kein Mitglied je ein Passwort tippt.
+Authelia, Authentik oder Keycloak sprechen dasselbe.
+
+```bash
+WAVE_OIDC_ISSUER=https://id.example.com   # wie der Provider sich selbst nennt
+WAVE_OIDC_CLIENT_ID=…
+WAVE_OIDC_CLIENT_SECRET=…                  # weglassen für einen öffentlichen Client
+WAVE_OIDC_NAME="Pocket ID"                 # steht auf dem Knopf; Vorgabe: Host des Issuers
+```
+
+In Pocket ID ist die Callback-URL `<WAVE_BASE_URL>/auth/oidc/callback`.
+
+Was daran festliegt (`apps/control/src/auth/oidc.ts`):
+
+- **Von Hand, nicht über arctic.** arctic holt sich Token über das globale
+  `fetch`; hier ist das Netz ein Parameter, und der Test stellt einen eigenen
+  Provider auf, der den PKCE-Verifier so prüft wie Pocket ID.
+- **Geprüft wird alles, was sich prüfen lässt:** die Discovery muss den
+  konfigurierten Issuer nennen, die Signatur des ID-Tokens gegen die JWKS
+  (RS*, PS256, ES256/384, EdDSA — nie `none`, nie HMAC), dazu `iss`, `aud`,
+  `azp` und `exp`. Die Spezifikation erlaubte, sich stattdessen auf TLS zum
+  Token-Endpunkt zu verlassen; prüfen kostet einen Schlüsselabruf und lässt
+  nichts zu diskutieren. Ein unbekanntes `kid` holt die JWKS einmal neu —
+  so sieht eine Schlüsselrotation aus.
+- **PKCE immer**, mit und ohne Secret.
+- **Der Issuer ist Teil der Identität.** Gespeichert wird `oidc:<issuer>` als
+  Provider: `sub` ist nur innerhalb eines Ausstellers eindeutig, und ein Wave,
+  der den Provider wechselt, darf dessen Nutzer 42 nicht in das Konto des
+  alten lassen. Der Preis: nach einem Wechsel des Issuers ist jeder Login
+  zunächst ein neues Konto, und erst eine *bestätigte* Adresse verknüpft es
+  wieder mit dem alten.
+- **`https://` ist Pflicht**, außer auf Loopback.
+- **Einladungen brauchen `email_verified`.** Pocket ID sagt das nur, wenn die
+  Einstellung „Emails Verified“ es tut — im strengen Modus erst, wenn die Person
+  den Bestätigungslink geklickt hat. Ohne das meldet man sich an, kann aber
+  keine Einladung annehmen und wird nicht mit einem bestehenden Konto
+  verknüpft. Das ist die Regel aus „Mehrere Benutzer“, nicht ein Fehler hier.
+- **Ist der Provider nicht erreichbar**, antwortet `/auth/oidc/start` mit 502,
+  statt in die Leere weiterzuleiten. Die Discovery wird beim ersten Login
+  geholt, nicht beim Start — ein Control-Server startet auch, wenn Pocket ID
+  gerade nicht da ist.
+
 ## Zertifikate
 
 **Der Node macht den Schlüssel, der Server redet mit der CA.** Das ist die

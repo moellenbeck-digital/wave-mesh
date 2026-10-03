@@ -17,6 +17,19 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().default("postgres://wave:wave@127.0.0.1:5432/wave"),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+  /**
+   * Any OpenID Connect provider that publishes a discovery document -- Pocket
+   * ID is the one this is written and tested for, Authelia, Authentik or
+   * Keycloak speak the same. The issuer is the URL the provider names itself
+   * by, e.g. https://id.example.com; its redirect URI here is
+   * <WAVE_BASE_URL>/auth/oidc/callback.
+   */
+  WAVE_OIDC_ISSUER: z.url().optional(),
+  WAVE_OIDC_CLIENT_ID: z.string().optional(),
+  /** Unset for a public client, which then rests on PKCE alone. */
+  WAVE_OIDC_CLIENT_SECRET: z.string().optional(),
+  /** What the login button says, e.g. "Pocket ID". Defaults to the issuer's host. */
+  WAVE_OIDC_NAME: z.string().optional(),
   /** Base64 Ed25519 private key used to sign netmaps. Required in production. */
   WAVE_NETMAP_SIGNING_KEY: z.string().optional(),
   /** JSON array of relays handed to every node, see @wave/proto's Relay. */
@@ -71,6 +84,46 @@ const EnvSchema = z.object({
     .transform((v) => v === "1" || v === "true"),
 });
 
+export interface OidcConfig {
+  issuer: string;
+  clientId: string;
+  clientSecret?: string;
+  name: string;
+}
+
+/**
+ * Reads the WAVE_OIDC_* variables. Half a configuration is refused rather
+ * than ignored: an issuer without a client id is a login button somebody
+ * expects and never gets, with nothing in the log to say why.
+ */
+export function parseOidc(raw: {
+  WAVE_OIDC_ISSUER?: string;
+  WAVE_OIDC_CLIENT_ID?: string;
+  WAVE_OIDC_CLIENT_SECRET?: string;
+  WAVE_OIDC_NAME?: string;
+}): OidcConfig | undefined {
+  if (!raw.WAVE_OIDC_ISSUER && !raw.WAVE_OIDC_CLIENT_ID) return undefined;
+  if (!raw.WAVE_OIDC_ISSUER || !raw.WAVE_OIDC_CLIENT_ID) {
+    throw new Error("WAVE_OIDC_ISSUER and WAVE_OIDC_CLIENT_ID go together; set both or neither");
+  }
+  const issuer = new URL(raw.WAVE_OIDC_ISSUER);
+  // The ID token is trusted partly because it came straight from the token
+  // endpoint over TLS. Plain HTTP is a provider anyone on the path can be;
+  // only a loopback address, where there is no path, gets an exception.
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(issuer.hostname);
+  if (issuer.protocol !== "https:" && !loopback) {
+    throw new Error(`WAVE_OIDC_ISSUER must be https:// (got ${raw.WAVE_OIDC_ISSUER})`);
+  }
+  return {
+    // Compared byte for byte with the `iss` of every token, so it is kept as
+    // written, minus a trailing slash nobody means.
+    issuer: raw.WAVE_OIDC_ISSUER.replace(/\/$/, ""),
+    clientId: raw.WAVE_OIDC_CLIENT_ID,
+    clientSecret: raw.WAVE_OIDC_CLIENT_SECRET?.trim() || undefined,
+    name: raw.WAVE_OIDC_NAME?.trim() || issuer.host,
+  };
+}
+
 export type Config = {
   env: "development" | "test" | "production";
   port: number;
@@ -78,6 +131,7 @@ export type Config = {
   databaseUrl: string;
   webUrl?: string;
   google?: { clientId: string; clientSecret: string };
+  oidc?: OidcConfig;
   netmapSigningKey?: string;
   relays: Relay[];
   ipv4Container: string;
@@ -151,6 +205,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     databaseUrl: raw.DATABASE_URL,
     webUrl: raw.WAVE_WEB_URL?.replace(/\/$/, ""),
     google,
+    oidc: parseOidc(raw),
     devAuth,
     devAuthFrom: (raw.WAVE_DEV_AUTH_FROM ?? "")
       .split(",")

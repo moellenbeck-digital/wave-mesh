@@ -2,12 +2,16 @@ import { decodeIdToken, Google } from "arctic";
 import { z } from "zod";
 import type { Config } from "../env.ts";
 import type { ProviderClaims } from "./identity.ts";
+import { OidcProvider } from "./oidc.ts";
 
 export interface OAuthProvider {
   readonly id: string;
+  /** What the login button names: a brand, or what the operator called it. */
+  readonly label: string;
   /** Whether the authorization flow carries a PKCE verifier. */
   readonly usesPkce: boolean;
-  createAuthorizationURL(state: string, codeVerifier: string): URL;
+  /** Async for providers that have to look their endpoints up first (OIDC discovery). */
+  createAuthorizationURL(state: string, codeVerifier: string): URL | Promise<URL>;
   fetchClaims(code: string, codeVerifier: string): Promise<ProviderClaims>;
 }
 
@@ -24,6 +28,7 @@ const GoogleIdToken = z.object({
 
 class GoogleProvider implements OAuthProvider {
   readonly id = "google";
+  readonly label = "Google";
   readonly usesPkce = true;
   private readonly client: Google;
 
@@ -57,6 +62,7 @@ class GoogleProvider implements OAuthProvider {
  */
 class DevProvider implements OAuthProvider {
   readonly id = "dev";
+  readonly label = "Dev login";
   readonly usesPkce = false;
 
   constructor(private readonly config: Config) {}
@@ -84,6 +90,7 @@ class DevProvider implements OAuthProvider {
 export function createProviders(config: Config): Map<string, OAuthProvider> {
   const providers = new Map<string, OAuthProvider>();
   if (config.google) providers.set("google", new GoogleProvider(config, config.google));
+  if (config.oidc) providers.set("oidc", new OidcProvider(config.oidc, redirectUri(config, "oidc")));
   if (config.devAuth) providers.set("dev", new DevProvider(config));
   return providers;
 }

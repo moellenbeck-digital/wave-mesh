@@ -309,6 +309,14 @@ export type AppMessages = typeof en;
 
 export const appMessages = (locale: Locale): AppMessages => messagesFor({ en, de }, locale);
 
-/** A sign-in provider as the buttons name it; brands keep their own name. */
-export const providerName = (id: string, t: AppMessages): string =>
-  id === "google" ? "Google" : id === "dev" ? t.providerDev : id;
+/**
+ * A sign-in provider as the buttons name it. Brands keep their own name; an
+ * OIDC provider is called what its operator called it ("Pocket ID"), and the
+ * development login is the one name that is ours to translate.
+ */
+export const providerName = (provider: { id: string; label: string | null }, t: AppMessages): string =>
+  provider.id === "dev"
+    ? t.providerDev
+    : provider.id === "google"
+      ? "Google"
+      : (provider.label ?? provider.id);

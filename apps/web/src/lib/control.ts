@@ -135,10 +135,18 @@ export async function fetchNodes(waveId: string): Promise<Node[]> {
   return ((await res.json()) as { nodes: Node[] }).nodes;
 }
 
-export async function fetchProviders(): Promise<string[]> {
+/** A way to sign in besides the password, with what the control server calls it. */
+export interface AuthProvider {
+  id: string;
+  /** Set by the operator for an OIDC provider ("Pocket ID"); missing from an older server. */
+  label: string | null;
+}
+
+export async function fetchProviders(): Promise<AuthProvider[]> {
   const res = await controlFetch("/api/auth/providers");
   if (!res.ok) throw new Error(`control server answered ${res.status} for /api/auth/providers`);
-  return ((await res.json()) as { providers: string[] }).providers;
+  const body = (await res.json()) as { providers: string[]; labels?: Record<string, string> };
+  return body.providers.map((id) => ({ id, label: body.labels?.[id] ?? null }));
 }
 
 export async function fetchMembers(waveId: string): Promise<Membership> {

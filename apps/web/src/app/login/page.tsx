@@ -97,9 +97,13 @@ export default async function LoginPage({
             </div>
 
             <div className="flex flex-col gap-3">
-              {providers.map((id) => (
-                <a key={id} className="wc-btn wc-btn-secondary w-full" href={`/auth/${id}/start${suffix}`}>
-                  {t.continueWith(providerName(id, t))}
+              {providers.map((provider) => (
+                <a
+                  key={provider.id}
+                  className="wc-btn wc-btn-secondary w-full"
+                  href={`/auth/${provider.id}/start${suffix}`}
+                >
+                  {t.continueWith(providerName(provider, t))}
                 </a>
               ))}
             </div>

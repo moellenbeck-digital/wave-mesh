@@ -143,8 +143,8 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
         const suffix = next ? `?next=${encodeURIComponent(next)}` : "";
         const links = [
           html`<li><a href="/auth/password/login${suffix}">${m.signInWithPassword}</a></li>`,
-          ...[...providers.keys()].map(
-            (id) => html`<li><a href="/auth/${id}/start${suffix}">${m.signInWith(id)}</a></li>`,
+          ...[...providers.values()].map(
+            (p) => html`<li><a href="/auth/${p.id}/start${suffix}">${m.signInWith(p.label)}</a></li>`,
           ),
         ];
         return c.html(html`<h1>wave-mesh</h1><ul>${links}</ul>`);
@@ -187,7 +187,14 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
   });
 
   /** What the login page has to offer besides the password form. */
-  app.get("/api/auth/providers", (c) => c.json({ providers: [...providers.keys()] }));
+  app.get("/api/auth/providers", (c) =>
+    c.json({
+      providers: [...providers.keys()],
+      // Beside the ids rather than instead of them: an older frontend reads
+      // only the list. An OIDC provider is named by whoever set it up.
+      labels: Object.fromEntries([...providers.values()].map((p) => [p.id, p.label])),
+    }),
+  );
 
   app.get("/api/waves/:id/nodes", async (c) => {
     const user = c.get("user");
@@ -207,7 +214,7 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
     return c.json({ nodes: await listDevices(db, waveId, hub.onlineNodeIds(waveId)) });
   });
 
-  app.get("/auth/:provider/start", (c) => {
+  app.get("/auth/:provider/start", async (c) => {
     const provider = providers.get(c.req.param("provider"));
     if (!provider) return c.json({ error: "unknown provider" }, 404);
 
@@ -225,7 +232,18 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
     if (next) setCookie(c, NEXT_COOKIE, next, { ...cookieOptions, path: "/" });
     if (provider.usesPkce) setCookie(c, VERIFIER_COOKIE, verifier, cookieOptions);
 
-    return c.redirect(provider.createAuthorizationURL(state, verifier).toString());
+    let target: URL;
+    try {
+      target = await provider.createAuthorizationURL(state, verifier);
+    } catch (error) {
+      // The provider is down or misconfigured. Said here, where someone is
+      // looking, rather than as a redirect into nowhere.
+      console.error(
+        `auth: ${provider.id} could not start: ${error instanceof Error ? error.message : error}`,
+      );
+      return c.json({ error: "identity provider unavailable" }, 502);
+    }
+    return c.redirect(target.toString());
   });
 
   // Stand-in for a provider's consent screen; only mounted when dev auth is on.
