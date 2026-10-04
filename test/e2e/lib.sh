@@ -125,7 +125,11 @@ start_node() {
 # secret, not the user's, so a link anybody can produce must not be an
 # approval on its own. The POST is what Lax does keep cross-site.
 approve_device() {
-  local jar="$1" url="$2" code body="$WORK/approve-${url##*request=}.html"
+  # Two statements: bash expands every word of a `local` line before it
+  # assigns any, so `$url` in the same line read whatever a caller happened to
+  # have -- and with `set -u` and no caller's `url`, nothing at all.
+  local jar="$1" url="$2" code
+  local body="$WORK/approve-${url##*request=}.html"
   code=$(curl -s -b "$jar" -o "$body" -w '%{http_code}' \
     --data-urlencode "request=${url##*request=}" "${url%%\?*}")
   # Said here rather than as a timeout a minute later: a refused approval used
