@@ -6,7 +6,25 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.6.0 ist nichts hinzugekommen.*
+*Seit v0.7.0-develop.1 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.7.0-develop.1 (04.10.2026)
+
+### Neue Funktionen
+
+- **Zwei-Faktor-Anmeldung mit einer Authenticator-App** für die Anmeldung mit
+  E-Mail und Passwort. Eingerichtet wird auf der neuen Seite „Dein Konto“
+  (die eigene Adresse oben rechts): QR-Code scannen, ersten Code bestätigen,
+  zehn Wiederherstellungscodes sichern. Danach fragt die Anmeldung nach dem
+  Passwort noch nach dem Code aus der App.
+- **Für das verlorene Telefon:** ein Wiederherstellungscode meldet einmal an,
+  und der Betreiber kann den zweiten Faktor mit
+  `wave-admin disable-2fa <email>` abschalten.
+
+> Wer sich über Google oder Pocket ID anmeldet, nutzt deren zweiten Faktor;
+> dort gibt es hier nichts einzurichten.
 
 ---
 
