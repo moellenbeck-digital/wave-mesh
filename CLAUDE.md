@@ -486,6 +486,57 @@ Was daran festliegt:
 legt den Wave inzwischen mit einem eigenen POST an. Wer an Login, `up` oder dem
 Daemon etwas ändert, fährt die E2E-Skripte.
 
+## Zwei-Faktor-Anmeldung (TOTP)
+
+Wer sich mit **E-Mail und Passwort** anmeldet, kann einen zweiten Faktor
+einschalten: einen Code aus einer Authenticator-App (RFC 6238, SHA-1, 30 s,
+sechs Ziffern — das, was jede App erzeugt). Eingerichtet wird auf `/account`
+(der Link ist die eigene Adresse in der Kopfzeile), mit QR-Code, Bestätigung
+durch einen ersten Code und zehn Wiederherstellungscodes, die genau einmal
+angezeigt werden.
+
+```bash
+wave-admin disable-2fa <email>    # das verlorene Telefon
+```
+
+Was daran festliegt (`apps/control/src/auth/two-factor.ts`, `totp.ts`):
+
+- **Nur der Passwort-Login fragt.** Google und Pocket ID bringen ihren eigenen
+  zweiten Faktor mit; ein Konto ohne Passwort hat hier nichts einzurichten.
+- **Zwischen Passwort und Code gibt es keine Sitzung**, sondern eine
+  *Challenge*: ein Cookie `wave_2fa` (Pfad `/auth/password`), in der Tabelle
+  `login_challenges` nur als SHA-256, fünf Minuten gültig, fünf Versuche. Sie
+  öffnet nichts außer dem einen Formular.
+- **Gedrosselt wird je Konto, nicht je Challenge.** Wer das Passwort hat, kann
+  beliebig viele Challenges öffnen; zehn falsche Codes je Viertelstunde und
+  Konto sind die Grenze, sonst ließe sich die Million Codes durchprobieren.
+  Dieselbe Grenze gilt für Abschalten und neue Wiederherstellungscodes — eine
+  gestohlene Sitzung soll sich nicht zum Abschalten durchraten können.
+- **Jeder Code gilt einmal.** Angenommen wird ein Schritt davor und danach (Uhren
+  laufen auseinander), aber nie ein Schritt, der nicht neuer ist als der zuletzt
+  angenommene (`users.totp_last_step`). Hochgesetzt wird in *einer* Anweisung
+  mit der Bedingung im `WHERE`, ebenso das Verbrauchen eines
+  Wiederherstellungscodes — zwei gleichzeitige Anfragen mit demselben Code
+  kommen nicht beide durch.
+- **Aktiv erst nach einem bestätigten Code.** Ein QR-Code, den nie jemand
+  gescannt hat, sperrt niemanden aus; bis dahin liegt das Geheimnis in
+  `totp_pending_secret`.
+- **Abschalten verlangt einen Code** (oder einen Wiederherstellungscode), nicht
+  bloß die Sitzung. Ohne beides bleibt nur der Operator.
+- **Das Geheimnis liegt unversiegelt in der Datenbank.** Abgewogen, nicht
+  vergessen: es zählt nur zusammen mit dem Passwort, und das liegt als
+  Argon2id-Hash daneben. Wer einen Dump hat *und* das Passwort knackt, kommt
+  durch — dagegen hülfe ein eigener Schlüssel in der Umgebung wie bei den
+  DNS-Tokens, um den Preis einer weiteren Variable, ohne die nichts geht.
+- **Wiederherstellungscodes** sind 50 Bit, `abcde-fghij`, gespeichert als
+  SHA-256 (zufällig genug, dass es nichts zu raten gibt — wie bei den
+  Einladungen). Beim Eintippen zählen Groß-/Kleinschreibung, Leerzeichen und
+  Bindestrich nicht.
+- **Der QR-Code entsteht im Browser** (`qrcode`, als SVG). Das Geheimnis geht
+  an keinen fremden Dienst.
+- **`set-password` lässt den zweiten Faktor, wie er ist.** Ein neues Passwort ist
+  kein Grund, den Code abzuschalten — dafür gibt es `disable-2fa`.
+
 ## Anmeldung über OIDC (Pocket ID)
 
 Neben Passwort und Google gibt es einen OpenID-Connect-Provider, geschrieben

@@ -19,6 +19,7 @@ import { checkPolicy } from "./acl/validate.ts";
 import { adminMessages } from "./admin-messages.ts";
 import { audit, listAudit, shellActor } from "./audit.ts";
 import { setPassword } from "./auth/password.ts";
+import { disableTwoFactor, hasTwoFactor } from "./auth/two-factor.ts";
 import { createDb } from "./db/client.ts";
 import { certificateOrders, nodes, users } from "./db/schema.ts";
 import {
@@ -128,6 +129,7 @@ async function readCredential(kind: AutomaticKind, suffix: string): Promise<stri
 
 const COMMANDS = [
   "set-password",
+  "disable-2fa",
   "set-domain",
   "members",
   "add-member",
@@ -194,6 +196,7 @@ const invocation = Bun.main.endsWith(".ts") ? "bun src/admin.ts" : basename(proc
 
 const usage = `${m.usageTitle}
   ${invocation} set-password  <email>
+  ${invocation} disable-2fa   <email>
   ${invocation} set-domain    <wave> <domain>
   ${invocation} members       <wave>
   ${invocation} add-member    <wave> <email> [admin|member]
@@ -734,6 +737,23 @@ async function main(): Promise<never> {
     const target = await wave(selector);
     const revoked = await revokeInvite(db, target.id, { email });
     return done(revoked ? 0 : 1, revoked ? m.inviteRevoked(email) : m.noInvite(email, target.name));
+  }
+
+  if (command === "disable-2fa") {
+    // For the lost phone: whoever has lost their second factor cannot turn it
+    // off themselves, which is the point of it. The operator confirms who they
+    // are some other way -- that is why this is on the shell and not a button.
+    const [email] = rest;
+    if (!email) return done(1, usage);
+    const [user] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, normaliseEmail(email)))
+      .limit(1);
+    if (!user) return done(1, m.noAccount(email));
+    if (!(await hasTwoFactor(db, user.id))) return done(0, m.twoFactorWasOff(email));
+    await disableTwoFactor(db, user.id, "operator");
+    return done(0, m.twoFactorOff(email));
   }
 
   // set-password, the only command that asks for input.

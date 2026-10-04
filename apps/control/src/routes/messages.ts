@@ -27,6 +27,11 @@ const en = {
   password: "Password",
   tooManyAttempts: "Too many attempts. Try again later.",
   wrongCredentials: "Wrong email or password.",
+  twoFactorTitle: "Two-factor code",
+  twoFactorCode: "Code from your authenticator app, or a recovery code",
+  twoFactorConfirm: "Confirm",
+  wrongCode: "That code did not work.",
+  challengeExpired: "That took too long. Sign in again.",
 
   // --- approving a device ---------------------------------------------------
   requestExpired: "Device request expired",
@@ -123,6 +128,11 @@ const de: typeof en = {
   password: "Passwort",
   tooManyAttempts: "Zu viele Versuche. Versuch es später noch einmal.",
   wrongCredentials: "E-Mail oder Passwort ist falsch.",
+  twoFactorTitle: "Bestätigungscode",
+  twoFactorCode: "Code aus deiner Authenticator-App oder ein Wiederherstellungscode",
+  twoFactorConfirm: "Bestätigen",
+  wrongCode: "Dieser Code hat nicht funktioniert.",
+  challengeExpired: "Das hat zu lange gedauert. Melde dich noch einmal an.",
 
   requestExpired: "Geräteanfrage abgelaufen",
   runUpAgainHtml: "Führe <code>wave up</code> noch einmal aus.",

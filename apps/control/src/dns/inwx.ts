@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { totp as sharedTotp, TOTP_STEP_MS, TotpSecretError } from "../auth/totp.ts";
 import { type DnsProvider, DnsProviderError, zoneCandidates } from "./provider.ts";
 
 const API = "https://api.domrobot.com/jsonrpc/";
@@ -53,36 +53,21 @@ export function parseInwxAccount(secret: string): InwxAccount {
   };
 }
 
-const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-
-function base32Decode(value: string): Buffer {
-  const bytes: number[] = [];
-  let accumulator = 0;
-  let bits = 0;
-  for (const char of value.replace(/[\s=-]/g, "").toUpperCase()) {
-    const index = BASE32.indexOf(char);
-    if (index < 0) throw new DnsProviderError("inwx: the TOTP secret is not base32");
-    accumulator = (accumulator << 5) | index;
-    bits += 5;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes.push((accumulator >> bits) & 0xff);
-    }
-  }
-  return Buffer.from(bytes);
-}
-
-export const TOTP_STEP_MS = 30_000;
-
-/** RFC 6238, the shape every authenticator app produces: SHA-1, 30 seconds, six digits. */
+/**
+ * RFC 6238 lives in auth/totp.ts now, shared with the second factor of the
+ * password login; a secret that is not base32 is still this provider's error
+ * to report, in its words.
+ */
 export function totp(secret: string, atMs: number): string {
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(atMs / TOTP_STEP_MS)));
-  const digest = createHmac("sha1", base32Decode(secret)).update(counter).digest();
-  const offset = (digest[digest.length - 1] ?? 0) & 0x0f;
-  const code = (digest.readUInt32BE(offset) & 0x7fff_ffff) % 1_000_000;
-  return String(code).padStart(6, "0");
+  try {
+    return sharedTotp(secret, atMs);
+  } catch (error) {
+    if (error instanceof TotpSecretError) throw new DnsProviderError("inwx: the TOTP secret is not base32");
+    throw error;
+  }
 }
+
+export { TOTP_STEP_MS };
 
 export interface Clock {
   now(): number;

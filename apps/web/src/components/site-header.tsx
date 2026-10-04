@@ -27,9 +27,12 @@ export function SiteHeader({ me, locale }: { me: Me | null; locale: Locale }) {
           <LanguageSwitch locale={locale} label={t.language} />
           {me ? (
             <>
-              <span className="hidden text-caption text-slate sm:inline">
+              {/* The address is the way to the account page: where the second
+                  factor is set up, and whatever else belongs to a person
+                  rather than a wave. */}
+              <a href="/account" className="hidden text-caption text-slate hover:text-navy sm:inline">
                 {me.user.email ?? me.user.name ?? me.user.id}
-              </span>
+              </a>
               <form method="post" action="/auth/logout">
                 <button type="submit" className="wc-btn wc-btn-secondary">
                   {t.signOut}

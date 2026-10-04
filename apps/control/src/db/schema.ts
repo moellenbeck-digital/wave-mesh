@@ -21,6 +21,17 @@ export const users = pgTable("users", {
   avatarUrl: text("avatar_url"),
   /** Argon2id hash; null for accounts that only sign in through a provider. */
   passwordHash: text("password_hash"),
+  /**
+   * The second factor of the password login (RFC 6238), as base32. Stored as
+   * it is, not sealed: it only matters together with the password, and the
+   * password is an Argon2id hash -- see CLAUDE.md for the trade.
+   */
+  totpSecret: text("totp_secret"),
+  /** A secret being set up: shown as a QR code, live only once a code from it is confirmed. */
+  totpPendingSecret: text("totp_pending_secret"),
+  totpEnabledAt: timestamp("totp_enabled_at", { withTimezone: true }),
+  /** The 30-second step of the last code accepted; no code at or before it works again. */
+  totpLastStep: integer("totp_last_step"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -119,6 +130,45 @@ export const waveInvites = pgTable(
     // Every login looks for an invitation waiting for its address.
     index("wave_invites_email_idx").on(t.email),
   ],
+);
+
+/**
+ * One-time codes for the day the phone is gone. Stored as SHA-256 like invite
+ * tokens: they are random enough that there is nothing to guess, and checking
+ * one must not cost an Argon2 round.
+ */
+export const totpRecoveryCodes = pgTable(
+  "totp_recovery_codes",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("totp_recovery_codes_user_idx").on(t.userId)],
+);
+
+/**
+ * A password login waiting for its second factor. Not a session: it opens
+ * nothing but the one form that asks for the code, and lives minutes.
+ */
+export const loginChallenges = pgTable(
+  "login_challenges",
+  {
+    /** SHA-256 of the token in the cookie, like a session. */
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    next: text("next"),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("login_challenges_user_idx").on(t.userId)],
 );
 
 export const sessions = pgTable(

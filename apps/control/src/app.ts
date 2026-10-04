@@ -24,6 +24,7 @@ import { localeOf } from "./i18n.ts";
 import { isWithin } from "./net/addressing.ts";
 import { peerAddress } from "./net/peer.ts";
 import type { SigningKey } from "./netmap/build.ts";
+import { accountRoutes } from "./routes/account.ts";
 import { certRoutes } from "./routes/cert.ts";
 import { controlWebsocket, NetmapHub } from "./routes/control-ws.ts";
 import { DeviceFeed, deviceFeedRoutes } from "./routes/device-feed.ts";
@@ -105,6 +106,7 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
   app.get("/healthz", (c) => c.json({ ok: true }));
 
   app.route("/", passwordRoutes({ db, config }));
+  app.route("/", accountRoutes({ db }));
 
   const hub = new NetmapHub(db, signingKey, config.relays);
   // The same events, told to the other audience: nodes get a signed netmap,

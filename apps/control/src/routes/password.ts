@@ -1,7 +1,16 @@
 import { type Context, Hono } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html, raw } from "hono/html";
 import { LoginThrottle, verifyLogin } from "../auth/password.ts";
 import { createSession, setSessionCookie } from "../auth/session.ts";
+import {
+  createChallenge,
+  endChallenge,
+  failChallenge,
+  hasTwoFactor,
+  readChallenge,
+  verifySecondFactor,
+} from "../auth/two-factor.ts";
 import type { Database } from "../db/client.ts";
 import type { Config } from "../env.ts";
 import { type Locale, localeOf } from "../i18n.ts";
@@ -13,7 +22,12 @@ export interface PasswordRouteDeps {
   db: Database;
   config: Config;
   throttle?: LoginThrottle;
+  /** Wrong second-factor codes, per account: see the comment on its use. */
+  codeThrottle?: LoginThrottle;
 }
+
+/** Carries a login between the password and the code. Not a session: it opens nothing else. */
+export const CHALLENGE_COOKIE = "wave_2fa";
 
 const page = (locale: Locale, body: ReturnType<typeof html>) => html`<!doctype html>
   <html lang="${locale}">
@@ -26,6 +40,20 @@ const page = (locale: Locale, body: ReturnType<typeof html>) => html`<!doctype h
     .error { color: #b00; margin-top: 1rem; }
   </style>
   ${body}`;
+
+const codeForm = (locale: Locale, error?: string) => {
+  const m = pageMessages(locale);
+  return page(
+    locale,
+    html`<h1>${m.twoFactorTitle}</h1>
+    <form method="post" action="/auth/password/2fa">
+      <label for="code">${m.twoFactorCode}</label>
+      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus />
+      <button type="submit">${m.twoFactorConfirm}</button>
+      ${error ? html`<p class="error">${error}</p>` : ""}
+    </form>`,
+  );
+};
 
 const loginForm = (locale: Locale, next: string | undefined, error?: string) => {
   const m = pageMessages(locale);
@@ -44,16 +72,20 @@ const loginForm = (locale: Locale, next: string | undefined, error?: string) => 
   );
 };
 
-export function passwordRoutes({ db, config, throttle }: PasswordRouteDeps) {
+export function passwordRoutes({ db, config, throttle, codeThrottle }: PasswordRouteDeps) {
   const app = new Hono();
   const limiter = throttle ?? new LoginThrottle();
+  // Per account, not per challenge: whoever has the password can open as many
+  // challenges as they like, five guesses each, and only this stops them from
+  // working through a million codes that way.
+  const codeLimiter = codeThrottle ?? new LoginThrottle(10);
 
   /**
    * With a frontend, the sign-in page lives there and this server only takes
    * the POST. The reason stays in the query string rather than the body, so a
    * reload of the page does not re-submit the password.
    */
-  const toLoginPage = (c: Context, next: string | undefined, error?: "invalid" | "throttled") => {
+  const toLoginPage = (c: Context, next: string | undefined, error?: "invalid" | "throttled" | "expired") => {
     const query = new URLSearchParams();
     if (next && next !== "/") query.set("next", next);
     if (error) query.set("error", error);
@@ -87,12 +119,69 @@ export function passwordRoutes({ db, config, throttle }: PasswordRouteDeps) {
     }
     limiter.succeed(email, source);
 
-    const { token, expiresAt } = await createSession(db, result.userId, {
+    // The password was right; with a second factor that is half a login. What
+    // the browser gets is a challenge, good for the one form that asks for
+    // the code and for five minutes -- never a session.
+    if (await hasTwoFactor(db, result.userId)) {
+      const challenge = await createChallenge(db, result.userId, next);
+      setCookie(c, CHALLENGE_COOKIE, challenge.token, {
+        httpOnly: true,
+        secure: config.secureCookies,
+        sameSite: "Lax",
+        path: "/auth/password",
+        expires: challenge.expiresAt,
+      });
+      return config.webUrl ? c.redirect("/login/2fa") : c.html(codeForm(localeOf(c)));
+    }
+
+    return startSession(c, result.userId, source, next);
+  });
+
+  const startSession = async (c: Context, userId: string, source: string, next: string) => {
+    const { token, expiresAt } = await createSession(db, userId, {
       userAgent: c.req.header("user-agent") ?? null,
       ip: source,
     });
     setSessionCookie(c, config, token, expiresAt);
     return c.redirect(next);
+  };
+
+  app.get("/auth/password/2fa", (c) =>
+    config.webUrl ? c.redirect("/login/2fa") : c.html(codeForm(localeOf(c))),
+  );
+
+  app.post("/auth/password/2fa", async (c) => {
+    const m = pageMessages(localeOf(c));
+    const form = await c.req.formData();
+    const code = String(form.get("code") ?? "");
+    const source = peerAddress(c) ?? "unknown";
+    const token = getCookie(c, CHALLENGE_COOKIE);
+    const challenge = token ? await readChallenge(db, token) : null;
+
+    // Gone, used up or never there: back to the password, which is the only
+    // way to a new challenge.
+    if (!token || !challenge) {
+      deleteCookie(c, CHALLENGE_COOKIE, { path: "/auth/password" });
+      if (config.webUrl) return toLoginPage(c, undefined, "expired");
+      return c.html(loginForm(localeOf(c), undefined, m.challengeExpired), 401);
+    }
+    const next = safeNext(challenge.next ?? "") ?? "/";
+
+    if (codeLimiter.blocked(challenge.userId, "2fa")) {
+      if (config.webUrl) return c.redirect("/login/2fa?error=throttled");
+      return c.html(codeForm(localeOf(c), m.tooManyAttempts), 429);
+    }
+
+    if (!(await verifySecondFactor(db, challenge.userId, code))) {
+      codeLimiter.fail(challenge.userId, "2fa");
+      await failChallenge(db, token);
+      if (config.webUrl) return c.redirect("/login/2fa?error=invalid");
+      return c.html(codeForm(localeOf(c), m.wrongCode), 401);
+    }
+    codeLimiter.succeed(challenge.userId, "2fa");
+    await endChallenge(db, token);
+    deleteCookie(c, CHALLENGE_COOKIE, { path: "/auth/password" });
+    return startSession(c, challenge.userId, source, next);
   });
 
   return app;

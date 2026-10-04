@@ -1,12 +1,15 @@
 import { redirect } from "next/navigation";
+import { type AccountMessages, accountMessages } from "@/i18n/account";
 import { type AppMessages, appMessages, providerName } from "@/i18n/app";
 import { fetchMe, fetchProviders } from "@/lib/control";
 import { getLocale } from "@/lib/i18n";
 
 /** The codes the control server redirects back with, never its own wording. */
-const ERRORS: Record<string, (t: AppMessages) => string> = {
+const ERRORS: Record<string, (t: AppMessages, a: AccountMessages) => string> = {
   invalid: (t) => t.loginInvalid,
   throttled: (t) => t.loginThrottled,
+  // The second step timed out or ran out of guesses: the password again.
+  expired: (_t, a) => a.loginExpired,
 };
 
 /** Only relative paths, so a crafted link cannot bounce the user off-site. */
@@ -22,8 +25,10 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const next = safeNext(typeof params.next === "string" ? params.next : undefined);
-  const t = appMessages(await getLocale());
-  const error = typeof params.error === "string" ? ERRORS[params.error]?.(t) : undefined;
+  const locale = await getLocale();
+  const t = appMessages(locale);
+  const error =
+    typeof params.error === "string" ? ERRORS[params.error]?.(t, accountMessages(locale)) : undefined;
 
   const me = await fetchMe();
   if (me) redirect(next ?? "/");

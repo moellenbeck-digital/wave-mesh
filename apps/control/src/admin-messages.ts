@@ -145,6 +145,9 @@ ionos take one token; inwx takes an account and asks for its parts, or reads
   repeat: "Repeat: ",
   passwordTooShort: "Password must be at least 12 characters.",
   passwordsDiffer: "Passwords do not match.",
+  twoFactorOff: (email: string) =>
+    `Two-factor sign-in is off for ${email}; the password alone signs in again, and the recovery codes are void.`,
+  twoFactorWasOff: (email: string) => `${email} had no two-factor sign-in.`,
   waveDeferred: "no wave: an invitation is waiting for this address",
   waveNote: (id: string, created: boolean) => `wave ${id}${created ? " created" : ""}`,
   accountSaved: (created: boolean, email: string, userId: string, note: string) =>
@@ -275,6 +278,9 @@ ionos nehmen einen Token; inwx nimmt ein Konto und fragt nach seinen Teilen, ode
   repeat: "Wiederholen: ",
   passwordTooShort: "Das Passwort muss mindestens 12 Zeichen haben.",
   passwordsDiffer: "Die Passwörter stimmen nicht überein.",
+  twoFactorOff: (email) =>
+    `Die Zwei-Faktor-Anmeldung für ${email} ist aus; das Passwort allein meldet wieder an, die Wiederherstellungscodes sind ungültig.`,
+  twoFactorWasOff: (email) => `${email} hatte keine Zwei-Faktor-Anmeldung.`,
   waveDeferred: "kein Wave: für diese Adresse wartet eine Einladung",
   waveNote: (id, created) => `Wave ${id}${created ? " angelegt" : ""}`,
   accountSaved: (created, email, userId, note) =>

@@ -135,6 +135,22 @@ export async function fetchNodes(waveId: string): Promise<Node[]> {
   return ((await res.json()) as { nodes: Node[] }).nodes;
 }
 
+/** The second factor of the password login, as /api/me/2fa reports it. */
+export interface TwoFactorStatus {
+  /** False for an account without a password: its provider brings its own. */
+  available: boolean;
+  enabled: boolean;
+  enabledAt: string | null;
+  recoveryCodesLeft: number;
+}
+
+export async function fetchTwoFactor(): Promise<TwoFactorStatus | null> {
+  const res = await controlFetch("/api/me/2fa");
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`control server answered ${res.status} for /api/me/2fa`);
+  return (await res.json()) as TwoFactorStatus;
+}
+
 /** A way to sign in besides the password, with what the control server calls it. */
 export interface AuthProvider {
   id: string;
