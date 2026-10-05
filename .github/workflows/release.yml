@@ -237,6 +237,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.name.outputs.tags }}
+          # Only the connector reads it -- it runs from source and has no other
+          # way to know which release it is. The others ignore the argument.
+          build-args: |
+            WAVE_BUILD_VERSION=${{ needs.version.outputs.version }}
           labels: |
             org.opencontainers.image.title=wave-${{ matrix.service }}
             org.opencontainers.image.version=${{ needs.version.outputs.version }}

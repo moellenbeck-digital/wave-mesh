@@ -63,6 +63,13 @@ COPY apps/client apps/client
 COPY apps/connector apps/connector
 COPY apps/operator apps/operator
 
+# What the device list shows next to this node. The client binaries carry their
+# version through `bun build --define`; this image runs from source, so the
+# release workflow hands it in here instead. Last, so a new version does not
+# invalidate any layer above. Without it the node calls itself 0.0.0-dev.
+ARG WAVE_BUILD_VERSION=
+ENV WAVE_BUILD_VERSION=${WAVE_BUILD_VERSION}
+
 # Root, and that is the point: the daemon creates a tun device, sets addresses
 # and writes nftables rules. The pod asks for NET_ADMIN and /dev/net/tun and
 # for nothing else -- above all for no inbound port, because STUN and the relay

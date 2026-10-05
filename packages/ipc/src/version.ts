@@ -14,10 +14,21 @@
  */
 declare const WAVE_BUILD_VERSION: string;
 
+/**
+ * The connector image runs from source and has no `--define` to go through, so
+ * its Dockerfile puts the release version into the environment instead. A
+ * compiled binary never looks here: what it was built as is what it is.
+ * Nothing hangs on this besides the label -- an update needs a compiled binary
+ * as well (`updateBlocker()`), so a version from the environment cannot talk a
+ * source run into replacing itself.
+ */
+const fromEnvironment = (): string | undefined => process.env.WAVE_BUILD_VERSION || undefined;
+
 /** What a run from source calls itself. Never offered an update, never compared. */
 export const DEV_VERSION = "0.0.0-dev";
 
-export const VERSION: string = typeof WAVE_BUILD_VERSION === "string" ? WAVE_BUILD_VERSION : DEV_VERSION;
+export const VERSION: string =
+  typeof WAVE_BUILD_VERSION === "string" ? WAVE_BUILD_VERSION : (fromEnvironment() ?? DEV_VERSION);
 
 export const isDevVersion = (version: string): boolean => version === DEV_VERSION;
 
