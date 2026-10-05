@@ -91,6 +91,7 @@ jobs:
       - run: bun run check
       - run: bun run typecheck
       - run: bun test
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       # The Go core for the phones (D10). Its tests read fixtures the
       # TypeScript side generates, so this is where the two implementations are
       # held against each other: a canonical encoding that drifts by one
@@ -250,7 +251,8 @@ jobs:
     # Last, and after the images: a release that exists while its server images
     # do not is a version somebody will try to deploy half of.
     needs: [version, verify, e2e, images]
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
+    timeout-minutes: 90
     permissions:
       # Only this job writes anything back to the repository, and a per-job
       # block replaces the top-level one rather than adding to it.
@@ -299,6 +301,42 @@ jobs:
       - name: Build and package every client
         run: ./scripts/build-clients.sh --package
 
+      # Apple signing requires macOS; keeping all six builds here avoids
+      # transferring large intermediate artifacts between jobs.
+      - name: Load Apple credentials from wave-mesh CI
+        id: signing-secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5
+        with:
+          export-env: false
+          version: 2.39.0
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          MACOS_DEVELOPER_ID_P12_BASE64: op://ru5ydmxogt5ckmkebfezdzh5fa/v65n6vv3mjiewc4e6fa2lyorty/macos_developer_id_p12_base64
+          MACOS_DEVELOPER_ID_P12_PASSWORD: op://ru5ydmxogt5ckmkebfezdzh5fa/v65n6vv3mjiewc4e6fa2lyorty/macos_developer_id_p12_password
+          MACOS_DEVELOPER_ID: op://ru5ydmxogt5ckmkebfezdzh5fa/v65n6vv3mjiewc4e6fa2lyorty/electrobun_developer_id
+          APPLE_TEAM_ID: op://ru5ydmxogt5ckmkebfezdzh5fa/v65n6vv3mjiewc4e6fa2lyorty/apple_team_id
+          APPLE_API_KEY_ID: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_key_id
+          APPLE_API_ISSUER_ID: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_issuer_id
+          APPLE_API_PRIVATE_KEY_P8_BASE64: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_private_key_p8_base64
+
+      - name: Import Apple credentials into a temporary keychain
+        env:
+          MACOS_DEVELOPER_ID_P12_BASE64: ${{ steps.signing-secrets.outputs.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ steps.signing-secrets.outputs.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          MACOS_DEVELOPER_ID: ${{ steps.signing-secrets.outputs.MACOS_DEVELOPER_ID }}
+          APPLE_TEAM_ID: ${{ steps.signing-secrets.outputs.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ steps.signing-secrets.outputs.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ steps.signing-secrets.outputs.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY_P8_BASE64: ${{ steps.signing-secrets.outputs.APPLE_API_PRIVATE_KEY_P8_BASE64 }}
+        run: python3 .github/scripts/macos-signing-keychain.py setup
+
+      - name: Sign, notarize and verify macOS archives
+        run: python3 scripts/sign-macos.py dist
+
+      - name: Remove temporary Apple credentials
+        if: always()
+        run: python3 .github/scripts/macos-signing-keychain.py cleanup
+
       # The signed statement of what this release is, and the only thing a
       # device trusts about it (D13): version, channel and the hash of every
       # archive, signed with the release key. Control servers pass releases on
@@ -312,7 +350,7 @@ jobs:
 
       - name: Write the download notes
         run: |
-          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          repo="ghcr.io/$(printf %s "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           cat > notes.md <<NOTES
           ### Clients
 
@@ -369,4 +407,4 @@ jobs:
             --notes-file notes.md \
             --generate-notes \
             "${flags[@]}" \
-            dist/*.tar.gz dist/*.zip dist/SHA256SUMS dist/manifest.json
+            dist/*.tar.gz dist/*.zip dist/SHA256SUMS dist/manifest.json dist/macos-signing-evidence.json

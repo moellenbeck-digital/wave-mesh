@@ -2291,6 +2291,15 @@ es an der Stelle, an der auch die Begründung steht.
 
 ## Images und Releases
 
+**Apple-Signierung:** Der Release-Job läuft auf `macos-latest`, baut weiterhin
+alle sechs Clients und signiert/notarisiert beide macOS-Archive vor den finalen
+Prüfsummen und dem Ed25519-Manifest. `scripts/sign-macos.py` prüft beide Binaries,
+Team, Zeitstempel, Hardened Runtime und Notarisierungstickets. Zugangsdaten kommen
+aus dem eigenen 1Password-Vault **wave-mesh CI**; der temporäre Schlüsselbund wird
+auch bei Fehlern entfernt. Details, geteilte Apple-Zugangsdaten und die noch
+erforderliche Abnahme stehen in [`docs/MACOS-SIGNING.md`](docs/MACOS-SIGNING.md).
+Tests dafür: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
+
 Jedes Stück, das jemand betreiben muss, bekommt ein eigenes Image auf der
 GitHub Container Registry:
 

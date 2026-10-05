@@ -182,7 +182,8 @@ for entry in "${TARGETS[@]}"; do
   else
     build_wireguard_go "$goos" "$goarch" "$stage/wireguard-go"
     contents+=(wireguard-go)
-    tar -czf "$out/$name.tar.gz" -C "$stage" "${contents[@]}"
+    # macOS otherwise adds AppleDouble files that the updater does not need.
+    COPYFILE_DISABLE=1 tar -czf "$out/$name.tar.gz" -C "$stage" "${contents[@]}"
     archives+=("$name.tar.gz")
   fi
   rm -rf "$stage"
@@ -190,6 +191,6 @@ done
 
 if $package; then
   # Relative names, so the file verifies from wherever it was downloaded to.
-  (cd "$out" && sha256sum "${archives[@]}" > SHA256SUMS)
+  (cd "$out" && shasum -a 256 "${archives[@]}" > SHA256SUMS)
   echo "dist/SHA256SUMS"
 fi
