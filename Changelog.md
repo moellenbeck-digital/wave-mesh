@@ -6,7 +6,32 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.7.0-develop.3 ist nichts hinzugekommen.*
+*Seit v0.7.0 ist nichts hinzugekommen.*
+
+---
+
+## ✅ Stable v0.7.0 (05.10.2026)
+
+*Enthält alles aus v0.7.0-develop.1 bis v0.7.0-develop.3.*
+
+### Neue Funktionen (gegenüber v0.6.0)
+
+- **Zwei-Faktor-Anmeldung mit einer Authenticator-App** für die Anmeldung mit
+  E-Mail und Passwort. Eingerichtet wird auf der Seite „Dein Konto“ (die eigene
+  Adresse oben rechts): QR-Code scannen, ersten Code bestätigen, zehn
+  Wiederherstellungscodes sichern. Für das verlorene Telefon gibt es einen
+  Wiederherstellungscode oder `wave-admin disable-2fa <email>`.
+  *(seit develop.1)*
+- **Aus einem Cluster in den Wave.** Pods in einem Cluster mit Connector
+  erreichen Dienste und Geräte des Waves über deren Namen, etwa
+  `https://plausible.wave.example.com` — auch Dienste, die ein anderer Cluster
+  in den Wave stellt. TLS bleibt Ende zu Ende; nur HTTP und HTTPS. Je Cluster
+  einzuschalten mit der Komponente `components/egress` und einem
+  CoreDNS-Eintrag nach Vorlage. *(seit develop.3)*
+
+> Wer sich über Google oder Pocket ID anmeldet, nutzt deren zweiten Faktor. Die
+> Clients haben sich seit v0.6.0 nicht geändert; Geräte auf dem Kanal stable
+> bekommen v0.7.0 trotzdem angeboten.
 
 ---
 
