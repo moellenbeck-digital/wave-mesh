@@ -16,6 +16,12 @@ kind: Kustomization
 resources:
   - ../../base
 
+# Aus dem Cluster in den Wave, nach Namen (Pods rufen dann etwa
+# https://plausible.wave.example.com auf). Aus, solange niemand es braucht;
+# dazu gehört noch der CoreDNS-Eintrag, siehe components/egress.
+# components:
+#   - ../../components/egress
+
 images:
   - name: ghcr.io/moellenbeck-digital/wave-mesh/connector
     newTag: "0.1.0-insiders.9"

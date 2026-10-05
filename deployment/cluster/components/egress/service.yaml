@@ -1,0 +1,19 @@
+# Wohin CoreDNS die Namen des Waves zeigen lässt. Eine gewöhnliche ClusterIP,
+# vergeben, nicht festgenagelt: CoreDNS findet sie über ihren Namen
+# (wave-egress.wave.svc.cluster.local), anders als der interne Ingress, dessen
+# Adresse als Zahl in einer nftables-Regel steht.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wave-egress
+  namespace: wave
+  labels:
+    app.kubernetes.io/name: wave-egress
+    app.kubernetes.io/part-of: wave-mesh
+spec:
+  type: ClusterIP
+  selector:
+    app: wave-connector
+  ports:
+    - { name: https, port: 443, targetPort: egress-tls, protocol: TCP }
+    - { name: http, port: 80, targetPort: egress-http, protocol: TCP }

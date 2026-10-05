@@ -1,0 +1,53 @@
+# Die andere Richtung: aus dem Cluster in den Wave, nach Namen.
+#
+# Ein Pod ruft https://plausible.wave.example.com auf; CoreDNS beantwortet
+# jeden Namen unter der Wave-Domain mit dem Service `wave-egress`, und der
+# Connector liest SNI beziehungsweise Host und reicht die Verbindung an das
+# Gerät oder den Dienst im Wave weiter -- ohne TLS aufzubrechen. Nur HTTP und
+# HTTPS: andere Protokolle tragen keinen Namen, nach dem sich weiterleiten ließe.
+#
+# Einschalten im Overlay:
+#   components:
+#     - ../../components/egress
+# und den CoreDNS-Eintrag aus coredns.example.yaml einspielen (siehe dort).
+#
+# Mit einer ACL-Policy braucht der Connector eine Regel zu den Zielen: er tritt
+# als seine Tags auf, nicht als die Pods, und ein Ziel, das ihm die Policy
+# nicht gibt, steht nicht in seiner Netzkarte und ist hier kein Name.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - service.yaml
+
+configMapGenerator:
+  - name: wave-connector-config
+    namespace: wave
+    behavior: merge
+    literals:
+      - WAVE_EGRESS=1
+
+patches:
+  - target: { kind: StatefulSet, name: wave-connector }
+    patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: wave-connector
+        namespace: wave
+      spec:
+        template:
+          spec:
+            containers:
+              - name: connector
+                env:
+                  # Gebunden wird nur an die Pod-Adresse, nie an 0.0.0.0: der
+                  # Pod teilt sein Netz mit wave0, und überall gebunden wäre
+                  # der Proxy auch über die Wave-Adresse des Connectors zu
+                  # erreichen -- ein Sprungbrett für jeden Peer zu jedem
+                  # anderen. Der Connector verweigert den Start ohne sie.
+                  - name: WAVE_POD_IP
+                    valueFrom: { fieldRef: { fieldPath: status.podIP } }
+                ports:
+                  - { name: egress-tls, containerPort: 8443, protocol: TCP }
+                  - { name: egress-http, containerPort: 8080, protocol: TCP }

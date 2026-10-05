@@ -1442,6 +1442,45 @@ Was daran festliegt:
   MSS-Clamping gehört auf beide Richtungen von `wave0`, sonst ist die 1280er MTU
   ein Fehlerbild, das erst bei großen Antworten auffällt.
 
+**Und die andere Richtung: aus dem Cluster in den Wave** (`apps/connector/src/
+egress.ts`, Komponente `deployment/cluster/components/egress`). Ein Pod in
+Cluster B ruft `https://plausible.wave.example.com` auf, einen Dienst, den
+Cluster A in den Wave stellt. CoreDNS beantwortet jeden Namen unter der
+Wave-Domain mit dem Service `wave-egress`, der zeigt auf den Connector, und der
+liest den Namen — SNI bei TLS, `Host` bei HTTP — und reicht die Verbindung an
+die Adresse aus seiner Netzkarte weiter. Was daran festliegt:
+
+- **TLS wird nie aufgebrochen.** Der Pod prüft das Zertifikat dessen, was er
+  aufruft; kein Connector sieht die Anfrage. Deshalb nach Namen und nicht als
+  Reverse Proxy.
+- **Nur Namen aus der Netzkarte.** Alles andere bekommt bei TLS den Alert
+  `unrecognized_name`, bei HTTP eine 421 — sonst wäre der Connector ein offener
+  Proxy ins Internet für jeden Pod. Und weil die Netzkarte schon durch die ACL
+  gegangen ist, ist ein Ziel, das die Policy dem Connector nicht gibt, hier
+  schlicht kein Name.
+- **Gebunden an die Pod-Adresse, nie an `0.0.0.0`** (`WAVE_POD_IP` aus der
+  Downward-API; ohne sie verweigert der Connector den Start). Der Pod teilt sein
+  Netz mit `wave0`: überall gebunden, wäre der Proxy auch über die Wave-Adresse
+  des Connectors erreichbar und jeder Peer hätte ein Sprungbrett zu jedem
+  anderen.
+- **Die eigenen Dienste gehen direkt an den internen Ingress.** Verkehr, der im
+  Pod entsteht, läuft durch OUTPUT, nicht durch PREROUTING; das DNAT auf `wave0`
+  sähe ihn nie.
+- **Nur HTTP und HTTPS.** SMB, SSH oder eine Datenbank tragen keinen Namen im
+  Protokoll; dafür bräuchte es ein ausdrücklich benanntes Ziel je Port — ein
+  anderer Entwurf, nicht gebaut.
+- **Der Verkehr tritt als der Connector auf**, also als seine Tags. Mit einer
+  Policy braucht er eine Regel zu den Zielen, am saubersten mit einem Tag je
+  Cluster (`tag:cluster-b` → `svc:plausible`).
+- **Aus, solange nicht eingeschaltet** (`WAVE_EGRESS=1`, setzt die Komponente).
+  Der CoreDNS-Eintrag liegt als `coredns.example.yaml` daneben und wird nicht
+  mit angewendet: unter k3s ist `coredns-custom` *eine* ConfigMap für alle
+  Ergänzungen, und ein Apply überschriebe, was dort steht.
+
+Geprüft ist die Weiterleitung über echte Sockets — SNI aus einem echten
+ClientHello, auch auf zwei Records verteilt, Bytes unverändert, Verweigerung,
+eigene Dienste —, nicht in einem Cluster. Der CoreDNS-Block ist ungefahren.
+
 **Pre-Auth-Keys** sind die Voraussetzung dafür: ein Connector wird deployt, nicht
 geklickt. `admin.ts auth-key <wave>` gibt einen Schlüssel aus — einmal sichtbar,
 gespeichert nur als SHA-256, mit Ablauf, widerrufbar, und einmalig, solange

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { DaemonClient, DEFAULT_SOCKET_PATH, type ProfileStatus } from "@wave/ipc";
+import { type EgressTable, egressTable, startEgress } from "./egress.ts";
 import { type ConnectorRules, DEFAULT_PORTS, nftRuleset } from "./rules.ts";
 
 /**
@@ -25,6 +26,11 @@ export interface ConnectorOptions {
   apply: (ruleset: string) => Promise<void>;
   log?: (message: string) => void;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * From the cluster into the wave, by name (egress.ts). Off unless asked
+   * for: a connector that only exposes this cluster's services opens no port.
+   */
+  egress?: { host: string; tlsPort: number; httpPort: number };
 }
 
 const MTU_FALLBACK = 1280;
@@ -60,6 +66,12 @@ export async function runConnector(options: ConnectorOptions): Promise<void> {
   const log = options.log ?? console.log;
   const sleep = options.sleep ?? ((ms: number) => Bun.sleep(ms));
   let applied = "";
+  // Refreshed with every status below; the egress reads it per connection,
+  // so a service that appears in the netmap is reachable within seconds.
+  let table: EgressTable = new Map();
+  if (options.egress) {
+    await startEgress({ ...options.egress, backend: options.backend.ipv4, table: () => table, log });
+  }
 
   for (;;) {
     const attempt = await DaemonClient.open(options.socketPath);
@@ -74,6 +86,7 @@ export async function runConnector(options: ConnectorOptions): Promise<void> {
       const response = await client.request({ command: "status" });
       if (response.type !== "status") throw new Error("the daemon did not answer with a status");
 
+      table = egressTable(response.status.profiles, options.controlUrl);
       const addresses = ownAddressesOf(response.status.profiles, options.controlUrl);
       if (addresses.length === 0) {
         log("the tunnel has no addresses yet");
@@ -109,6 +122,24 @@ export async function runConnector(options: ConnectorOptions): Promise<void> {
   }
 }
 
+/**
+ * WAVE_EGRESS=1 turns the other direction on. It needs the pod's own address
+ * (WAVE_POD_IP, from the downward API) because binding everywhere would
+ * answer on the wave side as well -- refused rather than guessed.
+ */
+export function egressFromEnv(env: Record<string, string | undefined>): ConnectorOptions["egress"] {
+  if (env.WAVE_EGRESS !== "1" && env.WAVE_EGRESS !== "true") return undefined;
+  const host = env.WAVE_POD_IP?.trim();
+  if (!host || host === "0.0.0.0" || host === "::") {
+    throw new Error("WAVE_EGRESS needs WAVE_POD_IP, the pod's own address (status.podIP), never 0.0.0.0");
+  }
+  return {
+    host,
+    tlsPort: Number(env.WAVE_EGRESS_TLS_PORT ?? 8443),
+    httpPort: Number(env.WAVE_EGRESS_HTTP_PORT ?? 8080),
+  };
+}
+
 /** Hands the ruleset to nft. One document, one call, all or nothing. */
 export async function applyWithNft(ruleset: string): Promise<void> {
   const child = Bun.spawn(["nft", "-f", "-"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
@@ -133,5 +164,6 @@ if (import.meta.main) {
       .filter((port) => Number.isInteger(port) && port > 0),
     controlUrl: process.env.WAVE_CONTROL_URL,
     apply: applyWithNft,
+    egress: egressFromEnv(process.env),
   });
 }

@@ -1,0 +1,37 @@
+# Die Namen des Waves im Cluster auflösen -- auf den Service wave-egress.
+#
+# Nicht Teil der Komponente, und mit Absicht: CoreDNS gehört dem Cluster, und
+# unter k3s ist `coredns-custom` *eine* ConfigMap für alle Ergänzungen. Ein
+# automatisches Apply überschriebe, was dort schon steht. Also von Hand, und
+# vorher nachsehen:
+#
+#   kubectl -n kube-system get configmap coredns-custom -o yaml
+#
+# Gibt es sie noch nicht, die Domain unten durch die des Waves ersetzen (an
+# allen drei Stellen, mit maskierten Punkten in der Regex) und einspielen:
+#
+#   kubectl apply -f coredns.example.yaml
+#
+# k3s liest *.server-Schlüssel als eigene Server-Blöcke ein. Außerhalb von k3s
+# gehört derselbe Block in das Corefile des Clusters.
+#
+# `answer auto` (CoreDNS ≥ 1.10) schreibt die Antwort auf den gefragten Namen
+# zurück, sonst verwürfe der Resolver des Pods sie als Antwort auf etwas
+# anderes. Ungeprüft in einem echten Cluster -- getestet ist der Connector, nicht
+# diese Datei.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  wave.server: |
+    wave.example.com:53 {
+      errors
+      rewrite stop name regex (.+)\.wave\.example\.com\.$ wave-egress.wave.svc.cluster.local. answer auto
+      kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+      }
+      cache 30
+    }
