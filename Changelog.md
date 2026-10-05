@@ -6,7 +6,20 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.7.0-develop.2 ist nichts hinzugekommen.*
+*Seit v0.7.0-develop.3 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.7.0-develop.3 (05.10.2026)
+
+### Neue Funktionen
+
+- **Aus einem Cluster in den Wave.** Pods in einem Cluster mit Connector
+  erreichen Dienste und Geräte des Waves über deren Namen, etwa
+  `https://plausible.wave.example.com` — auch Dienste, die ein anderer Cluster
+  in den Wave stellt. TLS bleibt dabei Ende zu Ende; nur HTTP und HTTPS.
+  Eingeschaltet wird es je Cluster mit der Komponente `components/egress` und
+  einem CoreDNS-Eintrag, der als Vorlage beiliegt.
 
 ---
 
