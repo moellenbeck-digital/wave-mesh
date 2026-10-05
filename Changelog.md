@@ -6,7 +6,34 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.7.0 ist nichts hinzugekommen.*
+*Seit v0.8.0-insiders.1 ist nichts hinzugekommen.*
+
+---
+
+## 🧪 Insiders v0.8.0-insiders.1 (05.10.2026)
+
+### Verbesserungen
+
+- **Apple-signierte und notarisierte macOS-Clients** für Intel und Apple Silicon.
+  Sowohl `wave` als auch das beigelegte `wireguard-go` tragen eine Developer-ID-
+  Signatur. Das bestehende Archivformat und der automatische Updateweg bleiben
+  erhalten. Die Signaturen und Apple-Tickets werden vor der Veröffentlichung geprüft.
+- Die macOS-Archive enthalten keine zusätzlichen Apple-Metadatendateien mehr.
+
+### Technische Änderungen
+
+- Release-Job auf macOS, isolierter temporärer Schlüsselbund und eigener
+  1Password-Vault für die Apple-Zugangsdaten; Bereinigung auch bei Fehlern.
+- Finale Prüfsummen und Ed25519-Manifest werden erst nach der Apple-Signierung
+  erstellt. Ein zusätzlicher Signierungsnachweis enthält Hashes und Submission-IDs.
+- Automatisierte Tests für Signaturprüfung, abgelehnte Notarisierung, sichere
+  Archivextraktion und Entfernung privater Dateien.
+
+### Bekannte Einschränkungen
+
+- Einzelne Binaries unterstützen kein Stapling: Gatekeeper benötigt für das
+  Notarisierungsticket eine Online-Verbindung. Die unabhängige Download-,
+  Installations- und Auto-Update-Abnahme auf einem weiteren Mac steht noch aus.
 
 ---
 
