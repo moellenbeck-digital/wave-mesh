@@ -1,4 +1,4 @@
-package de.robinlenz.wave
+package org.wavemesh.app
 
 import android.content.Context
 import android.content.SharedPreferences

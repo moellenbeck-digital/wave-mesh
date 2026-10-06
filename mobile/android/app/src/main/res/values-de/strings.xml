@@ -19,4 +19,14 @@
     <string name="notification_running">der Tunnel läuft</string>
     <string name="login_failed">Anmelden fehlgeschlagen</string>
     <string name="logout_failed">Abmelden fehlgeschlagen</string>
+
+    <string name="disclosure_intro">wave-mesh richtet auf diesem Gerät ein VPN ein, das es mit den anderen Geräten deines Waves verbindet.</string>
+    <string name="disclosure_connects_title">Was verbunden wird</string>
+    <string name="disclosure_connects_body">Der Verkehr zwischen deinen Geräten läuft verschlüsselt mit WireGuard, direkt von Gerät zu Gerät. Wo kein direkter Weg möglich ist, läuft er verschlüsselt über ein Relay deines Waves.</string>
+    <string name="disclosure_control_title">Was dein Control-Server erfährt</string>
+    <string name="disclosure_control_body">Um einem Wave beizutreten, sendet die App an den Control-Server, den du angibst, den Namen dieses Geräts, seine öffentlichen Schlüssel und die Netzwerkadressen, unter denen es erreichbar ist. Weder der Control-Server noch das Relay können deinen Verkehr lesen.</string>
+    <string name="disclosure_ours_title">Was wir nicht tun</string>
+    <string name="disclosure_ours_body">Die App sendet keine Daten an Moellenbeck Digital. Sie enthält keine Analyse und keine Werbung, und es werden keine Daten verkauft oder weitergegeben.</string>
+    <string name="disclosure_next">Im nächsten Schritt fragt Android, ob wave-mesh eine VPN-Verbindung einrichten darf.</string>
+    <string name="disclosure_continue">Weiter</string>
 </resources>

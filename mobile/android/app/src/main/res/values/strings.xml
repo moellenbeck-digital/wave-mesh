@@ -5,7 +5,7 @@
 <resources>
     <!-- The product name is a name, not a word: it stays the same in every
          language, which is why values-de does not repeat it. -->
-    <string name="app_name" translatable="false">wave</string>
+    <string name="app_name" translatable="false">wave-mesh</string>
 
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
@@ -27,4 +27,15 @@
     <string name="notification_running">the tunnel is running</string>
     <string name="login_failed">login failed</string>
     <string name="logout_failed">logout failed</string>
+
+    <!-- Shown once before the first connect. Same statement as the iOS app. -->
+    <string name="disclosure_intro">wave-mesh sets up a VPN on this device that connects it with the other devices in your wave.</string>
+    <string name="disclosure_connects_title">What it connects</string>
+    <string name="disclosure_connects_body">Traffic between your devices runs encrypted with WireGuard, directly from device to device. Where no direct path is possible, it runs encrypted through a relay of your wave.</string>
+    <string name="disclosure_control_title">What your control server learns</string>
+    <string name="disclosure_control_body">To join a wave, the app sends the control server you enter this device\'s name, its public keys and the network addresses it can be reached at. Neither the control server nor the relay can read your traffic.</string>
+    <string name="disclosure_ours_title">What we do not do</string>
+    <string name="disclosure_ours_body">The app sends no data to Moellenbeck Digital. It contains no analytics and no advertising, and no data is sold or passed on.</string>
+    <string name="disclosure_next">In the next step Android asks whether wave-mesh may set up a VPN connection.</string>
+    <string name="disclosure_continue">Continue</string>
 </resources>

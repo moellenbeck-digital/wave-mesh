@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mark from markSvg() in apps/tray/src/icon.ts, without its circle: the
+     launcher supplies the shape, the petrol comes from the background layer.
+     Translated so the mark sits in the middle of the 66 dp every launcher
+     mask keeps; regenerate from the product, never redraw by hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="22" android:translateY="24">
+        <path
+            android:pathData="M13 43 L32 12 L51 43"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="4"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M13 43 L14.19 42.02 L15.38 41.09 L16.56 40.22 L17.75 39.46 L18.94 38.84 L20.13 38.38 L21.31 38.1 L22.5 38 L23.69 38.1 L24.88 38.38 L26.06 38.84 L27.25 39.46 L28.44 40.22 L29.63 41.09 L30.81 42.02 L32 43 L33.19 43.98 L34.38 44.91 L35.56 45.78 L36.75 46.54 L37.94 47.16 L39.13 47.62 L40.31 47.9 L41.5 48 L42.69 47.9 L43.88 47.62 L45.06 47.16 L46.25 46.54 L47.44 45.78 L48.63 44.91 L49.81 43.98 L51 43"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="4"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M26.5 12 a5.5 5.5 0 1 0 11 0 a5.5 5.5 0 1 0 -11 0 M7.5 43 a5.5 5.5 0 1 0 11 0 a5.5 5.5 0 1 0 -11 0 M45.5 43 a5.5 5.5 0 1 0 11 0 a5.5 5.5 0 1 0 -11 0" />
+    </group>
+</vector>

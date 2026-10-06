@@ -1,5 +1,6 @@
 import NetworkExtension
 import Network
+import UIKit
 import Wavemobile
 
 /// The tunnel: a thin host around the Go core.
@@ -54,7 +55,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         var error: NSError?
         let core = WavemobileNew(
             host.loadState(),
-            Host.current.name,
+            // Since iOS 16 this is the model ("iPhone", "iPad"), not the name
+            // the owner gave the device; reading that needs an entitlement
+            // Apple grants case by case.
+            UIDevice.current.name,
             // iOS can limit which names reach us (matchDomains), so the
             // resolver never has to answer for anything but the waves --
             // the invariant "never take over the system resolver" holds here.
@@ -80,7 +84,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             guard path.status == .satisfied else { return }
             self?.core?.networkChanged()
         }
-        monitor.start(queue: DispatchQueue(label: "org.wave.path"))
+        monitor.start(queue: DispatchQueue(label: "org.wavemesh.path"))
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
@@ -138,7 +142,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         var name = [CChar](repeating: 0, count: Int(IFNAMSIZ))
         for descriptor in Int32(0)...1024 {
             var length = socklen_t(name.count)
-            let found = getsockopt(descriptor, SYSPROTO_CONTROL, UTUN_OPT_IFNAME, &name, &length)
+            let found = getsockopt(descriptor, sysprotoControl, utunOptIfname, &name, &length)
             if found == 0 && String(cString: name).hasPrefix("utun") {
                 return descriptor
             }
@@ -146,6 +150,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         return nil
     }
 }
+
+// From <sys/kern_control.h> and <net/if_utun.h>, which the iOS SDK does not
+// ship although the kernel is the same as on macOS.
+private let sysprotoControl: Int32 = 2
+private let utunOptIfname: Int32 = 2
 
 private struct AppRequest: Decodable {
     let kind: String

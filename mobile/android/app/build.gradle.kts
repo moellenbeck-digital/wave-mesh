@@ -1,22 +1,27 @@
 plugins {
+    // AGP 9 compiles Kotlin itself; the separate kotlin-android plugin is gone.
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
-    namespace = "de.robinlenz.wave"
-    compileSdk = 35
+    namespace = "org.wavemesh.app"
+    // Compose needs the newest SDK to compile against; what the app opts in to
+    // at runtime is targetSdk below.
+    compileSdk = 37
 
     defaultConfig {
-        applicationId = "de.robinlenz.wave"
+        // Registered in the Play Console of Moellenbeck-Digital UG; it can
+        // never change once the app is published.
+        applicationId = "org.wavemesh.app"
         // VpnService.Builder.addDisallowedApplication and the DNS handling
         // below want a recent platform; nothing here is worth supporting an
         // older one for.
         minSdk = 29
-        targetSdk = 35
+        // Google Play takes new apps and updates only at the current level.
+        targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.8.0"
     }
 
     sourceSets["main"].java.srcDirs("src/main/kotlin")
@@ -28,10 +33,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlin {
-        jvmToolchain(17)
     }
 
     packaging {
@@ -47,11 +48,11 @@ dependencies {
     // it.
     implementation(files("libs/wavemobile.aar"))
 
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.activity:activity-compose:1.9.3")
-    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     // The enrolment keys go here and nowhere else.
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto:1.1.0")
 }

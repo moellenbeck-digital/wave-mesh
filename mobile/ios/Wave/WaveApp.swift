@@ -29,13 +29,13 @@ final class WaveModel: ObservableObject {
             let manager = managers.first ?? NETunnelProviderManager()
             if managers.isEmpty {
                 let configuration = NETunnelProviderProtocol()
-                configuration.providerBundleIdentifier = "org.wave.app.tunnel"
+                configuration.providerBundleIdentifier = WaveIdentifiers.tunnelBundleIdentifier
                 // A packet tunnel needs a server address even when there is no
                 // single server: a device can be in several waves at once, and
                 // each names its own. This is a label in the settings app.
-                configuration.serverAddress = "wave"
+                configuration.serverAddress = "wave-mesh"
                 manager.protocolConfiguration = configuration
-                manager.localizedDescription = "wave"
+                manager.localizedDescription = "wave-mesh"
                 manager.isEnabled = true
                 try await manager.saveToPreferences()
                 try await manager.loadFromPreferences()
@@ -76,7 +76,7 @@ final class WaveModel: ObservableObject {
     /// The link the core produced during enrolment. The extension cannot open a
     /// browser, so it leaves it here.
     var pendingAuthURL: URL? {
-        guard let stored = UserDefaults(suiteName: "group.org.wave")?.string(forKey: "pendingAuthURL") else {
+        guard let stored = UserDefaults(suiteName: WaveIdentifiers.appGroup)?.string(forKey: "pendingAuthURL") else {
             return nil
         }
         return URL(string: stored)
@@ -86,17 +86,21 @@ final class WaveModel: ObservableObject {
         timer?.invalidate()
         // A path, an RTT and a handshake age say nothing until you watch them
         // move, which is why this redraws rather than showing one reading.
+        // The timer fires on the main run loop, but its closure is not
+        // isolated, so it hops explicitly.
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.send(["kind": "status"]) { answer in
-                guard let answer, let data = answer.data(using: .utf8),
-                      let decoded = try? JSONDecoder().decode(Status.self, from: data)
-                else { return }
-                self?.status = decoded
+            Task { @MainActor in
+                self?.send(["kind": "status"]) { answer in
+                    guard let answer, let data = answer.data(using: .utf8),
+                          let decoded = try? JSONDecoder().decode(Status.self, from: data)
+                    else { return }
+                    self?.status = decoded
+                }
             }
         }
     }
 
-    private func send(_ message: [String: String], completion: @escaping (String?) -> Void) {
+    private func send(_ message: [String: String], completion: @escaping @MainActor (String?) -> Void) {
         guard let session = manager?.connection as? NETunnelProviderSession,
               let payload = try? JSONSerialization.data(withJSONObject: message)
         else { return }

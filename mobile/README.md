@@ -185,38 +185,57 @@ der Weboberfläche: „du", „der Wave", „Diesen Wave verlassen".
 - **Android: Ressourcen**, `res/values/strings.xml` und
   `res/values-de/strings.xml`, gelesen über `stringResource()` in Compose und
   `getString()` im Dienst (Benachrichtigung und ihr Kanal). Der App-Name
-  `wave` ist `translatable="false"` — ein Name, kein Wort.
+  `wave-mesh` ist `translatable="false"` — ein Name, kein Wort.
 
 Was der Kern sagt — Fehlermeldungen aus `login` und `logout`, Log-Zeilen —
 bleibt Englisch: er läuft unter `go test` ohne Plattform und kennt keine
 Sprache.
 
+## Bauen und hochladen
+
+```bash
+./mobile/build.sh ios && cd mobile/ios && xcodegen generate   # dann Wave.xcodeproj in Xcode öffnen
+./mobile/build.sh android && cd mobile/android && ./gradlew :app:assembleDebug
+./gradlew :app:bundleRelease                                  # das .aab für Google Play
+```
+
+Das Xcode-Projekt steht als Text in `ios/project.yml` (XcodeGen); das
+`.xcodeproj`, beide `Info.plist` und die Entitlements schreibt `xcodegen
+generate`, keines davon liegt im Repo. Lokal signiert Xcode automatisch mit dem
+Team `L6R92A4Y7C`. Für den Store signiert `ios/upload.sh`: ein eigener,
+temporärer Schlüsselbund mit dem Distribution-Zertifikat, die beiden
+App-Store-Profile, Archiv, Export und Upload zu App Store Connect über den
+API-Schlüssel — alles aus Umgebungsvariablen, nichts bleibt liegen. Dasselbe
+Skript läuft lokal und in CI.
+
+Fest und nie mehr änderbar, sobald die App im Store ist:
+
+| | iOS | Android |
+|---|---|---|
+| App | `org.wavemesh.app` | `org.wavemesh.app` |
+| Tunnel | Extension `org.wavemesh.app.tunnel` | `WaveVpnService` im selben Paket |
+| Gemeinsam | App-Gruppe `group.org.wavemesh.app` | — |
+| Mindestens | iOS 17, iPhone und iPad | Android 10 (API 29), Ziel API 36 |
+
+Beide Apps zeigen vor der ersten Verbindung einmal, was mit Daten geschieht —
+App Review verlangt das von VPN-Apps (Richtlinie 5.4), Google Play ähnlich für
+`VpnService`. Erst danach legt iOS die VPN-Konfiguration an bzw. fragt Android
+nach der Erlaubnis. Der Text sagt nur, was stimmt: kein Server von uns im Weg,
+keine Analyse, keine Werbung. Ändert er sich, bekommt `disclosureAccepted.v1`
+eine neue Nummer, damit er erneut erscheint.
+
 ## Was offen ist, und was ungeprüft
 
-**Die Telefone selbst sind ungeprüft.** Was ein Telefon bräuchte:
-
-- Kein Lauf auf echter Hardware, auf keiner der beiden Plattformen. Es gibt hier
-  weder einen Mac noch ein Android-Gerät, und `gomobile bind` braucht für iOS
-  Xcode und für Android das NDK — `./build.sh check` prüft deshalb, was ohne
-  beides geht, und die Binder-Erzeugung ist die äußerste Grenze davon.
-- **Für iOS fehlt das Xcode-Projekt.** Die Swift-Dateien stehen hier, das
-  `.xcodeproj` nicht: es ist eine XML-Datei voller UUIDs, die niemand von Hand
-  pflegt und die ohne Xcode nicht erzeugt werden kann. Nötig sind zwei Targets
-  (App und Packet-Tunnel-Extension), das Entitlement
-  `com.apple.developer.networking.networkextension` mit `packet-tunnel-provider`,
-  eine App-Gruppe `group.org.wave` für beide, und die Bundle-Id der Extension
-  muss `org.wave.app.tunnel` sein — so heißt sie in `WaveApp.swift`. Dazu
-  `Localizable.xcstrings` als Mitglied beider Targets, `de` unter
-  *Project → Info → Localizations*, und in beiden `Info.plist`
-  `CFBundleDevelopmentRegion` = `en` (Xcodes Vorgabe).
-- **Das Entitlement gibt es nur mit bezahltem Developer-Account**, auch für das
-  eigene Gerät. Ohne ihn lässt sich das hier nicht einmal starten.
-- Das Android-Projekt baut, sobald `mobile/build.sh android` die `.aar` gelegt
-  hat; ohne sie fehlt Gradle eine Abhängigkeit, und das ist Absicht — die
-  Alternative wäre eine Gradle-Task, die Go und das NDK aufruft und dann in
-  einer Sprache scheitert, die nach Kotlin aussieht. Gebaut wurde es hier nie:
-  es gibt weder ein Android-SDK noch einen Gradle-Wrapper im Repo, also sind
-  auch die Ressourcen nur als XML geprüft, nicht durch `aapt`.
+- **Kein Lauf auf echter Hardware.** Beide Apps bauen und starten (Simulator,
+  Emulator), der Tunnel selbst aber nicht: `NEPacketTunnelProvider` gibt es im
+  iOS-Simulator nicht, und im Emulator fehlt ein Control-Server. Der erste
+  echte Lauf ist der über TestFlight bzw. den internen Test in Google Play.
+- **Der Gerätename auf iOS** ist seit iOS 16 nur noch das Modell („iPhone“,
+  „iPad“); den Namen, den jemand seinem Gerät gegeben hat, gibt es nur mit
+  einem Entitlement, das Apple einzeln vergibt.
+- **Android signiert noch nicht für Google Play.** `bundleRelease` erzeugt das
+  `.aab` unsigniert; Upload-Schlüssel und Signierung kommen mit der App in der
+  Play Console.
 
 Das ist derselbe Stand wie beim Windows-Tray und bei den Cluster-Manifesten:
 benannt, nicht verschwiegen.
