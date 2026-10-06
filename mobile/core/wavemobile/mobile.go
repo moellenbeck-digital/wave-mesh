@@ -57,9 +57,12 @@ type Callbacks interface {
 // Core is the whole engine behind one object.
 type Core struct {
 	engine *waveengine.Engine
+	log    func(string)
 
 	mu      sync.Mutex
 	started bool
+	// Closed by Stop, ends the memory reports.
+	stopped chan struct{}
 }
 
 // host adapts Callbacks to what the engine wants. It exists so the engine's
@@ -110,7 +113,7 @@ func New(stateJSON string, hostname string, systemWideDNS bool, upstreams string
 			}
 		},
 	})
-	return &Core{engine: engine}, nil
+	return &Core{engine: engine, log: callbacks.Log}, nil
 }
 
 // Start takes over the tunnel descriptor and brings up every wave that is set
@@ -132,6 +135,8 @@ func (c *Core) Start(tunFD int, utunFraming bool, mtu int) error {
 		return errors.New("the core is already running")
 	}
 	c.started = true
+	c.stopped = make(chan struct{})
+	go watchMemory(c.log, c.stopped)
 	c.mu.Unlock()
 
 	framing := wavetun.FramingRaw
@@ -205,6 +210,7 @@ func (c *Core) Stop() {
 		return
 	}
 	c.started = false
+	close(c.stopped)
 	c.mu.Unlock()
 	c.engine.Stop()
 }

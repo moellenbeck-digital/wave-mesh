@@ -244,6 +244,12 @@ Routen und DNS-Domains, jeden Fehler. Es bleibt auf dem Gerät, bis man es teilt
   Emulator), der Tunnel selbst aber nicht: `NEPacketTunnelProvider` gibt es im
   iOS-Simulator nicht, und im Emulator fehlt ein Control-Server. Der erste
   echte Lauf ist der über TestFlight bzw. den internen Test in Google Play.
+- **Wie viel Speicher die Extension mit mehreren Waves braucht**, ist nicht
+  gemessen. iOS beendet sie bei etwa 50 MB ohne sichtbaren Absturz; wireguard-go
+  verkleinert seine Puffer für iOS, aber für *ein* Device, und hier ist es eines
+  je Wave. Der Kern setzt unter iOS eine weiche Grenze für den Go-Heap
+  (`wavemobile/memory.go`) und schreibt alle fünf Minuten ins Protokoll, was er
+  hält — die Zahlen von einem echten Telefon mit zwei Waves stehen noch aus.
 - **Der Gerätename auf iOS** ist seit iOS 16 nur noch das Modell („iPhone“,
   „iPad“); den Namen, den jemand seinem Gerät gegeben hat, gibt es nur mit
   einem Entitlement, das Apple einzeln vergibt.
