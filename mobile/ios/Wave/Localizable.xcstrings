@@ -314,12 +314,22 @@
         }
       }
     },
-    "The tunnel did not start. Allow the VPN configuration in Settings and try again.": {
+    "The tunnel did not start. The log says more.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Der Tunnel ist nicht gestartet. Erlaube die VPN-Konfiguration in den Einstellungen und versuch es noch einmal."
+            "value": "Der Tunnel ist nicht gestartet. Mehr steht im Protokoll."
+          }
+        }
+      }
+    },
+    "The tunnel did not start: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Tunnel ist nicht gestartet: %@"
           }
         }
       }

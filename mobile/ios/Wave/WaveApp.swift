@@ -220,18 +220,51 @@ final class WaveModel: ObservableObject {
         }
         WaveLog.write("starting the tunnel", from: .app)
         try manager.connection.startVPNTunnel()
-        for _ in 0..<60 {
-            switch manager.connection.status {
+        try await waitUntilConnected(manager.connection)
+    }
+
+    /// Waits for the tunnel the system was just asked to start.
+    ///
+    /// Right after startVPNTunnel the status still reads "disconnected": the
+    /// system takes the request asynchronously. Treating that first reading as
+    /// a failure refused every start in build 4. So "disconnected" only counts
+    /// once the tunnel was seen starting, or after a grace period in which it
+    /// never did.
+    private func waitUntilConnected(_ connection: NEVPNConnection) async throws {
+        let started = Date()
+        var seenStarting = false
+        while Date().timeIntervalSince(started) < 30 {
+            switch connection.status {
             case .connected:
                 tunnelUp = true
                 return
+            case .connecting, .reasserting:
+                seenStarting = true
             case .disconnected, .invalid:
-                throw ModelError.tunnelDidNotStart
+                if seenStarting || Date().timeIntervalSince(started) > 5 {
+                    throw await startFailure(connection)
+                }
             default:
-                try await Task.sleep(nanoseconds: 250_000_000)
+                break
             }
+            try await Task.sleep(nanoseconds: 200_000_000)
         }
-        throw ModelError.tunnelDidNotStart
+        throw await startFailure(connection)
+    }
+
+    /// Why the tunnel did not come up, as the system recorded it -- usually
+    /// the error the extension's startTunnel ended with.
+    private func startFailure(_ connection: NEVPNConnection) async -> Error {
+        // The async form throws the recorded error rather than returning it;
+        // returning normally means nothing was recorded.
+        var text: String?
+        do {
+            try await connection.fetchLastDisconnectError()
+        } catch {
+            text = error.localizedDescription
+        }
+        WaveLog.write("the tunnel did not start: \(text ?? "no reason recorded")", from: .app)
+        return ModelError.tunnelDidNotStart(text)
     }
 
     private func startPolling() {
@@ -289,14 +322,17 @@ final class WaveModel: ObservableObject {
 
 enum ModelError: LocalizedError {
     case notReady
-    case tunnelDidNotStart
+    /// With the reason the system recorded, when it recorded one.
+    case tunnelDidNotStart(String?)
 
     var errorDescription: String? {
         switch self {
         case .notReady:
             String(localized: "The VPN configuration is not set up yet.")
-        case .tunnelDidNotStart:
-            String(localized: "The tunnel did not start. Allow the VPN configuration in Settings and try again.")
+        case .tunnelDidNotStart(let reason?):
+            String(localized: "The tunnel did not start: \(reason)")
+        case .tunnelDidNotStart(nil):
+            String(localized: "The tunnel did not start. The log says more.")
         }
     }
 }
