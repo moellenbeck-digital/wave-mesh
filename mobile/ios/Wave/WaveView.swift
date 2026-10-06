@@ -23,33 +23,32 @@ struct WaveView: View {
             List {
                 if let failure = model.failure {
                     Section {
-                        Text(failure).foregroundStyle(.red)
+                        Label(failure, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                        Button("Dismiss") { model.failure = nil }
                     }
                 }
 
-                if let url = model.pendingAuthURL {
-                    Section("Waiting for approval") {
-                        Link("Open the enrolment link", destination: url)
-                    }
-                }
+                loginProgress
 
-                Section("Join a wave") {
-                    TextField("control server address", text: $controlURL)
+                Section(model.status.waves.isEmpty ? "Join a wave" : "Add another wave") {
+                    TextField("Control server, e.g. wave.example.com", text: $controlURL)
+                        .keyboardType(.URL)
+                        .textContentType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Button("Log in") {
-                        model.login(controlURL: controlURL)
-                        controlURL = ""
-                    }
-                    .disabled(controlURL.isEmpty)
+                        .submitLabel(.join)
+                        .onSubmit(join)
+                    Button("Log in", action: join)
+                        .disabled(controlURL.trimmingCharacters(in: .whitespaces).isEmpty || model.login != .idle)
                 }
 
-                if model.status.waves.isEmpty {
+                if model.status.waves.isEmpty && model.login == .idle {
                     Section {
                         // Not in any wave is a different thing from a tunnel
                         // that is down, and saying so is the difference between
                         // a person looking for a bug and a person logging in.
-                        Text("This device is in no wave yet. `wave login` is the only way in — there is no second one.")
+                        Text("This device is in no wave yet. Enter the address of your control server to join one; the tunnel starts by itself.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -79,6 +78,10 @@ struct WaveView: View {
                         }
                     }
                 }
+
+                Section {
+                    NavigationLink("Log") { LogView() }
+                }
             }
             // The product name is a name, not a word: it stays as it is in
             // every language, so it does not go through the catalog.
@@ -91,8 +94,43 @@ struct WaveView: View {
                     model.status.running ? model.disconnect() : model.connect()
                 }
             }
+            .sheet(item: $model.approval) { approval in
+                SafariView(url: approval.url).ignoresSafeArea()
+            }
         }
         .task { await model.load() }
+    }
+
+    /// Says where a login is: a join that shows nothing for half a minute
+    /// looks exactly like one that was ignored.
+    @ViewBuilder
+    private var loginProgress: some View {
+        switch model.login {
+        case .idle:
+            EmptyView()
+        case .connecting(let address):
+            Section {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Connecting to \(address)…")
+                }
+            }
+        case .waitingForApproval(let address):
+            Section(address) {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Waiting for approval in the browser…")
+                }
+                Button("Open the approval page again") { model.reopenApproval() }
+            }
+        }
+    }
+
+    private func join() {
+        let address = controlURL
+        Task {
+            if await model.join(controlURL: address) { controlURL = "" }
+        }
     }
 }
 

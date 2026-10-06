@@ -1726,13 +1726,27 @@ echter Hardware ist der über TestFlight und den internen Test in Google Play.
 **Die Store-Identität steht und ändert sich nie mehr:** Bundle-Id und
 `applicationId` `org.wavemesh.app`, Extension `org.wavemesh.app.tunnel`,
 App-Gruppe `group.org.wavemesh.app`, Team `L6R92A4Y7C` (Moellenbeck-Digital
-UG). Für iOS stehen sie zusätzlich in `Shared/Identifiers.swift`. Beide Apps
+UG). Für iOS stehen sie zusätzlich in `Shared/Identifiers.swift`. Anmelden startet auf iOS
+den Tunnel selbst: der Kern läuft in der Extension, und solange die nicht
+läuft, gibt es niemanden, den die App fragen könnte. Was Tunnel und App tun,
+landet in einem geteilten Protokoll (`Shared/WaveLog.swift`), das die App
+anzeigt und teilen kann — auf einem Telefon die einzige Stelle, an der man
+sieht, warum ein Name nicht aufgelöst wurde. Beide Apps
 zeigen vor der ersten Verbindung einmal, was mit Daten geschieht (App-Review
 5.4, Play-Richtlinie zu `VpnService`); ändert sich die Aussage, bekommt der
 Schlüssel `disclosureAccepted.v1` eine neue Nummer.
 
 ## Invarianten, die leicht kaputtgehen
 
+- **Die Einstellungen des Telefons haben einen Vertrag, und der ist eine
+  Datei.** `wavesettings.Settings` ist die eine Struktur, die als JSON nach
+  Swift und Kotlin geht, und beide lesen sie von Hand. Als die Routen zu
+  Objekten mit Quelladresse wurden, lasen beide Apps weiter Strings — iOS warf
+  beim Dekodieren, und kein Telefon bekam je Adressen, Routen oder DNS; die
+  Anmeldung klappte trotzdem, was den Fehler verdeckte. Seitdem schreibt
+  `go test ./wavesettings` die Form nach `testdata/settings.json` (neu mit
+  `-update`), und der iOS-Test `WaveTunnelTests` dekodiert genau diese Datei.
+  Ändert sich die Form, schlägt erst Go fehl; dann Swift und Kotlin anpassen.
 - **Eine Live-Ansicht nur auf einem Terminal.** `wave up` und `wave status`
   bleiben offen und zeichnen im Sekundentakt neu — ein Pfad, eine RTT und ein
   Handshake-Alter sagen erst etwas, wenn man sie sich bewegen sieht. Am Rohr

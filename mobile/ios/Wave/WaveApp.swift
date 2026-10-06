@@ -14,14 +14,35 @@ struct WaveApp: App {
 ///
 /// That split is not a preference. The extension is the process iOS keeps
 /// running, and a core in the app would stop the moment somebody switched away
-/// from it.
+/// from it. It has one consequence everything below is shaped by: nothing can
+/// be asked while the tunnel is down, so joining a wave starts the tunnel
+/// first instead of quietly asking nobody.
 @MainActor
 final class WaveModel: ObservableObject {
     @Published var status = Status(port: 0, running: false, waves: [])
     @Published var failure: String?
+    /// Where a login is, so the screen can say it instead of sitting still.
+    @Published var login: LoginPhase = .idle
+    /// The enrolment page currently shown in the app, if any.
+    @Published var approval: Approval?
+
+    enum LoginPhase: Equatable {
+        case idle
+        /// Starting the tunnel, or registering with the control server.
+        case connecting(String)
+        /// Registered; somebody has to approve the device in a browser.
+        case waitingForApproval(String)
+    }
+
+    struct Approval: Identifiable, Equatable {
+        let url: URL
+        var id: String { url.absoluteString }
+    }
 
     private var manager: NETunnelProviderManager?
     private var timer: Timer?
+    /// Links already shown, so closing the page does not reopen it every second.
+    private var presented: Set<URL> = []
 
     func load() async {
         do {
@@ -43,43 +64,95 @@ final class WaveModel: ObservableObject {
             self.manager = manager
             startPolling()
         } catch {
-            failure = error.localizedDescription
+            report(error.localizedDescription)
         }
     }
 
     func connect() {
-        do {
-            try manager?.connection.startVPNTunnel()
-        } catch {
-            failure = error.localizedDescription
-        }
+        Task { try? await ensureRunning() }
     }
 
     func disconnect() {
+        WaveLog.write("disconnect", from: .app)
         manager?.connection.stopVPNTunnel()
     }
 
-    func login(controlURL: String) {
-        send(["kind": "login", "controlURL": controlURL]) { [weak self] answer in
-            guard let answer, !answer.isEmpty else { return }
-            self?.failure = answer
+    /// Joins a wave: tunnel up, register, wait for approval. Returns whether
+    /// the request was taken, so the field keeps what was typed when it was not.
+    func join(controlURL: String) async -> Bool {
+        let address = controlURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !address.isEmpty else { return false }
+        failure = nil
+        login = .connecting(address)
+        WaveLog.write("join \(address)", from: .app)
+        do {
+            try await ensureRunning()
+        } catch {
+            login = .idle
+            report(error.localizedDescription)
+            return false
         }
+        // Answered only once the device is approved, refused, or the wait
+        // timed out -- possibly minutes from now.
+        Task {
+            let answer = await ask(["kind": "login", "controlURL": address])
+            login = .idle
+            approval = nil
+            switch answer {
+            case .none:
+                report(String(localized: "The tunnel stopped before the login finished."))
+            case .some(let message) where !message.isEmpty:
+                report(message)
+            default:
+                WaveLog.write("joined \(address)", from: .app)
+            }
+        }
+        return true
     }
 
     func logout(controlURL: String) {
-        send(["kind": "logout", "controlURL": controlURL]) { [weak self] answer in
-            guard let answer, !answer.isEmpty else { return }
-            self?.failure = answer
+        Task {
+            if let answer = await ask(["kind": "logout", "controlURL": controlURL]), !answer.isEmpty {
+                report(answer)
+            }
         }
     }
 
-    /// The link the core produced during enrolment. The extension cannot open a
-    /// browser, so it leaves it here.
-    var pendingAuthURL: URL? {
-        guard let stored = UserDefaults(suiteName: WaveIdentifiers.appGroup)?.string(forKey: "pendingAuthURL") else {
-            return nil
+    /// Shows the enrolment page again after it was closed.
+    func reopenApproval() {
+        guard let url = PendingAuth.url else { return }
+        approval = Approval(url: url)
+    }
+
+    private func report(_ message: String) {
+        failure = message
+        WaveLog.write("error: \(message)", from: .app)
+    }
+
+    /// Starts the tunnel unless it is running, and waits until it is -- the
+    /// extension is the only one that can be asked anything.
+    private func ensureRunning() async throws {
+        guard let manager else { throw ModelError.notReady }
+        if manager.connection.status == .connected { return }
+        if !manager.isEnabled {
+            // Another VPN configuration took over since this one was saved.
+            manager.isEnabled = true
+            try await manager.saveToPreferences()
+            try await manager.loadFromPreferences()
         }
-        return URL(string: stored)
+        WaveLog.write("starting the tunnel", from: .app)
+        try manager.connection.startVPNTunnel()
+        for _ in 0..<60 {
+            switch manager.connection.status {
+            case .connected:
+                return
+            case .disconnected, .invalid:
+                throw ModelError.tunnelDidNotStart
+            default:
+                try await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
+        throw ModelError.tunnelDidNotStart
     }
 
     private func startPolling() {
@@ -89,30 +162,55 @@ final class WaveModel: ObservableObject {
         // The timer fires on the main run loop, but its closure is not
         // isolated, so it hops explicitly.
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.send(["kind": "status"]) { answer in
-                    guard let answer, let data = answer.data(using: .utf8),
-                          let decoded = try? JSONDecoder().decode(Status.self, from: data)
-                    else { return }
-                    self?.status = decoded
-                }
-            }
+            Task { @MainActor in await self?.poll() }
         }
     }
 
-    private func send(_ message: [String: String], completion: @escaping @MainActor (String?) -> Void) {
+    private func poll() async {
+        if case .connecting(let address) = login, let url = PendingAuth.url {
+            login = .waitingForApproval(address)
+            if !presented.contains(url) {
+                presented.insert(url)
+                approval = Approval(url: url)
+            }
+        }
+        guard manager?.connection.status == .connected else {
+            if status.running { status = Status(port: status.port, running: false, waves: status.waves) }
+            return
+        }
+        guard let answer = await ask(["kind": "status"]),
+              let decoded = try? JSONDecoder().decode(Status.self, from: Data(answer.utf8))
+        else { return }
+        status = decoded
+    }
+
+    /// One question to the extension; nil when it is not there to answer.
+    private func ask(_ message: [String: String]) async -> String? {
         guard let session = manager?.connection as? NETunnelProviderSession,
               let payload = try? JSONSerialization.data(withJSONObject: message)
-        else { return }
-        do {
-            try session.sendProviderMessage(payload) { answer in
-                Task { @MainActor in
-                    completion(answer.map { String(decoding: $0, as: UTF8.self) })
+        else { return nil }
+        return await withCheckedContinuation { continuation in
+            do {
+                try session.sendProviderMessage(payload) { answer in
+                    continuation.resume(returning: answer.map { String(decoding: $0, as: UTF8.self) })
                 }
+            } catch {
+                continuation.resume(returning: nil)
             }
-        } catch {
-            // The extension is not running; there is nothing to ask.
-            completion(nil)
+        }
+    }
+}
+
+enum ModelError: LocalizedError {
+    case notReady
+    case tunnelDidNotStart
+
+    var errorDescription: String? {
+        switch self {
+        case .notReady:
+            String(localized: "The VPN configuration is not set up yet.")
+        case .tunnelDidNotStart:
+            String(localized: "The tunnel did not start. Allow the VPN configuration in Settings and try again.")
         }
     }
 }

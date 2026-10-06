@@ -17,6 +17,17 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Fehlerbehebungen
 
+- **Auf dem Telefon kam nach dem Anmelden nichts an.** Beide Apps lasen die
+  Routen aus dem Kern in einer Form, die es nicht mehr gab; iOS wendete
+  deshalb weder Adressen noch Routen noch DNS an, Android ebenso wenig. Ein
+  Test hält die Form jetzt zwischen Kern und App fest.
+- **Anmelden auf dem iPhone tat nichts, solange der Tunnel aus war.** Jetzt
+  startet die App den Tunnel selbst, öffnet die Bestätigungsseite direkt in der
+  App und zeigt, wo die Anmeldung steht — und warum sie scheitert, statt die
+  Eingabe still zu verwerfen. Ist schon ein Wave da, heißt der Bereich
+  „Weiteren Wave hinzufügen".
+- Die iPhone-App hat ein **Protokoll** (teilbar), in dem steht, was Tunnel und
+  App getan haben.
 - Die iOS-App ließ sich nicht bauen: die Tunnel-Extension nutzte Schnittstellen, die es
   nur unter macOS gibt, und den falschen Namen für die Rückrufe des Go-Kerns.
 - Die Android-App ließ sich nicht bauen: das Symbol ihrer Benachrichtigung war keine

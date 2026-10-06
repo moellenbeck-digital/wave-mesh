@@ -30,52 +30,18 @@ final class WaveHost: NSObject, WavemobileCallbacksProtocol {
     /// no partial failure, which is why the core refuses a colliding wave
     /// before it ever gets here rather than repairing one afterwards.
     func applySettings(_ settingsJSON: String?) throws {
-        guard let settingsJSON, let data = settingsJSON.data(using: .utf8) else {
-            throw WaveError.noCore
+        guard let settingsJSON else { throw WaveError.noCore }
+        let settings: WaveSettings
+        do {
+            settings = try WaveSettings.decode(settingsJSON)
+        } catch {
+            // The one failure that once left every phone without addresses,
+            // routes or DNS, silently: said out loud from now on.
+            log("could not read the tunnel settings from the core: \(error)")
+            throw error
         }
-        let settings = try JSONDecoder().decode(WaveSettings.self, from: data)
         guard let provider else { throw WaveError.noCore }
-
-        // The remote address is a label in a packet tunnel -- there is no peer
-        // at the other end of a utun. The first of our own addresses is the
-        // honest thing to put there.
-        let remote = settings.addresses.first.map { String($0.split(separator: "/")[0]) } ?? "127.0.0.1"
-        let network = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
-        network.mtu = NSNumber(value: settings.mtu)
-
-        let ipv4 = settings.addresses.compactMap(IPv4Address.init)
-        if !ipv4.isEmpty {
-            let configuration = NEIPv4Settings(
-                addresses: ipv4.map(\.address),
-                subnetMasks: ipv4.map(\.mask)
-            )
-            configuration.includedRoutes = settings.routes.compactMap(IPv4Address.init).map {
-                NEIPv4Route(destinationAddress: $0.address, subnetMask: $0.mask)
-            }
-            network.ipv4Settings = configuration
-        }
-
-        let ipv6 = settings.addresses.compactMap(IPv6Address.init)
-        if !ipv6.isEmpty {
-            let configuration = NEIPv6Settings(
-                addresses: ipv6.map(\.address),
-                networkPrefixLengths: ipv6.map { NSNumber(value: $0.prefix) }
-            )
-            configuration.includedRoutes = settings.routes.compactMap(IPv6Address.init).map {
-                NEIPv6Route(destinationAddress: $0.address, networkPrefixLength: NSNumber(value: $0.prefix))
-            }
-            network.ipv6Settings = configuration
-        }
-
-        if !settings.dnsServers.isEmpty {
-            let dns = NEDNSSettings(servers: settings.dnsServers)
-            // This is the whole reason the invariant holds on iOS: only these
-            // namespaces are sent to us, and every other name on the phone
-            // keeps resolving exactly as it did before wave was installed.
-            dns.matchDomains = settings.matchDomains
-            dns.searchDomains = settings.searchDomains
-            network.dnsSettings = dns
-        }
+        let network = settings.networkSettings()
 
         // Applied without waiting: the completion arrives on another queue, and
         // blocking the core's caller here would hold up the netmap handler that
@@ -84,13 +50,19 @@ final class WaveHost: NSObject, WavemobileCallbacksProtocol {
         provider.setTunnelNetworkSettings(network) { [weak self] error in
             if let error {
                 self?.log("could not apply the tunnel settings: \(error.localizedDescription)")
+                return
             }
+            // What a missing route or an unresolved name is checked against.
+            self?.log(
+                "applied: addresses \(settings.addresses), routes \(settings.routes.map(\.cidr)), "
+                    + "dns \(settings.dnsServers) for \(settings.matchDomains), mtu \(settings.mtu)"
+            )
         }
     }
 
     func log(_ line: String?) {
         guard let line else { return }
-        NSLog("[wave] %@", line)
+        WaveLog.write(line, from: .tunnel)
     }
 
     func saveState(_ encoded: Data?) {
@@ -133,8 +105,8 @@ final class WaveHost: NSObject, WavemobileCallbacksProtocol {
     /// where the app will find it and the app opens it.
     func openAuthURL(_ url: String?) {
         guard let url else { return }
-        log("open this link to connect this device: \(url)")
-        UserDefaults(suiteName: appGroup)?.set(url, forKey: "pendingAuthURL")
+        log("waiting for approval: \(url)")
+        UserDefaults(suiteName: appGroup)?.set(url, forKey: PendingAuth.key)
     }
 
     /// Nothing to do: a packet tunnel provider's own sockets do not go through
@@ -145,44 +117,3 @@ final class WaveHost: NSObject, WavemobileCallbacksProtocol {
 /// The app group both halves share. The extension owns the core; the app only
 /// ever asks it things.
 let appGroup = WaveIdentifiers.appGroup
-
-/// The union, as the core sends it. One definition of the shape lives in Go
-/// (`wavesettings.Settings`); this is its reading.
-private struct WaveSettings: Decodable {
-    let addresses: [String]
-    let routes: [String]
-    let mtu: Int
-    let dnsServers: [String]
-    let matchDomains: [String]
-    let searchDomains: [String]
-}
-
-/// A CIDR split the way NEIPv4Settings wants it: an address and a dotted mask.
-private struct IPv4Address {
-    let address: String
-    let mask: String
-
-    init?(_ cidr: String) {
-        let parts = cidr.split(separator: "/")
-        guard let first = parts.first, !first.contains(":") else { return nil }
-        address = String(first)
-        let bits = parts.count > 1 ? Int(parts[1]) ?? 32 : 32
-        var octets = [Int](repeating: 0, count: 4)
-        for bit in 0..<max(0, min(32, bits)) {
-            octets[bit / 8] |= 1 << (7 - bit % 8)
-        }
-        mask = octets.map(String.init).joined(separator: ".")
-    }
-}
-
-private struct IPv6Address {
-    let address: String
-    let prefix: Int
-
-    init?(_ cidr: String) {
-        let parts = cidr.split(separator: "/")
-        guard let first = parts.first, first.contains(":") else { return nil }
-        address = String(first)
-        prefix = parts.count > 1 ? Int(parts[1]) ?? 128 : 128
-    }
-}
