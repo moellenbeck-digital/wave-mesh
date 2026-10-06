@@ -6,7 +6,24 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.8.0-insiders.1 ist nichts hinzugekommen.*
+*Seit v0.8.0-develop.1 ist nichts hinzugekommen.*
+
+---
+
+## 🔬 Development v0.8.0-develop.1 (06.10.2026)
+
+### Neue Funktionen
+
+- **`svc:*` in den Zugriffsregeln:** gibt alle Dienste im Wave frei — auch die,
+  die ein Connector erst später meldet —, aber kein einziges Gerät. Damit lässt
+  sich „alles aus dem Cluster“ freigeben, ohne dass die Policy bei jedem neuen
+  Ingress angepasst werden muss. Wie jeder Dienst nur als Ziel einer Regel; im
+  Zugriffsgraphen steht dafür immer eine eigene Karte.
+
+### Fehlerbehebungen
+
+- Der Connector meldet in der Geräteliste seine echte Version statt
+  `v0.0.0-dev` (ab dem ersten Image, das mit diesem Release gebaut wird).
 
 ---
 
