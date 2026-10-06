@@ -1731,7 +1731,12 @@ den Tunnel selbst: der Kern läuft in der Extension, und solange die nicht
 läuft, gibt es niemanden, den die App fragen könnte. Was Tunnel und App tun,
 landet in einem geteilten Protokoll (`Shared/WaveLog.swift`), das die App
 anzeigt und teilen kann — auf einem Telefon die einzige Stelle, an der man
-sieht, warum ein Name nicht aufgelöst wurde. Beide Apps
+sieht, warum ein Name nicht aufgelöst wurde. Verbinden schaltet „On Demand"
+ein, damit der Tunnel nach Neustart und Netzwechsel von selbst wiederkommt;
+Trennen schaltet es aus, sonst holte iOS ihn sofort zurück. Ein Wave lässt sich
+pausieren, ohne ihn zu verlassen (`SetEnabled`, gespeichert als `autoStart`),
+und der Status listet Waves in der Reihenfolge, in der sie dazukamen — nicht in
+der zufälligen einer Go-Map. Beide Apps
 zeigen vor der ersten Verbindung einmal, was mit Daten geschieht (App-Review
 5.4, Play-Richtlinie zu `VpnService`); ändert sich die Aussage, bekommt der
 Schlüssel `disclosureAccepted.v1` eine neue Nummer.
@@ -1747,6 +1752,14 @@ Schlüssel `disclosureAccepted.v1` eine neue Nummer.
   `go test ./wavesettings` die Form nach `testdata/settings.json` (neu mit
   `-update`), und der iOS-Test `WaveTunnelTests` dekodiert genau diese Datei.
   Ändert sich die Form, schlägt erst Go fehl; dann Swift und Kotlin anpassen.
+  Dasselbe gilt für den Status, den die App jede Sekunde dekodiert:
+  `go test ./waveengine` schreibt `testdata/status.json`, `StatusTests` liest es.
+- **Ein Wave, der nicht hochkommt, hält den Tunnel nicht auf.** `Engine.Start`
+  protokolliert ihn und startet die anderen; früher gab es den Fehler zurück,
+  und iOS startete den Tunnel dann gar nicht mehr. Dazu gehört: eine erste
+  Anmeldung, die nie bestätigt wurde (Seite geschlossen, abgebrochen, nach 15
+  Minuten abgelaufen), vergisst ihr Enrolment wieder — sonst käme es bei jedem
+  Start als Wave zurück, der nie hochkommen kann.
 - **Eine Live-Ansicht nur auf einem Terminal.** `wave up` und `wave status`
   bleiben offen und zeichnen im Sekundentakt neu — ein Pfad, eine RTT und ein
   Handshake-Alter sagen erst etwas, wenn man sie sich bewegen sieht. Am Rohr

@@ -2,9 +2,12 @@ package wavemobile_test
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveengine"
 	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavemobile"
@@ -110,5 +113,39 @@ func TestStatusIsAlwaysJSON(t *testing.T) {
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(status), &decoded); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestALoginWaitingForApprovalCanBeCancelled(t *testing.T) {
+	// A control server that accepts the registration and never approves it:
+	// the one case where waiting is the only thing left to do.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/machine/register" {
+			_, _ = w.Write([]byte(`{"status":"pending","authUrl":"https://example.invalid/approve","pollSecret":"s"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"pending"}`))
+	}))
+	defer server.Close()
+
+	core, err := wavemobile.New("", "phone", false, "", &recordingCallbacks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- core.Login(server.URL, "") }()
+	time.Sleep(300 * time.Millisecond)
+	core.CancelLogin(server.URL)
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "canceled") {
+			t.Fatalf("want the login to end because it was cancelled, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the login did not return after it was cancelled")
+	}
+	if status := core.Status(); strings.Contains(status, server.URL) {
+		t.Fatalf("the cancelled enrolment is still listed: %s", status)
 	}
 }

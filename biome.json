@@ -10,7 +10,8 @@
       "!**/node_modules",
       "!**/.next",
       "!mobile/core/testdata",
-      "!mobile/core/wavesettings/testdata"
+      "!mobile/core/wavesettings/testdata",
+      "!mobile/core/waveengine/testdata"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },

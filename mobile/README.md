@@ -227,14 +227,15 @@ eine neue Nummer, damit er erneut erscheint.
 ## Tests und Diagnose
 
 ```bash
-cd mobile/core && go test ./wavesettings      # die Form der Einstellungen, als Datei
+cd mobile/core && go test ./wavesettings ./waveengine   # die Form von Einstellungen und Status, als Datei
 cd mobile/ios && xcodegen generate && \
   xcodebuild -scheme WaveTunnelTests -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-`core/wavesettings/testdata/settings.json` ist der Vertrag zwischen dem Kern und
-den beiden Apps: Go prüft, dass es genau diese Form schreibt, der iOS-Test liest
-genau diese Datei. Auf dem Telefon selbst gibt es unter **Protokoll** alles, was
+`core/wavesettings/testdata/settings.json` und `core/waveengine/testdata/status.json`
+sind der Vertrag zwischen dem Kern und den Apps: Go prüft, dass es genau diese
+Form schreibt, die iOS-Tests lesen genau diese Dateien (neu erzeugen mit
+`-update`). Auf dem Telefon selbst gibt es unter **Protokoll** alles, was
 Tunnel und App getan haben — Start, Anmeldung, die angewendeten Adressen,
 Routen und DNS-Domains, jeden Fehler. Es bleibt auf dem Gerät, bis man es teilt.
 
@@ -250,9 +251,10 @@ Routen und DNS-Domains, jeden Fehler. Es bleibt auf dem Gerät, bis man es teilt
   je Wave. Der Kern setzt unter iOS eine weiche Grenze für den Go-Heap
   (`wavemobile/memory.go`) und schreibt alle fünf Minuten ins Protokoll, was er
   hält — die Zahlen von einem echten Telefon mit zwei Waves stehen noch aus.
-- **Der Gerätename auf iOS** ist seit iOS 16 nur noch das Modell („iPhone“,
-  „iPad“); den Namen, den jemand seinem Gerät gegeben hat, gibt es nur mit
-  einem Entitlement, das Apple einzeln vergibt.
+- **Der Gerätename auf iOS** ist seit iOS 16 nur noch das Modell („iPhone“);
+  die App lässt deshalb einen eigenen Namen eingeben. Er gilt für den nächsten
+  Beitritt — ein Wave, in dem das Gerät schon ist, behält seinen Namen, weil der
+  Control-Server ihn nur beim Enrolment übernimmt.
 - **Android signiert noch nicht für Google Play.** `bundleRelease` erzeugt das
   `.aab` unsigniert; Upload-Schlüssel und Signierung kommen mit der App in der
   Play Console.

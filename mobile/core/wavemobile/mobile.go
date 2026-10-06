@@ -63,6 +63,9 @@ type Core struct {
 	started bool
 	// Closed by Stop, ends the memory reports.
 	stopped chan struct{}
+	// Logins waiting for approval, by control server, so the person can give
+	// up on one instead of waiting out its fifteen minutes.
+	pending map[string]context.CancelFunc
 }
 
 // host adapts Callbacks to what the engine wants. It exists so the engine's
@@ -181,8 +184,44 @@ func (c *Core) ReplaceTunnel(tunFD int, utunFraming bool, mtu int) error {
 // the main thread. An empty authKey means the interactive way; a pre-auth key
 // is an approval given in advance.
 func (c *Core) Login(controlURL string, authKey string) error {
-	return c.engine.Login(context.Background(), controlURL, authKey)
+	ctx, cancel := context.WithCancel(context.Background())
+	c.mu.Lock()
+	if c.pending == nil {
+		c.pending = map[string]context.CancelFunc{}
+	}
+	if previous, waiting := c.pending[controlURL]; waiting {
+		previous()
+	}
+	c.pending[controlURL] = cancel
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, controlURL)
+		c.mu.Unlock()
+		cancel()
+	}()
+	return c.engine.Login(ctx, controlURL, authKey)
 }
+
+// CancelLogin gives up on a login still waiting for approval. Login then
+// returns, and a first enrolment that was never approved is forgotten.
+func (c *Core) CancelLogin(controlURL string) {
+	c.mu.Lock()
+	cancel := c.pending[controlURL]
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// SetEnabled pauses or resumes one wave without leaving it.
+func (c *Core) SetEnabled(controlURL string, enabled bool) error {
+	return c.engine.SetEnabled(controlURL, enabled)
+}
+
+// SetHostname is the name the next enrolment asks for; a wave the device is
+// already in keeps the name it got there.
+func (c *Core) SetHostname(name string) { c.engine.SetHostname(name) }
 
 // Logout leaves one wave, named by its control server. There is no other name.
 func (c *Core) Logout(controlURL string) error {
