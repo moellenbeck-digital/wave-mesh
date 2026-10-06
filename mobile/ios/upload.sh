@@ -29,7 +29,8 @@ cleanup() {
   # shellcheck disable=SC2086
   security list-keychains -d user -s $original_keychains
   security delete-keychain "$keychain" 2>/dev/null || true
-  for f in "${installed[@]}"; do rm -f "$f"; done
+  # macOS ships bash 3.2, where an empty array trips `set -u`.
+  for f in ${installed[@]+"${installed[@]}"}; do rm -f "$f"; done
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -50,7 +51,10 @@ security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$
 security list-keychains -d user -s "$keychain" $original_keychains
 
 # Profiles are looked up by UUID; their names go into the build settings.
+# Not called as $(profile ...): a subshell would lose what it adds to
+# `installed`, and cleanup would leave the profiles behind.
 mkdir -p "$profiles"
+profile_name=
 profile() {
   local file="$work/$1.mobileprovision"
   base64 -d <<<"$2" >"$file"
@@ -58,10 +62,10 @@ profile() {
   local uuid; uuid=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<<"$plist")
   cp "$file" "$profiles/$uuid.mobileprovision"
   installed+=("$profiles/$uuid.mobileprovision")
-  /usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<<"$plist"
+  profile_name=$(/usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<<"$plist")
 }
-app_profile=$(profile app "$APP_PROFILE_BASE64")
-tunnel_profile=$(profile tunnel "$TUNNEL_PROFILE_BASE64")
+profile app "$APP_PROFILE_BASE64"; app_profile=$profile_name
+profile tunnel "$TUNNEL_PROFILE_BASE64"; tunnel_profile=$profile_name
 
 xcodegen generate --quiet
 
