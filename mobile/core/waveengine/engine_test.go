@@ -464,6 +464,7 @@ func TestAReservedResolverIsRoutedNotAssigned(t *testing.T) {
 	settings := wavesettings.Union([]wavesettings.Wave{{
 		Addresses:       []string{"10.77.0.1/32"},
 		Routes:          []string{"10.77.0.2/32"},
+		Suffix:          "a.wave.example.com",
 		ResolverAddress: "10.77.0.53",
 	}})
 

@@ -126,7 +126,11 @@ func Union(waves []Wave) Settings {
 			}
 			routes[cidr] = Route{CIDR: cidr, Source: source}
 		}
-		if wave.ResolverAddress != "" {
+		// A resolver only with names to answer for: a DNS server without match
+		// domains becomes the phone's resolver for every name, and ours answers
+		// only the waves'. Without a suffix or zones the wave gets no DNS.
+		hasNames := wave.Suffix != "" || len(wave.ReverseZones) > 0 || len(wave.DelegatedSuffixes) > 0
+		if wave.ResolverAddress != "" && hasNames {
 			servers.add(wave.ResolverAddress)
 			// Routed rather than assigned, unless the wave is using one of its
 			// own addresses -- which works where the resolver has a socket, and

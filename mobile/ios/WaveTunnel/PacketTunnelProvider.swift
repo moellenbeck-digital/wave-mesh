@@ -21,6 +21,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// settings have been applied at least once. Hence the two-step start
     /// below: empty settings first, then the core, then the real ones.
     private var started = false
+    /// Found while preparing, used once the core runs.
+    private var descriptor: Int32?
+    /// Left once the core has started (or failed to). Requests from the app
+    /// wait on it: a login that arrives while the waves are still coming up
+    /// would otherwise reach a core whose socket does not exist yet.
+    private let ready = DispatchGroup()
     /// The physical networks last seen, so only a real change rebinds.
     private var lastNetworks: String?
 
@@ -43,17 +49,39 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             do {
-                try self.startCore(host: host)
-                host.log("tunnel running")
-                completionHandler(nil)
+                try self.prepareCore(host: host)
             } catch {
                 host.log("tunnel could not start: \(error.localizedDescription)")
                 completionHandler(error)
+                return
+            }
+            // Reported as started before the core touches the network. With
+            // on-demand on, iOS holds the phone's traffic while a tunnel is
+            // still connecting -- and bringing a wave up means a request to
+            // its control server, which can take as long as that server
+            // takes, and the whole phone would wait with it. The placeholder
+            // routes nothing, so being "up" early costs nothing.
+            //
+            // Entered before the system hears "up", so no request from the
+            // app can slip in ahead of the start.
+            self.ready.enter()
+            completionHandler(nil)
+            DispatchQueue.global(qos: .userInitiated).async {
+                defer { self.ready.leave() }
+                do {
+                    try self.runCore()
+                    host.log("tunnel running")
+                } catch {
+                    host.log("the core did not start: \(error.localizedDescription)")
+                    self.cancelTunnelWithError(error)
+                }
             }
         }
     }
 
-    private func startCore(host: WaveHost) throws {
+    /// What has to happen before the system is told the tunnel is up, and
+    /// needs no network: the descriptor, and a core that has not started.
+    private func prepareCore(host: WaveHost) throws {
         guard let descriptor = tunnelFileDescriptor else {
             throw WaveError.noTunnelDescriptor
         }
@@ -77,6 +105,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         if let error { throw error }
         guard let core else { throw WaveError.noCore }
         self.core = core
+        self.descriptor = descriptor
+    }
+
+    /// Starts the core: the socket, the multiplexer, and every wave -- which
+    /// asks each control server for a netmap. Runs after the tunnel is up.
+    private func runCore() throws {
+        guard let core, let descriptor else { throw WaveError.noCore }
 
         // A utun descriptor prefixes every packet with a four-byte address
         // family; Android's does not. Getting this wrong produces a tunnel
@@ -135,6 +170,18 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler?(Data((WaveError.noCore.errorDescription ?? "").utf8))
             return
         }
+        // Everything but status and cancel waits until the core has started;
+        // a cancel must never queue behind the login it is meant to end.
+        if request.kind != "status" && request.kind != "cancelLogin" {
+            ready.notify(queue: .global()) { [weak self] in
+                self?.handle(request, completionHandler: completionHandler)
+            }
+            return
+        }
+        handle(request, completionHandler: completionHandler)
+    }
+
+    private func handle(_ request: AppRequest, completionHandler: ((Data?) -> Void)?) {
         switch request.kind {
         case "status":
             completionHandler?(Data((core?.status() ?? "{}").utf8))

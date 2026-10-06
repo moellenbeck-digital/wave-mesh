@@ -110,3 +110,16 @@ func TestADuplicateRouteIsNotTwoRoutes(t *testing.T) {
 		t.Fatalf("routes %v", settings.Routes)
 	}
 }
+
+// A DNS server with no domains to answer for would become the phone's resolver
+// for every name. A wave without names gets no resolver at all.
+func TestAResolverWithoutNamesIsNotOffered(t *testing.T) {
+	settings := wavesettings.Union([]wavesettings.Wave{{
+		Addresses:       []string{"10.77.0.2/32"},
+		Routes:          []string{"10.77.0.0/16"},
+		ResolverAddress: "10.77.0.53",
+	}})
+	if len(settings.DNSServers) != 0 || len(settings.MatchDomains) != 0 {
+		t.Fatalf("servers %v for domains %v", settings.DNSServers, settings.MatchDomains)
+	}
+}
