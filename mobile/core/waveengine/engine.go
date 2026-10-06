@@ -174,8 +174,27 @@ func (e *Engine) Start(link wavetun.Link, mtu int) error {
 		return errors.New("the engine is already running")
 	}
 	e.started = true
+	// An enrolment that was never approved can never come up -- only a new
+	// login could approve it, and that creates its own. Older builds left
+	// such leftovers behind; they go here instead of failing on every start.
+	kept := e.state.Profiles[:0]
+	var forgotten []string
+	for _, profile := range e.state.Profiles {
+		if profile.NetmapPublicKey == "" {
+			forgotten = append(forgotten, profile.ControlURL)
+			continue
+		}
+		kept = append(kept, profile)
+	}
+	e.state.Profiles = kept
 	profiles := append([]Profile(nil), e.state.Profiles...)
 	e.mu.Unlock()
+	if len(forgotten) > 0 {
+		for _, controlURL := range forgotten {
+			e.log("[%s] forgot an enrolment that was never approved", WaveLabel(controlURL))
+		}
+		e.saveState()
+	}
 
 	listenPort := e.options.ListenPort
 	if listenPort == 0 {
@@ -329,12 +348,15 @@ func (e *Engine) bringUp(profile Profile) error {
 		return errors.New("this enrolment has never been approved; log in again")
 	}
 
+	// Read before taking the lock: hostname() takes it too, and a Go mutex is
+	// not reentrant. Asking inside hung every approved wave in build 4.
+	hostname := e.hostname()
 	e.mu.Lock()
 	if _, running := e.waves[profile.ControlURL]; running {
 		e.mu.Unlock()
 		return nil
 	}
-	identity := identityOf(profile, e.hostname())
+	identity := identityOf(profile, hostname)
 	entry := &wave{
 		profile:      profile,
 		client:       wavecontrol.NewClient(identity, e.http),

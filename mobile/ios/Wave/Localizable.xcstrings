@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ is not a valid address.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ist keine gültige Adresse."
+          }
+        }
+      }
+    },
+    "%@ is not a wave-mesh control server.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ist kein wave-mesh-Control-Server."
+          }
+        }
+      }
+    },
     "%@ · %lld ms": {
       "comment": "Path of a peer: how it is reached (\"relay\" or an address) and its round-trip time.",
       "localizations": {
@@ -223,6 +243,26 @@
         }
       }
     },
+    "No server answers at %@. Check the address and this device's connection.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unter %@ antwortet kein Server. Prüf die Adresse und die Verbindung dieses Geräts."
+          }
+        }
+      }
+    },
+    "No wave-mesh control server answers at %@; its certificate belongs to another service. Enter the address of your control server, not the domain of your wave.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unter %@ antwortet kein wave-mesh-Control-Server; das Zertifikat gehört zu einem anderen Dienst. Gib die Adresse deines Control-Servers ein, nicht die Domain deines Waves."
+          }
+        }
+      }
+    },
     "offline": {
       "localizations": {
         "de": {
@@ -280,6 +320,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Teilen"
+          }
+        }
+      }
+    },
+    "The address %@ does not exist. Check how your control server's address is spelled.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Adresse %@ gibt es nicht. Prüf die Schreibweise der Adresse deines Control-Servers."
           }
         }
       }

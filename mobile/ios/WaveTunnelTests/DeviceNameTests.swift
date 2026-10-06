@@ -12,3 +12,17 @@ final class DeviceNameTests: XCTestCase {
         XCTAssertEqual(DeviceName.label(String(repeating: "a", count: 80)).count, 63)
     }
 }
+
+/// The sentences a wrong address gets, from the errors the core really writes.
+final class LoginFailureTests: XCTestCase {
+    func testTheWavesDomainInsteadOfItsControlServer() {
+        // Verbatim from a phone that typed ops.moellenbeck-digital.io.
+        let raw = #"Post "https://ops.moellenbeck-digital.io/v1/machine/register": tls: failed to verify certificate: x509: certificate is valid for *.github.com, not ops.moellenbeck-digital.io"#
+        XCTAssertTrue(LoginFailure.describe(raw, address: "ops.moellenbeck-digital.io").contains("ops.moellenbeck-digital.io"))
+        XCTAssertNotEqual(LoginFailure.describe(raw, address: "ops.moellenbeck-digital.io"), raw)
+    }
+
+    func testAnythingElseStaysAsTheCoreSaidIt() {
+        XCTAssertEqual(LoginFailure.describe("the server said no", address: "a.example"), "the server said no")
+    }
+}
