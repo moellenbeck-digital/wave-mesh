@@ -65,7 +65,7 @@ export default async function AccessPage({ params }: { params: Promise<{ id: str
                 d: code("role:owner|admin|member"),
                 e: code("tag:<name>"),
               }),
-              svc: code("svc:<name>"),
+              svc: rich("{a}, {b}", { a: code("svc:<name>"), b: code("svc:*") }),
               p1: code("22"),
               p2: code("5000-5001"),
               p3: code("tcp:445"),

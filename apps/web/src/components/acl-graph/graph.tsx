@@ -3,7 +3,7 @@
 import { type PointerEvent, useRef, useState } from "react";
 import { useLocale } from "@/components/locale-provider";
 import { aclMessages } from "@/i18n/acl";
-import { type Edge, type GraphNode, NODE_H, NODE_W, VIEW_W } from "./model";
+import { ALL_SERVICES, type Edge, type GraphNode, NODE_H, NODE_W, VIEW_W } from "./model";
 
 type Point = { x: number; y: number };
 
@@ -158,7 +158,9 @@ export function Graph(props: GraphProps) {
   }
 
   const has = (src: string, dst: string) => edges.some((e) => e.src === src && e.dst === dst);
-  const concrete = nodes.filter((n) => n.kind === "user" || n.kind === "tag" || n.kind === "svc");
+  const concrete = nodes.filter(
+    (n) => n.kind === "user" || n.kind === "tag" || (n.kind === "svc" && n.id !== ALL_SERVICES),
+  );
 
   return (
     <svg

@@ -1208,7 +1208,7 @@ der Verlauf. Drei Dinge daran:
 ```
 
 Selektoren sind `*`, `user:<email>`, `group:<name>`, `role:owner|admin|member`,
-`tag:<name>` und — nur als Ziel — `svc:<name>`. Ports sind `*`, `22`,
+`tag:<name>` und — nur als Ziel — `svc:<name>` und `svc:*`. Ports sind `*`, `22`,
 `5000-5001`, wahlweise mit `tcp:`/`udp:`; ohne `ports` alle. Dieselbe API gibt
 es für die Oberfläche: `GET/PUT/DELETE /api/waves/:id/acl`,
 `POST /api/waves/:id/acl/preview` und `PUT /api/waves/:id/nodes/:nodeId/tags`,
@@ -1243,6 +1243,13 @@ Was daran festliegt:
   neue Verbindungen nur, wenn eine Regel sie nennt. ICMP geht immer — Ping und
   Path-MTU-Discovery öffnen nichts, und ohne sie ist ein Tunnel nicht zu
   debuggen.
+- **`svc:*` ist jeder Dienst und kein Gerät** — die Freigabe „alles aus dem
+  Cluster“ ohne das „und jeder Laptop im Wave“, das `*` mitbrächte. Sie wird
+  wie alles andere bei jedem Bau einer Netzkarte gegen die Dienste ausgewertet,
+  die es *dann* gibt: ein Dienst, den der Operator morgen meldet, ist ohne
+  Änderung an der Policy dabei. Genau deshalb steht die Karte im Graph immer
+  da, auch ohne einen einzigen Dienst, und es gibt keine Warnung „kein Dienst
+  namens *“.
 - **Ein Dienst bringt seinen Connector mit, und der Connector seine Aufrufer.**
   Ist ein Dienst nicht freigegeben, fehlt er in `services` *und* in den
   `allowedIps` des Connector-Peers — er wird weder aufgelöst noch geroutet,

@@ -85,6 +85,24 @@ describe("evaluating a policy", () => {
     expect([...visibleTo(compiled, "nas", services).services]).toEqual(["grafana"]);
   });
 
+  test("svc:* covers every service, those reported later too, and no device", () => {
+    const policy: AclPolicy = { acls: [{ src: ["user:robin@example.com"], dst: ["svc:*"], ports: ["443"] }] };
+    const compiled = compilePolicy(policy, all, services);
+    const fromLaptop = visibleTo(compiled, "laptop", services);
+    expect([...fromLaptop.services]).toEqual(["grafana"]);
+    // The connector as the way to its services, the NAS not at all.
+    expect([...fromLaptop.peers]).toEqual(["connector"]);
+
+    // The policy names no service, so a new one needs no edit: the next netmap
+    // compiles against what there is then.
+    const later: AclService[] = [...services, { name: "plausible", viaNodeId: "connector" }];
+    const recompiled = compilePolicy(policy, all, later);
+    expect([...visibleTo(recompiled, "laptop", later).services].sort()).toEqual(["grafana", "plausible"]);
+    expect(recompiled.reach.get("laptop")?.services.get("plausible")).toEqual([
+      { proto: "any", from: 443, to: 443 },
+    ]);
+  });
+
   test("groups and roles resolve to their members' devices", () => {
     const guest: AclNode = { id: "guest", email: "guest@example.com", role: "member", tags: [] };
     const policy: AclPolicy = {
@@ -175,6 +193,22 @@ describe("checking a policy", () => {
     expect(checkPolicy({ acls: [{ src: ["*"], dst: ["*"], ports: ["20-10"] }] }, subjects).policy).toBeNull();
     const undefinedGroup = checkPolicy({ acls: [{ src: ["group:ghosts"], dst: ["*"] }] }, subjects);
     expect(undefinedGroup.errors).toEqual(["acls.0: group:ghosts is not defined under groups"]);
+  });
+
+  test("takes svc:* as a destination without a warning, even before any service exists", () => {
+    const check = checkPolicy(
+      { acls: [{ src: ["user:robin@example.com"], dst: ["svc:*"] }] },
+      { ...subjects, services: [] },
+    );
+    expect(check.errors).toEqual([]);
+    expect(check.warnings).toEqual([]);
+    expect(check.policy).not.toBeNull();
+  });
+
+  test("refuses svc:* as a source, like any service", () => {
+    const check = checkPolicy({ acls: [{ src: ["svc:*"], dst: ["*"] }] }, subjects);
+    expect(check.policy).toBeNull();
+    expect(check.errors[0]).toContain("never a source");
   });
 
   test("refuses a service as a source", () => {
@@ -394,6 +428,10 @@ describe("previewing a draft", () => {
     const mesh = previewPolicy(null, subjects, {}, ["svc:grafana"]);
     expect(mesh.reach).toBeNull();
     expect(mesh.covers["svc:grafana"]).toEqual({ nodes: [], services: ["grafana"] });
+    expect(previewPolicy(null, subjects, {}, ["svc:*"]).covers["svc:*"]).toEqual({
+      nodes: [],
+      services: ["grafana"],
+    });
   });
 });
 

@@ -45,6 +45,7 @@ const en = {
     `${id} created — now add ${kind === "tag" ? "devices" : "members"}`,
   refusedShort: "refused",
   anySubtitle: "all devices and services",
+  allServicesSubtitle: "all services, future ones too",
   noSuchService: "no such service",
   noDevices: "no devices",
   someDevices: (n: number, names: string) => `${n} devices: ${names}`,
@@ -106,6 +107,8 @@ const en = {
   nodeAny:
     "Every device in the wave, tagged or not — and as a destination every service too. New devices belong to it at once.",
   nodeSvc: "Reported by a connector. A service is only ever the destination of a rule.",
+  nodeAllServices:
+    "Every service in the wave, but no device. Services a connector reports later belong to it at once.",
   notMember: "This address is not a member of the wave. The rule reaches nobody.",
   address: "Address",
   covers: "Reaches",
@@ -186,6 +189,7 @@ const de: typeof en = {
   created: (id, kind) => `${id} angelegt — jetzt ${kind === "tag" ? "Geräte" : "Mitglieder"} hinzufügen`,
   refusedShort: "abgelehnt",
   anySubtitle: "alle Geräte und Dienste",
+  allServicesSubtitle: "alle Dienste, auch künftige",
   noSuchService: "kein solcher Dienst",
   noDevices: "keine Geräte",
   someDevices: (n, names) => `${n} Geräte: ${names}`,
@@ -244,6 +248,8 @@ const de: typeof en = {
   nodeAny:
     "Jedes Gerät im Wave, getaggt oder nicht — und als Ziel auch jeder Dienst. Neue Geräte gehören sofort dazu.",
   nodeSvc: "Gemeldet von einem Connector. Ein Dienst ist nur Ziel einer Regel.",
+  nodeAllServices:
+    "Jeder Dienst im Wave, aber kein Gerät. Dienste, die ein Connector später meldet, gehören sofort dazu.",
   notMember: "Diese Adresse ist kein Mitglied des Waves. Die Regel trifft niemanden.",
   address: "Adresse",
   covers: "Trifft",

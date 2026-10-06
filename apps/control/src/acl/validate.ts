@@ -60,7 +60,8 @@ export function checkPolicy(
         warnings.add(m.userWithoutDevice(selector));
       }
       if (selector.startsWith("tag:") && !tags.has(selector)) warnings.add(m.unwornTag(selector));
-      if (selector.startsWith("svc:") && !services.has(selector.slice(4))) {
+      // `svc:*` names no service in particular; with none yet it simply covers none.
+      if (selector.startsWith("svc:") && selector !== "svc:*" && !services.has(selector.slice(4))) {
         warnings.add(m.unknownService(selector.slice(4)));
       }
     }

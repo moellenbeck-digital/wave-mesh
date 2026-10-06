@@ -51,6 +51,19 @@ export function covers(selector: string, node: AclNode, groups: Record<string, s
   return false;
 }
 
+/**
+ * Whether a destination selector covers a service.
+ *
+ * `svc:*` is every service and no device -- the grant "all of the cluster's
+ * services" without "and every laptop in the wave" that `*` would add. It is
+ * evaluated against the services there are *now*, every time a netmap is
+ * built, so a service the operator reports tomorrow is covered without anyone
+ * touching the policy. That is the point of it.
+ */
+export function coversService(selector: string, name: string): boolean {
+  return selector === "*" || selector === "svc:*" || selector === `svc:${name}`;
+}
+
 function add(into: Map<string, PortRange[]>, key: string, ports: PortRange[]): void {
   const existing = into.get(key);
   into.set(key, existing ? [...existing, ...ports] : [...ports]);
@@ -70,7 +83,7 @@ export function compilePolicy(policy: AclPolicy, nodes: AclNode[], services: Acl
       rule.dst.some((selector) => !selector.startsWith("svc:") && covers(selector, node, groups)),
     );
     const targetServices = services.filter((service) =>
-      rule.dst.some((selector) => selector === "*" || selector === `svc:${service.name}`),
+      rule.dst.some((selector) => coversService(selector, service.name)),
     );
 
     for (const source of sources) {

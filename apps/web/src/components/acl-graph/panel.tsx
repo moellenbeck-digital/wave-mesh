@@ -5,7 +5,7 @@ import { useLocale } from "@/components/locale-provider";
 import { aclMessages } from "@/i18n/acl";
 import { rich } from "@/i18n/rich";
 import type { AclPreview, AclView } from "@/lib/control";
-import { type Draft, type Edge, kindOf, NAME_PATTERN, parsePort } from "./model";
+import { ALL_SERVICES, type Draft, type Edge, kindOf, NAME_PATTERN, parsePort } from "./model";
 
 const PRESETS: [string, string][] = [
   ["SSH", "22"],
@@ -237,7 +237,7 @@ export function NodePanel({
     user: t.nodeUser,
     role: t.nodeRole,
     any: t.nodeAny,
-    svc: t.nodeSvc,
+    svc: id === ALL_SERVICES ? t.nodeAllServices : t.nodeSvc,
   };
   const out = draft.edges.filter((e) => e.src === id).length;
   const into = draft.edges.filter((e) => e.dst === id).length;
@@ -249,7 +249,7 @@ export function NodePanel({
       <Note>{nodeText[kind]}</Note>
       {known ? null : <p className="wc-alert-error">{t.notMember}</p>}
       <div className="grid gap-2">
-        <Title>{kind === "svc" ? t.address : t.covers}</Title>
+        <Title>{kind === "svc" && id !== ALL_SERVICES ? t.address : t.covers}</Title>
         <Covered selector={id} view={view} preview={preview} />
       </div>
       {draft.policy ? <Note>{t.edgeCounts(out, into)}</Note> : null}

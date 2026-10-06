@@ -9,6 +9,7 @@ import { rich } from "@/i18n/rich";
 import type { AclPreview, AclView } from "@/lib/control";
 import { Graph } from "./graph";
 import {
+  ALL_SERVICES,
   changedTags,
   type Draft,
   draftFrom,
@@ -278,6 +279,10 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
       subtitles[node.id] = t.anySubtitle;
       continue;
     }
+    if (node.id === ALL_SERVICES) {
+      subtitles[node.id] = t.allServicesSubtitle;
+      continue;
+    }
     if (node.kind === "svc") {
       subtitles[node.id] = view.services.find((s) => `svc:${s.name}` === node.id)?.ipv4 ?? t.noSuchService;
       continue;
@@ -299,7 +304,8 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
     for (const node of nodes) {
       const covers = preview.covers[node.id];
       if (!covers) continue;
-      if (node.kind === "svc" && !reached.has(node.id)) isolated.add(node.id);
+      // Reach names services one by one, so `svc:*` is never in it by name.
+      if (node.kind === "svc" && node.id !== ALL_SERVICES && !reached.has(node.id)) isolated.add(node.id);
       if ((node.kind === "user" || node.kind === "tag") && covers.nodes.length > 0) {
         if (covers.nodes.every((id) => !reached.has(hostnames.get(id) ?? id))) isolated.add(node.id);
       }

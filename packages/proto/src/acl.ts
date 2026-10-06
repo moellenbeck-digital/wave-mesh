@@ -17,6 +17,7 @@ import { z } from "zod";
  *   role:owner|admin|member   the devices of the members with that role
  *   tag:<name>           the devices an operator tagged so
  *   svc:<name>           a service (D11); a destination only
+ *   svc:*                every service, those reported later included; a destination only
  *
  * A tagged device is its tags and nothing else: it does not count as its
  * owner's. A connector enrolled with the owner's pre-auth key is a machine in a
@@ -37,9 +38,10 @@ export const AclSelector = z
       GROUP_PATTERN.test(value) ||
       /^role:(owner|admin|member)$/.test(value) ||
       TAG_PATTERN.test(value) ||
-      /^svc:[a-z0-9][a-z0-9-]{0,62}$/.test(value),
+      /^svc:(\*|[a-z0-9][a-z0-9-]{0,62})$/.test(value),
     {
-      message: "expected *, user:<email>, group:<name>, role:<owner|admin|member>, tag:<name> or svc:<name>",
+      message:
+        "expected *, user:<email>, group:<name>, role:<owner|admin|member>, tag:<name>, svc:<name> or svc:*",
     },
   );
 

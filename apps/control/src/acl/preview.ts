@@ -1,7 +1,7 @@
 import type { Locale } from "@wave/i18n";
 import { AclPolicy, AclSelector } from "@wave/proto";
 import { portText } from "./describe.ts";
-import { type AclNode, type AclService, compilePolicy, covers } from "./evaluate.ts";
+import { type AclNode, type AclService, compilePolicy, covers, coversService } from "./evaluate.ts";
 import { aclMessages } from "./messages.ts";
 import { invalidTags } from "./store.ts";
 import { checkPolicy } from "./validate.ts";
@@ -66,7 +66,7 @@ export function previewPolicy(
         ? []
         : nodes.filter((node) => covers(selector, node, groups)).map((node) => node.id),
       services: subjects.services
-        .filter((service) => selector === "*" || selector === `svc:${service.name}`)
+        .filter((service) => coversService(selector, service.name))
         .map((service) => service.name),
     };
   }

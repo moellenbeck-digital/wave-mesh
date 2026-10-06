@@ -118,6 +118,9 @@ function canonical(draft: Draft): string {
   return JSON.stringify({ pairs, groups });
 }
 
+/** Every service, present and future, and no device. */
+export const ALL_SERVICES = "svc:*";
+
 export function kindOf(selector: string): Kind {
   if (selector === "*") return "any";
   const prefix = selector.slice(0, selector.indexOf(":"));
@@ -140,6 +143,9 @@ export function nodesOf(draft: Draft, view: AclView): GraphNode[] {
   add("*");
   const tags = new Set([...Object.values(draft.tags).flat(), ...draft.extraTags]);
   for (const tag of [...tags].sort()) add(tag);
+  // Always there, like `*`: granting the services a connector has not reported
+  // yet is what it is for, so it cannot wait for one to exist.
+  add(ALL_SERVICES);
   for (const service of view.services) add(`svc:${service.name}`);
   for (const edge of draft.edges) {
     add(edge.src);
