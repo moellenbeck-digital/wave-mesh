@@ -1754,6 +1754,13 @@ Schlüssel `disclosureAccepted.v1` eine neue Nummer.
   Ändert sich die Form, schlägt erst Go fehl; dann Swift und Kotlin anpassen.
   Dasselbe gilt für den Status, den die App jede Sekunde dekodiert:
   `go test ./waveengine` schreibt `testdata/status.json`, `StatusTests` liest es.
+- **`e.mu` im mobilen Kern ist nicht wiederholbar.** Eine Methode, die `e.mu`
+  nimmt, darf nicht aufgerufen werden, während `e.mu` gehalten wird — sonst
+  steht der Kern für immer. Genau so hingen in Build 4 jede Anmeldung nach der
+  Freigabe und jeder spätere Start (`bringUp` fragte unter der Sperre nach
+  `hostname()`). `TestNoMethodThatLocksIsCalledWhileTheLockIsHeld` liest den
+  Quelltext und schlägt bei so einem Aufruf an; Werte, die eine sperrende
+  Methode liefert, vor dem `Lock` holen.
 - **Ein Wave, der nicht hochkommt, hält den Tunnel nicht auf.** `Engine.Start`
   protokolliert ihn und startet die anderen; früher gab es den Fehler zurück,
   und iOS startete den Tunnel dann gar nicht mehr. Dazu gehört: eine erste

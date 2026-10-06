@@ -3,8 +3,8 @@ package waveengine
 import (
 	"context"
 	"net"
-	"strings"
 	"testing"
+	"time"
 )
 
 // A login that never got approved used to leave its enrolment in the state,
@@ -59,22 +59,23 @@ func TestAFailedLoginKeepsAnEnrolmentThatWasApprovedBefore(t *testing.T) {
 	}
 }
 
-func TestOneBrokenWaveDoesNotKeepTheTunnelDown(t *testing.T) {
+func TestANeverApprovedLeftoverIsForgottenAtStart(t *testing.T) {
 	host := &fakeHost{}
 	broken, err := NewProfile("https://never-approved.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := New(Options{Host: host, ListenPort: 0, State: State{Version: StateVersion, Profiles: []Profile{broken}}})
+	engine := New(Options{Host: host, State: State{Version: StateVersion, Profiles: []Profile{broken}}})
 	if err := engine.Start(newMemoryLink(), 1280); err != nil {
-		t.Fatalf("start failed because of one wave: %v", err)
+		t.Fatalf("start failed because of a leftover: %v", err)
 	}
 	t.Cleanup(engine.Stop)
-	host.mu.Lock()
-	logged := strings.Join(host.lines, "\n")
-	host.mu.Unlock()
-	if !strings.Contains(logged, "did not come up") {
-		t.Fatalf("the broken wave was not logged:\n%s", logged)
+	saved, err := ParseState(host.saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Profiles) != 0 {
+		t.Fatalf("the leftover is still saved: %+v", saved.Profiles)
 	}
 }
 
@@ -128,5 +129,43 @@ func TestANameChangeAppliesToTheNextEnrolment(t *testing.T) {
 	engine.SetHostname("  Max iPhone ")
 	if engine.hostname() != "Max iPhone" {
 		t.Fatalf("hostname %q", engine.hostname())
+	}
+}
+
+// Build 4 locked the engine's mutex in bringUp and then asked for the
+// hostname, which locks it again: every approved wave hung its login and every
+// later start, forever. No test brought up an approved wave, so this one does --
+// against a control server that is not there, which fails fast instead of
+// hanging the test on the network.
+func TestAnApprovedWaveComesUpWithoutHanging(t *testing.T) {
+	host := &fakeHost{}
+	profile, err := NewProfile(unreachableControlURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.NetmapPublicKey = testKey(t)
+	engine := New(Options{Host: host, Hostname: "phone", State: State{Version: StateVersion, Profiles: []Profile{profile}}})
+
+	started := make(chan error, 1)
+	go func() { started <- engine.Start(newMemoryLink(), 1280) }()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Start hung on an approved wave")
+	}
+	t.Cleanup(engine.Stop)
+
+	status := make(chan Status, 1)
+	go func() { status <- engine.Status() }()
+	select {
+	case got := <-status:
+		if len(got.Waves) != 1 || !got.Waves[0].Enabled {
+			t.Fatalf("status %+v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Status hung after the wave came up")
 	}
 }

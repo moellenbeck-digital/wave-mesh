@@ -154,7 +154,7 @@ final class WaveModel: ObservableObject {
             case .none:
                 report(String(localized: "The tunnel stopped before the login finished."))
             case .some(let message) where !message.isEmpty:
-                report(message)
+                report(LoginFailure.describe(message, address: address))
             default:
                 WaveLog.write("joined \(address)", from: .app)
             }
