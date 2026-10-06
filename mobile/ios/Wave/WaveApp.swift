@@ -1,5 +1,6 @@
 import NetworkExtension
 import SwiftUI
+import UIKit
 
 @main
 struct WaveApp: App {
@@ -16,7 +17,8 @@ struct WaveApp: App {
 /// running, and a core in the app would stop the moment somebody switched away
 /// from it. It has one consequence everything below is shaped by: nothing can
 /// be asked while the tunnel is down, so joining a wave starts the tunnel
-/// first instead of quietly asking nobody.
+/// first instead of quietly asking nobody, and what the screen shows while it
+/// is down is the last thing the extension said.
 @MainActor
 final class WaveModel: ObservableObject {
     @Published var status = Status(port: 0, running: false, waves: [])
@@ -25,6 +27,13 @@ final class WaveModel: ObservableObject {
     @Published var login: LoginPhase = .idle
     /// The enrolment page currently shown in the app, if any.
     @Published var approval: Approval?
+    /// Whether the tunnel is up, from the system rather than from the core:
+    /// it is what decides whether the core can be asked at all.
+    @Published var tunnelUp = false
+    /// The name the next wave is joined with.
+    @Published var deviceName: String {
+        didSet { DeviceName.store(deviceName) }
+    }
 
     enum LoginPhase: Equatable {
         case idle
@@ -32,6 +41,13 @@ final class WaveModel: ObservableObject {
         case connecting(String)
         /// Registered; somebody has to approve the device in a browser.
         case waitingForApproval(String)
+
+        var address: String? {
+            switch self {
+            case .idle: nil
+            case .connecting(let address), .waitingForApproval(let address): address
+            }
+        }
     }
 
     struct Approval: Identifiable, Equatable {
@@ -43,6 +59,21 @@ final class WaveModel: ObservableObject {
     private var timer: Timer?
     /// Links already shown, so closing the page does not reopen it every second.
     private var presented: Set<URL> = []
+    /// Set when the person gave up on a login, so its answer is not an error.
+    private var cancelled: String?
+    private static let lastStatusKey = "lastStatus"
+
+    init() {
+        deviceName = DeviceName.stored ?? UIDevice.current.name
+        // The last thing the extension reported: a device whose tunnel is
+        // down is still in its waves, and an empty list would say it is in
+        // none.
+        if let data = UserDefaults(suiteName: WaveIdentifiers.appGroup)?.data(forKey: Self.lastStatusKey),
+           let last = try? JSONDecoder().decode(Status.self, from: data)
+        {
+            status = Status(port: last.port, running: false, waves: last.waves)
+        }
+    }
 
     func load() async {
         do {
@@ -62,6 +93,7 @@ final class WaveModel: ObservableObject {
                 try await manager.loadFromPreferences()
             }
             self.manager = manager
+            tunnelUp = manager.connection.status == .connected
             startPolling()
         } catch {
             report(error.localizedDescription)
@@ -69,12 +101,26 @@ final class WaveModel: ObservableObject {
     }
 
     func connect() {
-        Task { try? await ensureRunning() }
+        Task {
+            do {
+                try await ensureRunning()
+            } catch {
+                report(error.localizedDescription)
+            }
+        }
     }
 
+    /// Stops the tunnel and keeps it stopped: with on-demand still on, iOS
+    /// would bring it straight back.
     func disconnect() {
         WaveLog.write("disconnect", from: .app)
-        manager?.connection.stopVPNTunnel()
+        Task {
+            if let manager, manager.isOnDemandEnabled {
+                manager.isOnDemandEnabled = false
+                try? await manager.saveToPreferences()
+            }
+            manager?.connection.stopVPNTunnel()
+        }
     }
 
     /// Joins a wave: tunnel up, register, wait for approval. Returns whether
@@ -83,8 +129,9 @@ final class WaveModel: ObservableObject {
         let address = controlURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !address.isEmpty else { return false }
         failure = nil
+        cancelled = nil
         login = .connecting(address)
-        WaveLog.write("join \(address)", from: .app)
+        WaveLog.write("join \(address) as \(deviceName)", from: .app)
         do {
             try await ensureRunning()
         } catch {
@@ -95,9 +142,14 @@ final class WaveModel: ObservableObject {
         // Answered only once the device is approved, refused, or the wait
         // timed out -- possibly minutes from now.
         Task {
-            let answer = await ask(["kind": "login", "controlURL": address])
+            let answer = await ask(["kind": "login", "controlURL": address, "hostname": DeviceName.label(deviceName)])
             login = .idle
             approval = nil
+            if cancelled == address {
+                cancelled = nil
+                WaveLog.write("join \(address) cancelled", from: .app)
+                return
+            }
             switch answer {
             case .none:
                 report(String(localized: "The tunnel stopped before the login finished."))
@@ -110,9 +162,28 @@ final class WaveModel: ObservableObject {
         return true
     }
 
+    /// Gives up on the login that is waiting for approval.
+    func cancelLogin() {
+        guard let address = login.address else { return }
+        cancelled = address
+        approval = nil
+        Task { _ = await ask(["kind": "cancelLogin", "controlURL": address]) }
+    }
+
     func logout(controlURL: String) {
         Task {
             if let answer = await ask(["kind": "logout", "controlURL": controlURL]), !answer.isEmpty {
+                report(answer)
+            }
+        }
+    }
+
+    /// Pauses or resumes one wave; the enrolment stays either way.
+    func setEnabled(_ wave: WaveStatus, _ enabled: Bool) {
+        Task {
+            if let answer = await ask(["kind": "setEnabled", "controlURL": wave.controlUrl, "enabled": enabled]),
+               !answer.isEmpty
+            {
                 report(answer)
             }
         }
@@ -130,13 +201,20 @@ final class WaveModel: ObservableObject {
     }
 
     /// Starts the tunnel unless it is running, and waits until it is -- the
-    /// extension is the only one that can be asked anything.
+    /// extension is the only one that can be asked anything. Turns on-demand
+    /// on as well, so the tunnel comes back after a restart or a network
+    /// change without anybody opening the app.
     private func ensureRunning() async throws {
         guard let manager else { throw ModelError.notReady }
         if manager.connection.status == .connected { return }
-        if !manager.isEnabled {
-            // Another VPN configuration took over since this one was saved.
+        if !manager.isEnabled || !manager.isOnDemandEnabled {
+            // isEnabled: another VPN configuration may have taken over since
+            // this one was saved.
             manager.isEnabled = true
+            let always = NEOnDemandRuleConnect()
+            always.interfaceTypeMatch = .any
+            manager.onDemandRules = [always]
+            manager.isOnDemandEnabled = true
             try await manager.saveToPreferences()
             try await manager.loadFromPreferences()
         }
@@ -145,6 +223,7 @@ final class WaveModel: ObservableObject {
         for _ in 0..<60 {
             switch manager.connection.status {
             case .connected:
+                tunnelUp = true
                 return
             case .disconnected, .invalid:
                 throw ModelError.tunnelDidNotStart
@@ -174,18 +253,25 @@ final class WaveModel: ObservableObject {
                 approval = Approval(url: url)
             }
         }
-        guard manager?.connection.status == .connected else {
+        let up = manager?.connection.status == .connected
+        if tunnelUp != up { tunnelUp = up }
+        guard up else {
             if status.running { status = Status(port: status.port, running: false, waves: status.waves) }
             return
         }
         guard let answer = await ask(["kind": "status"]),
               let decoded = try? JSONDecoder().decode(Status.self, from: Data(answer.utf8))
         else { return }
-        status = decoded
+        if decoded != status {
+            status = decoded
+            if let data = try? JSONEncoder().encode(decoded) {
+                UserDefaults(suiteName: WaveIdentifiers.appGroup)?.set(data, forKey: Self.lastStatusKey)
+            }
+        }
     }
 
     /// One question to the extension; nil when it is not there to answer.
-    private func ask(_ message: [String: String]) async -> String? {
+    private func ask(_ message: [String: Any]) async -> String? {
         guard let session = manager?.connection as? NETunnelProviderSession,
               let payload = try? JSONSerialization.data(withJSONObject: message)
         else { return nil }
@@ -213,46 +299,4 @@ enum ModelError: LocalizedError {
             String(localized: "The tunnel did not start. Allow the VPN configuration in Settings and try again.")
         }
     }
-}
-
-struct Status: Decodable {
-    /// The one public UDP port, shared by every wave.
-    let port: Int
-    let running: Bool
-    let waves: [WaveStatus]
-}
-
-struct WaveStatus: Decodable, Identifiable {
-    var id: String { controlUrl }
-    let controlUrl: String
-    let label: String
-    let suffix: String
-    let hostname: String
-    let dnsName: String
-    let ipv4: String
-    let connected: Bool
-    /// One per wave: the relay routes by disco key, and each enrolment has its
-    /// own.
-    let relay: String
-    /// Where this wave's resolver answers.
-    let resolver: String
-    let peers: [PeerStatus]
-    let services: [ServiceStatus]
-}
-
-struct PeerStatus: Decodable, Identifiable {
-    var id: String { dnsName }
-    let hostname: String
-    let dnsName: String
-    let ipv4: String
-    let online: Bool
-    let via: String
-    let rttMs: Int
-}
-
-struct ServiceStatus: Decodable, Identifiable {
-    var id: String { dnsName }
-    let name: String
-    let dnsName: String
-    let ipv4: String
 }

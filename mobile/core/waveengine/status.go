@@ -2,6 +2,7 @@ package waveengine
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavemagic"
@@ -43,6 +44,9 @@ type WaveView struct {
 	DNSName    string `json:"dnsName"`
 	IPv4       string `json:"ipv4"`
 	IPv6       string `json:"ipv6"`
+	// Switched on: false for a wave the person paused, which stays enrolled
+	// and shows with nothing else filled in.
+	Enabled bool `json:"enabled"`
 	// Whether the control connection is up. A tunnel keeps carrying traffic
 	// without it -- the netmap is signed and already here -- so this is a
 	// warning, not an outage.
@@ -68,10 +72,35 @@ type Status struct {
 
 // Status gathers everything a user interface needs, in one pass.
 func (e *Engine) Status() Status {
+	// In the order the waves were added, from the state -- not from the map of
+	// running waves, whose order Go randomises: a list that reshuffles every
+	// second is unusable. Enrolments that are paused or did not come up are
+	// listed too, so the screen never claims a device is in no wave when it is;
+	// one still waiting for its first approval is not a wave yet.
+	type listed struct {
+		profile Profile
+		entry   *wave
+	}
 	e.mu.Lock()
-	entries := make([]*wave, 0, len(e.waves))
-	for _, entry := range e.waves {
-		entries = append(entries, entry)
+	entries := make([]listed, 0, len(e.state.Profiles))
+	for _, profile := range e.state.Profiles {
+		entry := e.waves[profile.ControlURL]
+		if entry == nil && profile.NetmapPublicKey == "" {
+			continue
+		}
+		entries = append(entries, listed{profile: profile, entry: entry})
+	}
+	// A running wave always has its enrolment in the state; anything else is
+	// listed after the rest, sorted, so it cannot reshuffle either.
+	extra := []string{}
+	for key := range e.waves {
+		if !slices.ContainsFunc(entries, func(item listed) bool { return item.entry == e.waves[key] }) {
+			extra = append(extra, key)
+		}
+	}
+	slices.Sort(extra)
+	for _, key := range extra {
+		entries = append(entries, listed{profile: e.waves[key].profile, entry: e.waves[key]})
 	}
 	running := e.started && !e.stopping
 	e.mu.Unlock()
@@ -91,10 +120,22 @@ func (e *Engine) Status() Status {
 		}
 	}
 
-	for _, entry := range entries {
+	for _, item := range entries {
+		entry := item.entry
+		if entry == nil {
+			status.Waves = append(status.Waves, WaveView{
+				ControlURL: item.profile.ControlURL,
+				Label:      WaveLabel(item.profile.ControlURL),
+				Enabled:    item.profile.AutoStart,
+				Peers:      []PeerView{},
+				Services:   []ServiceView{},
+			})
+			continue
+		}
 		view := WaveView{
 			ControlURL: entry.key(),
 			Label:      WaveLabel(entry.key()),
+			Enabled:    true,
 			Connected:  entry.socket != nil && entry.socket.Connected(),
 			Peers:      []PeerView{},
 			Services:   []ServiceView{},

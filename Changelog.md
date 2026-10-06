@@ -14,6 +14,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   von Moellenbeck Digital im Weg, keine Analyse, keine Werbung. Die iOS-App
   läuft auf iPhone und iPad ab iOS 17, die Android-App ab Android 10 und zielt
   auf API 36, wie Google Play es verlangt.
+- **Die iPhone-App verbindet sich von selbst wieder** nach Neustart und
+  Netzwechsel, bis man ausdrücklich trennt.
+- **Jeder Wave hat seinen eigenen Schalter**, wie im Tray: pausieren, ohne ihn
+  zu verlassen, und ohne neue Bestätigung wieder einschalten.
+- **Ein eigener Gerätename** statt „iPhone“; die App zeigt vorher, wie das Gerät
+  im Wave heißen wird („Möllenbeck“ wird zu `moellenbeck`, nicht `m-llenbeck`).
+- Eine wartende Anmeldung lässt sich **abbrechen**, „Wave verlassen“ fragt nach,
+  und Namen und Adressen der Geräte lassen sich kopieren.
+- Die iPhone-App hat ein **Protokoll** (teilbar), in dem steht, was Tunnel und
+  App getan haben.
 
 ### Fehlerbehebungen
 
@@ -26,8 +36,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   App und zeigt, wo die Anmeldung steht — und warum sie scheitert, statt die
   Eingabe still zu verwerfen. Ist schon ein Wave da, heißt der Bereich
   „Weiteren Wave hinzufügen".
-- Die iPhone-App hat ein **Protokoll** (teilbar), in dem steht, was Tunnel und
-  App getan haben.
+- **Eine abgebrochene Anmeldung legte den Tunnel lahm.** Wer die
+  Bestätigungsseite schloss, hinterließ einen nie bestätigten Wave, und an dem
+  scheiterte danach jeder Start des Tunnels. Jetzt wird er vergessen, und ein
+  Wave, der nicht hochkommt, hält die anderen nicht mehr auf.
+- Mit zwei Waves sprang die Liste in der App jede Sekunde; sie bleibt jetzt in
+  der Reihenfolge, in der die Waves dazukamen.
 - Die iOS-App ließ sich nicht bauen: die Tunnel-Extension nutzte Schnittstellen, die es
   nur unter macOS gibt, und den falschen Namen für die Rückrufe des Go-Kerns.
 - Die Android-App ließ sich nicht bauen: das Symbol ihrer Benachrichtigung war keine

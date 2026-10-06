@@ -22,6 +22,16 @@
         }
       }
     },
+    "Cancel": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abbrechen"
+          }
+        }
+      }
+    },
     "Clear": {
       "localizations": {
         "de": {
@@ -72,6 +82,36 @@
         }
       }
     },
+    "Copy address": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse kopieren"
+          }
+        }
+      }
+    },
+    "Copy name": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name kopieren"
+          }
+        }
+      }
+    },
+    "Device name": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerätename"
+          }
+        }
+      }
+    },
     "Disconnect": {
       "localizations": {
         "de": {
@@ -102,12 +142,32 @@
         }
       }
     },
+    "In the next wave you join, this device is called %@. A wave it is already in keeps the name it got there.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im nächsten Wave, dem du beitrittst, heißt dieses Gerät %@. In einem Wave, in dem es schon ist, behält es seinen bisherigen Namen."
+          }
+        }
+      }
+    },
     "Join a wave": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Einem Wave beitreten"
+          }
+        }
+      }
+    },
+    "Leave %@?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ verlassen?"
           }
         }
       }
@@ -163,12 +223,32 @@
         }
       }
     },
+    "offline": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "offline"
+          }
+        }
+      }
+    },
     "Open the approval page again": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Bestätigungsseite erneut öffnen"
+          }
+        }
+      }
+    },
+    "Paused. This device stays in the wave and can switch it back on without a new approval.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausiert. Dieses Gerät bleibt im Wave und kann ihn ohne neue Bestätigung wieder einschalten."
           }
         }
       }
@@ -255,6 +335,16 @@
         }
       }
     },
+    "The tunnel is off. Nothing in your waves is reachable from this device.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Tunnel ist aus. Von diesem Gerät aus ist in deinen Waves nichts erreichbar."
+          }
+        }
+      }
+    },
     "The tunnel stopped before the login finished.": {
       "localizations": {
         "de": {
@@ -286,12 +376,32 @@
         }
       }
     },
+    "This device": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät"
+          }
+        }
+      }
+    },
     "This device is in no wave yet. Enter the address of your control server to join one; the tunnel starts by itself.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Dieses Gerät ist noch in keinem Wave. Gib die Adresse deines Control-Servers ein, um beizutreten; der Tunnel startet von selbst."
+          }
+        }
+      }
+    },
+    "This device leaves the wave and forgets its keys. Joining again needs a new approval.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät verlässt den Wave und vergisst seine Schlüssel. Erneut beitreten braucht eine neue Bestätigung."
           }
         }
       }

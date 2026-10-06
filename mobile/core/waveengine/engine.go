@@ -198,16 +198,19 @@ func (e *Engine) Start(link wavetun.Link, mtu int) error {
 	e.done.Add(1)
 	go e.candidateLoop()
 
-	var failures []error
+	// One wave that cannot come up is that wave's problem, not the device's:
+	// the others start, and the failure goes to the log. Returning it made the
+	// platform treat the whole tunnel as failed -- iOS then refused to start
+	// at all, and the only way back was deleting the app.
 	for _, profile := range profiles {
 		if !profile.AutoStart {
 			continue
 		}
 		if err := e.bringUp(profile); err != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", WaveLabel(profile.ControlURL), err))
+			e.log("[%s] did not come up: %v", WaveLabel(profile.ControlURL), err)
 		}
 	}
-	return errors.Join(failures...)
+	return nil
 }
 
 // ReplaceLink hands the core a new tunnel descriptor.
@@ -249,15 +252,38 @@ func (e *Engine) Login(ctx context.Context, controlURL, authKey string) error {
 	e.saveState()
 
 	if err := e.enrol(ctx, &profile, authKey); err != nil {
+		// A first login that never got approved -- the page was closed, the
+		// wait timed out, the server said no -- must not leave its enrolment
+		// behind. It would come back on every start as a wave that can never
+		// come up, and on a phone that used to keep the whole tunnel down.
+		// One that was approved before keeps its keys: the next try can still
+		// succeed with them.
+		if profile.NetmapPublicKey == "" {
+			e.forget(normalised)
+		}
 		return err
 	}
 	return e.bringUp(profile)
 }
 
+// forget drops an enrolment from the state without telling any server.
+func (e *Engine) forget(controlURL string) {
+	e.mu.Lock()
+	kept := e.state.Profiles[:0]
+	for _, profile := range e.state.Profiles {
+		if profile.ControlURL != controlURL {
+			kept = append(kept, profile)
+		}
+	}
+	e.state.Profiles = kept
+	e.mu.Unlock()
+	e.saveState()
+}
+
 // enrol registers and waits for whoever has to approve this device. A pre-auth
 // key is an approval given in advance, and skips the waiting entirely.
 func (e *Engine) enrol(ctx context.Context, profile *Profile, authKey string) error {
-	identity := identityOf(*profile, e.options.Hostname)
+	identity := identityOf(*profile, e.hostname())
 	client := wavecontrol.NewClient(identity, e.http)
 
 	registration, err := client.Register(ctx, authKey)
@@ -308,7 +334,7 @@ func (e *Engine) bringUp(profile Profile) error {
 		e.mu.Unlock()
 		return nil
 	}
-	identity := identityOf(profile, e.options.Hostname)
+	identity := identityOf(profile, e.hostname())
 	entry := &wave{
 		profile:      profile,
 		client:       wavecontrol.NewClient(identity, e.http),
@@ -409,20 +435,83 @@ func (e *Engine) Logout(ctx context.Context, controlURL string) error {
 		if err := entry.client.Logout(ctx); err != nil {
 			e.log("[%s] the server was not told: %v", WaveLabel(normalised), err)
 		}
-		if entry.socket != nil {
-			entry.socket.Close()
-		}
-		if entry.relay != nil {
-			entry.relay.Close()
-		}
-		if entry.device != nil {
-			entry.device.Close()
-		}
-		e.sock.RemoveWave(normalised)
-		e.mux.RemoveWave(normalised)
+		e.teardown(normalised, entry)
 	}
 	e.saveState()
 	return e.reconcile()
+}
+
+// teardown stops one running wave: its sockets, its WireGuard device and its
+// place in the multiplexer. The enrolment itself is the caller's business.
+func (e *Engine) teardown(controlURL string, entry *wave) {
+	if entry.socket != nil {
+		entry.socket.Close()
+	}
+	if entry.relay != nil {
+		entry.relay.Close()
+	}
+	if entry.device != nil {
+		entry.device.Close()
+	}
+	e.sock.RemoveWave(controlURL)
+	e.mux.RemoveWave(controlURL)
+}
+
+// SetEnabled switches one wave on or off without leaving it: the enrolment and
+// its keys stay, and switching it back on needs no approval. The choice is
+// kept across restarts, the same as the switch on each card of the tray.
+func (e *Engine) SetEnabled(controlURL string, enabled bool) error {
+	normalised, ok := NormaliseControlURL(controlURL)
+	if !ok {
+		normalised = controlURL
+	}
+	e.mu.Lock()
+	index := -1
+	for i, profile := range e.state.Profiles {
+		if profile.ControlURL == normalised {
+			index = i
+		}
+	}
+	if index < 0 {
+		e.mu.Unlock()
+		return fmt.Errorf("not in a wave at %s", normalised)
+	}
+	e.state.Profiles[index].AutoStart = enabled
+	profile := e.state.Profiles[index]
+	entry := e.waves[normalised]
+	if !enabled {
+		delete(e.waves, normalised)
+	}
+	e.mu.Unlock()
+	e.saveState()
+
+	if enabled {
+		e.mu.Lock()
+		running := e.started && !e.stopping
+		e.mu.Unlock()
+		if !running {
+			return nil // comes up with the next start
+		}
+		return e.bringUp(profile)
+	}
+	if entry != nil {
+		e.teardown(normalised, entry)
+	}
+	return e.reconcile()
+}
+
+// SetHostname is the name the next enrolment asks for. A device that is
+// already in a wave keeps the name it got there.
+func (e *Engine) SetHostname(name string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.options.Hostname = strings.TrimSpace(name)
+}
+
+func (e *Engine) hostname() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.options.Hostname
 }
 
 // applyNetmap is where a wave's view of the world becomes the device's.

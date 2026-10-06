@@ -26,3 +26,44 @@ enum PendingAuth {
         UserDefaults(suiteName: WaveIdentifiers.appGroup)?.removeObject(forKey: key)
     }
 }
+
+/// The name this device asks for when it joins a wave. Set in the app, read by
+/// the extension; the shared defaults are the one place both can see.
+enum DeviceName {
+    private static let key = "deviceName"
+
+    static var stored: String? {
+        let value = UserDefaults(suiteName: WaveIdentifiers.appGroup)?.string(forKey: key)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
+    }
+
+    static func store(_ name: String) {
+        UserDefaults(suiteName: WaveIdentifiers.appGroup)?.set(name, forKey: key)
+    }
+
+    /// The name as it will appear in the wave. The control server keeps
+    /// [a-z0-9-] and turns everything else into a hyphen, which makes
+    /// "Möllenbeck" into "m-llenbeck"; folding first keeps it readable, and the
+    /// app shows the result before anybody joins with it.
+    static func label(_ name: String) -> String {
+        var folded = name.lowercased()
+        for (from, to) in [("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")] {
+            folded = folded.replacingOccurrences(of: from, with: to)
+        }
+        folded = folded.applyingTransform(.stripDiacritics, reverse: false) ?? folded
+        var label = ""
+        var lastWasHyphen = false
+        for character in folded.unicodeScalars {
+            if ("a"..."z").contains(character) || ("0"..."9").contains(character) {
+                label.unicodeScalars.append(character)
+                lastWasHyphen = false
+            } else if !lastWasHyphen {
+                label.append("-")
+                lastWasHyphen = true
+            }
+        }
+        label = label.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return String(label.prefix(63))
+    }
+}

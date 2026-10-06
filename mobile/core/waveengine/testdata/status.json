@@ -1,0 +1,48 @@
+{
+  "port": 41641,
+  "running": true,
+  "waves": [
+    {
+      "controlUrl": "https://a.example",
+      "label": "a.example",
+      "waveId": "w1",
+      "suffix": "a.wave.example.com",
+      "hostname": "phone",
+      "dnsName": "phone.a.wave.example.com",
+      "ipv4": "10.77.0.1",
+      "ipv6": "fd7a:1::1",
+      "enabled": true,
+      "connected": false,
+      "relay": "",
+      "resolver": "10.77.0.1",
+      "peers": [
+        {
+          "hostname": "laptop",
+          "dnsName": "laptop.a.wave.example.com",
+          "ipv4": "10.77.0.2",
+          "ipv6": "fd7a:1::2",
+          "online": true,
+          "via": "",
+          "rttMs": 0
+        }
+      ],
+      "services": []
+    },
+    {
+      "controlUrl": "https://b.example",
+      "label": "b.example",
+      "waveId": "",
+      "suffix": "",
+      "hostname": "",
+      "dnsName": "",
+      "ipv4": "",
+      "ipv6": "",
+      "enabled": false,
+      "connected": false,
+      "relay": "",
+      "resolver": "",
+      "peers": [],
+      "services": []
+    }
+  ]
+}

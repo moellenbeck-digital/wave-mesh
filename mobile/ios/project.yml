@@ -113,7 +113,11 @@ targets:
     sources:
       - path: WaveTunnelTests
       - path: WaveTunnel/TunnelSettings.swift
+      - path: Shared/Status.swift
+      - path: Shared/Identifiers.swift
       - path: ../core/wavesettings/testdata/settings.json
+        buildPhase: resources
+      - path: ../core/waveengine/testdata/status.json
         buildPhase: resources
     settings:
       base:

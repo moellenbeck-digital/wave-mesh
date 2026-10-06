@@ -59,10 +59,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         var error: NSError?
         let core = WavemobileNew(
             host.loadState(),
-            // Since iOS 16 this is the model ("iPhone", "iPad"), not the name
-            // the owner gave the device; reading that needs an entitlement
-            // Apple grants case by case.
-            UIDevice.current.name,
+            // What the person chose in the app; otherwise the model. Since
+            // iOS 16 UIDevice.name is "iPhone" or "iPad", not the name the
+            // owner gave the device -- reading that needs an entitlement Apple
+            // grants case by case.
+            DeviceName.stored ?? UIDevice.current.name,
             // iOS can limit which names reach us (matchDomains), so the
             // resolver never has to answer for anything but the waves --
             // the invariant "never take over the system resolver" holds here.
@@ -105,6 +106,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler?(nil)
             return
         }
+        // Without a core every call below would go to nil and come back as
+        // success -- a login that "worked" and joined nothing.
+        if core == nil && request.kind != "status" {
+            completionHandler?(Data((WaveError.noCore.errorDescription ?? "").utf8))
+            return
+        }
         switch request.kind {
         case "status":
             completionHandler?(Data((core?.status() ?? "{}").utf8))
@@ -114,6 +121,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             let controlURL = request.controlURL ?? ""
             host?.log("login to \(controlURL)")
             PendingAuth.clear()
+            if let name = request.hostname, !name.isEmpty {
+                core?.setHostname(name)
+            }
             DispatchQueue.global().async { [weak self] in
                 let failure = self?.attempt { try self?.core?.login(controlURL, authKey: request.authKey ?? "") }
                 // Approved, refused or timed out: either way the link is spent,
@@ -127,6 +137,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             DispatchQueue.global().async { [weak self] in
                 let failure = self?.attempt { try self?.core?.logout(controlURL) }
                 self?.host?.log(failure.map { "logout from \(controlURL) failed: \($0)" } ?? "left \(controlURL)")
+                completionHandler?(Data((failure ?? "").utf8))
+            }
+        case "cancelLogin":
+            core?.cancelLogin(request.controlURL ?? "")
+            completionHandler?(Data())
+        case "setEnabled":
+            let controlURL = request.controlURL ?? ""
+            let enabled = request.enabled ?? true
+            DispatchQueue.global().async { [weak self] in
+                let failure = self?.attempt { try self?.core?.setEnabled(controlURL, enabled: enabled) }
+                self?.host?.log("\(controlURL) \(enabled ? "switched on" : "paused")\(failure.map { ": \($0)" } ?? "")")
                 completionHandler?(Data((failure ?? "").utf8))
             }
         default:
@@ -174,6 +195,10 @@ private struct AppRequest: Decodable {
     let kind: String
     let controlURL: String?
     let authKey: String?
+    /// The name to ask for, sent with a login.
+    let hostname: String?
+    /// For setEnabled.
+    let enabled: Bool?
 }
 
 enum WaveError: LocalizedError {
