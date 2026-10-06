@@ -21,6 +21,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// settings have been applied at least once. Hence the two-step start
     /// below: empty settings first, then the core, then the real ones.
     private var started = false
+    /// The physical networks last seen, so only a real change rebinds.
+    private var lastNetworks: String?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let host = WaveHost(provider: self)
@@ -63,7 +65,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             // iOS 16 UIDevice.name is "iPhone" or "iPad", not the name the
             // owner gave the device -- reading that needs an entitlement Apple
             // grants case by case.
-            DeviceName.stored ?? UIDevice.current.name,
+            DeviceName.stored.map(DeviceName.label).flatMap { $0.isEmpty ? nil : $0 } ?? UIDevice.current.name,
             // iOS can limit which names reach us (matchDomains), so the
             // resolver never has to answer for anything but the waves --
             // the invariant "never take over the system resolver" holds here.
@@ -85,9 +87,23 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // A phone changes network while it is being carried, and that is the
         // normal case rather than the exception: without this the tunnel only
         // recovers once its paths have timed out.
+        //
+        // Only a change of the networks underneath counts. The monitor also
+        // fires for our own utun -- every time settings are applied -- and
+        // rebinding on that would make the tunnel trip over itself.
         monitor.pathUpdateHandler = { [weak self] path in
-            guard path.status == .satisfied else { return }
-            self?.core?.networkChanged()
+            guard let self, path.status == .satisfied else { return }
+            let underneath = path.availableInterfaces
+                .filter { $0.type != .other && $0.type != .loopback }
+                .map { "\($0.type):\($0.name)" }
+                .joined(separator: ",")
+            guard underneath != self.lastNetworks else { return }
+            let first = self.lastNetworks == nil
+            self.lastNetworks = underneath
+            if !first {
+                self.host?.log("network changed: \(underneath)")
+                self.core?.networkChanged()
+            }
         }
         monitor.start(queue: DispatchQueue(label: "org.wavemesh.path"))
     }
@@ -98,6 +114,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         core?.stop()
         core = nil
         completionHandler()
+    }
+
+    /// After sleep the paths the core knew may be gone -- NAT mappings time
+    /// out while the phone is dark -- so waking counts as a network change.
+    override func wake() {
+        host?.log("woke up")
+        core?.networkChanged()
     }
 
     /// Messages from the app: the extension owns the core, so the app asks it.
