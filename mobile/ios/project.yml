@@ -59,6 +59,11 @@ targets:
         # The languages the string catalog carries; the store lists them.
         CFBundleLocalizations: [en, de]
         CFBundleDevelopmentRegion: en
+        # WireGuard is standard cryptography (Noise, ChaCha20-Poly1305), and
+        # App Store Connect classified the first build as exempt from that
+        # answer. Declared here so no upload waits on the question again;
+        # revisit before distributing in France, which needs its own filing.
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: Wave/Wave.entitlements
       properties:
