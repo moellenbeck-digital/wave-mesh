@@ -104,3 +104,33 @@ targets:
     dependencies:
       - framework: Frameworks/Wavemobile.xcframework
         embed: false
+  WaveTunnelTests:
+    # The settings reader against the core's contract file. A plain unit test
+    # bundle without a host app: it needs NetworkExtension's types, not a tunnel,
+    # so it runs on any simulator.
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: WaveTunnelTests
+      - path: WaveTunnel/TunnelSettings.swift
+      - path: ../core/wavesettings/testdata/settings.json
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.wavemesh.app.tunnel-tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+schemes:
+  Wave:
+    build:
+      targets:
+        Wave: all
+    archive:
+      config: Release
+  WaveTunnelTests:
+    build:
+      targets:
+        WaveTunnelTests: [test]
+    test:
+      targets:
+        - WaveTunnelTests

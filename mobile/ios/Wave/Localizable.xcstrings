@@ -12,6 +12,26 @@
         }
       }
     },
+    "Add another wave": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiteren Wave hinzufügen"
+          }
+        }
+      }
+    },
+    "Clear": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leeren"
+          }
+        }
+      }
+    },
     "Connect": {
       "localizations": {
         "de": {
@@ -22,12 +42,62 @@
         }
       }
     },
+    "Connecting to %@…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinde mit %@ …"
+          }
+        }
+      }
+    },
+    "Continue": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiter"
+          }
+        }
+      }
+    },
+    "Control server, e.g. wave.example.com": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control-Server, z. B. wave.example.com"
+          }
+        }
+      }
+    },
     "Disconnect": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Trennen"
+          }
+        }
+      }
+    },
+    "Dismiss": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausblenden"
+          }
+        }
+      }
+    },
+    "In the next step iOS asks whether wave-mesh may add a VPN configuration.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im nächsten Schritt fragt iOS, ob wave-mesh eine VPN-Konfiguration hinzufügen darf."
           }
         }
       }
@@ -52,52 +122,22 @@
         }
       }
     },
+    "Log": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Protokoll"
+          }
+        }
+      }
+    },
     "Log in": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Anmelden"
-          }
-        }
-      }
-    },
-    "Open the enrolment link": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Anmeldelink öffnen"
-          }
-        }
-      }
-    },
-    "This device is in no wave yet. `wave login` is the only way in — there is no second one.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dieses Gerät ist noch in keinem Wave. `wave login` ist der einzige Weg hinein — einen zweiten gibt es nicht."
-          }
-        }
-      }
-    },
-    "Waiting for approval": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Warte auf Freigabe"
-          }
-        }
-      }
-    },
-    "control server address": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Adresse des Control-Servers"
           }
         }
       }
@@ -123,6 +163,26 @@
         }
       }
     },
+    "Open the approval page again": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bestätigungsseite erneut öffnen"
+          }
+        }
+      }
+    },
+    "Refresh": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktualisieren"
+          }
+        }
+      }
+    },
     "relay": {
       "comment": "A peer reached through the relay server rather than directly.",
       "localizations": {
@@ -130,6 +190,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "Relay"
+          }
+        }
+      }
+    },
+    "Share": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teilen"
+          }
+        }
+      }
+    },
+    "The app sends no data to Moellenbeck Digital. It contains no analytics and no advertising, and no data is sold or passed on.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die App sendet keine Daten an Moellenbeck Digital. Sie enthält keine Analyse und keine Werbung, und es werden keine Daten verkauft oder weitergegeben."
+          }
+        }
+      }
+    },
+    "The log is empty.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Protokoll ist leer."
+          }
+        }
+      }
+    },
+    "The log stays on this device until you share it.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Protokoll bleibt auf diesem Gerät, bis du es teilst."
+          }
+        }
+      }
+    },
+    "The tunnel did not start. Allow the VPN configuration in Settings and try again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Tunnel ist nicht gestartet. Erlaube die VPN-Konfiguration in den Einstellungen und versuch es noch einmal."
           }
         }
       }
@@ -145,6 +255,26 @@
         }
       }
     },
+    "The tunnel stopped before the login finished.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Tunnel wurde beendet, bevor die Anmeldung fertig war."
+          }
+        }
+      }
+    },
+    "The VPN configuration is not set up yet.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die VPN-Konfiguration ist noch nicht eingerichtet."
+          }
+        }
+      }
+    },
     "the wave core did not start": {
       "comment": "Tunnel extension: shown by iOS when the tunnel fails to start.",
       "localizations": {
@@ -152,6 +282,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "der wave-Kern ist nicht gestartet"
+          }
+        }
+      }
+    },
+    "This device is in no wave yet. Enter the address of your control server to join one; the tunnel starts by itself.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät ist noch in keinem Wave. Gib die Adresse deines Control-Servers ein, um beizutreten; der Tunnel startet von selbst."
+          }
+        }
+      }
+    },
+    "To join a wave, the app sends the control server you enter this device's name, its public keys and the network addresses it can be reached at. Neither the control server nor the relay can read your traffic.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um einem Wave beizutreten, sendet die App an den Control-Server, den du angibst, den Namen dieses Geräts, seine öffentlichen Schlüssel und die Netzwerkadressen, unter denen es erreichbar ist. Weder der Control-Server noch das Relay können deinen Verkehr lesen."
+          }
+        }
+      }
+    },
+    "Traffic between your devices runs encrypted with WireGuard, directly from device to device. Where no direct path is possible, it runs encrypted through a relay of your wave.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Verkehr zwischen deinen Geräten läuft verschlüsselt mit WireGuard, direkt von Gerät zu Gerät. Wo kein direkter Weg möglich ist, läuft er verschlüsselt über ein Relay deines Waves."
+          }
+        }
+      }
+    },
+    "Waiting for approval in the browser…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warte auf die Bestätigung im Browser …"
           }
         }
       }
@@ -176,36 +346,6 @@
         }
       }
     },
-    "Traffic between your devices runs encrypted with WireGuard, directly from device to device. Where no direct path is possible, it runs encrypted through a relay of your wave.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Verkehr zwischen deinen Geräten läuft verschlüsselt mit WireGuard, direkt von Gerät zu Gerät. Wo kein direkter Weg möglich ist, läuft er verschlüsselt über ein Relay deines Waves."
-          }
-        }
-      }
-    },
-    "What your control server learns": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Was dein Control-Server erfährt"
-          }
-        }
-      }
-    },
-    "To join a wave, the app sends the control server you enter this device's name, its public keys and the network addresses it can be reached at. Neither the control server nor the relay can read your traffic.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Um einem Wave beizutreten, sendet die App an den Control-Server, den du angibst, den Namen dieses Geräts, seine öffentlichen Schlüssel und die Netzwerkadressen, unter denen es erreichbar ist. Weder der Control-Server noch das Relay können deinen Verkehr lesen."
-          }
-        }
-      }
-    },
     "What we do not do": {
       "localizations": {
         "de": {
@@ -216,32 +356,12 @@
         }
       }
     },
-    "The app sends no data to Moellenbeck Digital. It contains no analytics and no advertising, and no data is sold or passed on.": {
+    "What your control server learns": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Die App sendet keine Daten an Moellenbeck Digital. Sie enthält keine Analyse und keine Werbung, und es werden keine Daten verkauft oder weitergegeben."
-          }
-        }
-      }
-    },
-    "In the next step iOS asks whether wave-mesh may add a VPN configuration.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Im nächsten Schritt fragt iOS, ob wave-mesh eine VPN-Konfiguration hinzufügen darf."
-          }
-        }
-      }
-    },
-    "Continue": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Weiter"
+            "value": "Was dein Control-Server erfährt"
           }
         }
       }

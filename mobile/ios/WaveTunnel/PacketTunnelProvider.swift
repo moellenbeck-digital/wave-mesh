@@ -25,6 +25,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let host = WaveHost(provider: self)
         self.host = host
+        host.log("tunnel starting")
 
         // Applying settings is what creates the utun, so the descriptor cannot
         // exist before this. The placeholder carries no addresses and no
@@ -35,13 +36,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         setTunnelNetworkSettings(placeholder) { [weak self] error in
             guard let self else { return }
             if let error {
+                host.log("tunnel could not start: \(error.localizedDescription)")
                 completionHandler(error)
                 return
             }
             do {
                 try self.startCore(host: host)
+                host.log("tunnel running")
                 completionHandler(nil)
             } catch {
+                host.log("tunnel could not start: \(error.localizedDescription)")
                 completionHandler(error)
             }
         }
@@ -88,6 +92,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
+        host?.log("tunnel stopping (reason \(reason.rawValue))")
         monitor.cancel()
         core?.stop()
         core = nil
@@ -106,13 +111,22 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         case "login":
             // Blocks until somebody approves the device in a browser, so it
             // must not run on the thread that answers the app.
+            let controlURL = request.controlURL ?? ""
+            host?.log("login to \(controlURL)")
+            PendingAuth.clear()
             DispatchQueue.global().async { [weak self] in
-                let failure = self?.attempt { try self?.core?.login(request.controlURL ?? "", authKey: request.authKey ?? "") }
+                let failure = self?.attempt { try self?.core?.login(controlURL, authKey: request.authKey ?? "") }
+                // Approved, refused or timed out: either way the link is spent,
+                // and a stale one would invite approving a request that is gone.
+                PendingAuth.clear()
+                self?.host?.log(failure.map { "login to \(controlURL) failed: \($0)" } ?? "login to \(controlURL) done")
                 completionHandler?(Data((failure ?? "").utf8))
             }
         case "logout":
+            let controlURL = request.controlURL ?? ""
             DispatchQueue.global().async { [weak self] in
-                let failure = self?.attempt { try self?.core?.logout(request.controlURL ?? "") }
+                let failure = self?.attempt { try self?.core?.logout(controlURL) }
+                self?.host?.log(failure.map { "logout from \(controlURL) failed: \($0)" } ?? "left \(controlURL)")
                 completionHandler?(Data((failure ?? "").utf8))
             }
         default:

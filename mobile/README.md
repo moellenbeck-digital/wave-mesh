@@ -224,6 +224,20 @@ nach der Erlaubnis. Der Text sagt nur, was stimmt: kein Server von uns im Weg,
 keine Analyse, keine Werbung. Ändert er sich, bekommt `disclosureAccepted.v1`
 eine neue Nummer, damit er erneut erscheint.
 
+## Tests und Diagnose
+
+```bash
+cd mobile/core && go test ./wavesettings      # die Form der Einstellungen, als Datei
+cd mobile/ios && xcodegen generate && \
+  xcodebuild -scheme WaveTunnelTests -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+```
+
+`core/wavesettings/testdata/settings.json` ist der Vertrag zwischen dem Kern und
+den beiden Apps: Go prüft, dass es genau diese Form schreibt, der iOS-Test liest
+genau diese Datei. Auf dem Telefon selbst gibt es unter **Protokoll** alles, was
+Tunnel und App getan haben — Start, Anmeldung, die angewendeten Adressen,
+Routen und DNS-Domains, jeden Fehler. Es bleibt auf dem Gerät, bis man es teilt.
+
 ## Was offen ist, und was ungeprüft
 
 - **Kein Lauf auf echter Hardware.** Beide Apps bauen und starten (Simulator,

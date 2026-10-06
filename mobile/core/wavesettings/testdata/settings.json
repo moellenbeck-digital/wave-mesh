@@ -1,0 +1,32 @@
+{
+  "addresses": [
+    "10.77.0.2/16",
+    "10.96.0.5/16",
+    "fd7a:1::2/128"
+  ],
+  "routes": [
+    {
+      "cidr": "10.77.0.0/16",
+      "source": "10.77.0.2"
+    },
+    {
+      "cidr": "10.96.0.0/16",
+      "source": "10.96.0.5"
+    }
+  ],
+  "mtu": 1200,
+  "dnsServers": [
+    "10.77.0.2",
+    "10.96.0.5"
+  ],
+  "matchDomains": [
+    "77.10.in-addr.arpa",
+    "96.10.in-addr.arpa",
+    "rl.wave.example.com",
+    "work.wave.example.com"
+  ],
+  "searchDomains": [
+    "rl.wave.example.com",
+    "work.wave.example.com"
+  ]
+}

@@ -48,7 +48,10 @@ object WaveState {
 }
 
 /// The union, as the core sends it. One definition of the shape lives in Go
-/// (`wavesettings.Settings`); this is its reading.
+/// (`wavesettings.Settings`); this is its reading, and
+/// `core/wavesettings/testdata/settings.json` is the contract. Routes are
+/// objects with a source address; Android has no per-route source either, so
+/// only the destination is kept (the core widens our prefixes instead).
 data class WaveSettings(
     val addresses: List<String>,
     val routes: List<String>,
@@ -62,12 +65,17 @@ data class WaveSettings(
             val root = JSONObject(json)
             return WaveSettings(
                 addresses = root.strings("addresses"),
-                routes = root.strings("routes"),
+                routes = root.routes(),
                 mtu = root.optInt("mtu", 1280),
                 dnsServers = root.strings("dnsServers"),
                 matchDomains = root.strings("matchDomains"),
                 searchDomains = root.strings("searchDomains"),
             )
+        }
+
+        private fun JSONObject.routes(): List<String> {
+            val array: JSONArray = optJSONArray("routes") ?: return emptyList()
+            return (0 until array.length()).mapNotNull { array.optJSONObject(it)?.optString("cidr")?.takeIf(String::isNotEmpty) }
         }
 
         private fun JSONObject.strings(name: String): List<String> {
