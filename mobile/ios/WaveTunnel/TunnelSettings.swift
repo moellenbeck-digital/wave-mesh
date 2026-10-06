@@ -36,8 +36,8 @@ struct WaveSettings: Decodable, Equatable {
         let network = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
         network.mtu = NSNumber(value: mtu)
 
-        let routeCIDRs = routes.map(\.cidr)
-        let ipv4 = addresses.compactMap(IPv4CIDR.init)
+        let routeCIDRs = routes.map(\.cidr).filter(Self.isNarrowEnough)
+        let ipv4 = addresses.compactMap(IPv4CIDR.init).map(Self.clamped)
         if !ipv4.isEmpty {
             let configuration = NEIPv4Settings(addresses: ipv4.map(\.address), subnetMasks: ipv4.map(\.mask))
             configuration.includedRoutes = routeCIDRs.compactMap(IPv4CIDR.init).map {
@@ -46,7 +46,7 @@ struct WaveSettings: Decodable, Equatable {
             network.ipv4Settings = configuration
         }
 
-        let ipv6 = addresses.compactMap(IPv6CIDR.init)
+        let ipv6 = addresses.compactMap(IPv6CIDR.init).map(Self.clamped)
         if !ipv6.isEmpty {
             let configuration = NEIPv6Settings(
                 addresses: ipv6.map(\.address),
@@ -58,7 +58,11 @@ struct WaveSettings: Decodable, Equatable {
             network.ipv6Settings = configuration
         }
 
-        if !dnsServers.isEmpty {
+        // Never without matchDomains: an NEDNSSettings without them makes our
+        // resolver the phone's resolver for every name, and it answers only
+        // the waves' -- the whole phone would stop resolving. No domains, no
+        // DNS settings at all.
+        if !dnsServers.isEmpty && !matchDomains.filter({ !$0.isEmpty }).isEmpty {
             let dns = NEDNSSettings(servers: dnsServers)
             // This is the whole reason the invariant holds on iOS: only these
             // namespaces are sent to us, and every other name on the phone
@@ -71,10 +75,37 @@ struct WaveSettings: Decodable, Equatable {
     }
 }
 
+extension WaveSettings {
+    /// The broadest prefix a wave may route through the tunnel. A wave is a
+    /// /16 out of the wave's own block in practice (D5); anything near a
+    /// default route would pull the phone's whole traffic in, where nothing
+    /// carries it on. Such a route is a broken netmap, never a feature, and it
+    /// is dropped rather than obeyed.
+    static let broadestIPv4 = 8
+    static let broadestIPv6 = 16
+
+    static func isNarrowEnough(_ cidr: String) -> Bool {
+        if let v4 = IPv4CIDR(cidr) { return v4.bits >= broadestIPv4 }
+        if let v6 = IPv6CIDR(cidr) { return v6.prefix >= broadestIPv6 }
+        return false
+    }
+
+    /// An address whose widened prefix came out too broad keeps its host
+    /// prefix instead: on an interface, the prefix of an address is a route.
+    static func clamped(_ cidr: IPv4CIDR) -> IPv4CIDR {
+        cidr.bits >= broadestIPv4 ? cidr : IPv4CIDR("\(cidr.address)/32") ?? cidr
+    }
+
+    static func clamped(_ cidr: IPv6CIDR) -> IPv6CIDR {
+        cidr.prefix >= broadestIPv6 ? cidr : IPv6CIDR("\(cidr.address)/128") ?? cidr
+    }
+}
+
 /// A CIDR split the way NEIPv4Settings wants it: an address and a dotted mask.
 struct IPv4CIDR {
     let address: String
     let mask: String
+    let bits: Int
     /// The address with the host bits cleared: a route names a network, and
     /// iOS ignores one whose destination has host bits set.
     let network: String
@@ -90,6 +121,7 @@ struct IPv4CIDR {
             maskOctets[bit / 8] |= 1 << (7 - bit % 8)
         }
         address = String(first)
+        self.bits = bits
         mask = maskOctets.map(String.init).joined(separator: ".")
         network = zip(octets, maskOctets).map { String($0 & $1) }.joined(separator: ".")
     }

@@ -1754,6 +1754,18 @@ Schlüssel `disclosureAccepted.v1` eine neue Nummer.
   Ändert sich die Form, schlägt erst Go fehl; dann Swift und Kotlin anpassen.
   Dasselbe gilt für den Status, den die App jede Sekunde dekodiert:
   `go test ./waveengine` schreibt `testdata/status.json`, `StatusTests` liest es.
+- **Das Telefon darf nie mehr verlieren als die Waves.** Drei Wege, auf denen
+  ein VPN das ganze Netz eines Telefons nimmt, sind zugesperrt: (1) Die
+  Extension meldet sich gestartet, *bevor* der Kern einen Control-Server fragt
+  — mit On-Demand hält iOS sonst allen Verkehr an, solange der Tunnel
+  „verbindet". Anfragen der App warten auf `ready`, ein Abbruch nie. (2) DNS
+  nur mit `matchDomains`: ohne sie würde unser Resolver der des ganzen
+  Telefons und beantwortet doch nur Wave-Namen; `Union` bietet einem Wave ohne
+  Namen keinen Resolver an, und die App setzt ohne Domains gar kein DNS.
+  (3) Keine Route und kein Adresspräfix breiter als /8 (IPv6 /16) — so etwas
+  zöge allen Verkehr in den Tunnel und ist immer eine kaputte Netzkarte; die
+  App verwirft es und schreibt es ins Protokoll. Jeder Weg hat einen Test in
+  `TunnelSafetyTests` bzw. `wavesettings`.
 - **`e.mu` im mobilen Kern ist nicht wiederholbar.** Eine Methode, die `e.mu`
   nimmt, darf nicht aufgerufen werden, während `e.mu` gehalten wird — sonst
   steht der Kern für immer. Genau so hingen in Build 4 jede Anmeldung nach der

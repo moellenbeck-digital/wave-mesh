@@ -41,6 +41,13 @@ final class WaveHost: NSObject, WavemobileCallbacksProtocol {
             throw error
         }
         guard let provider else { throw WaveError.noCore }
+        let dropped = settings.routes.map(\.cidr).filter { !WaveSettings.isNarrowEnough($0) }
+        if !dropped.isEmpty {
+            log("refused routes broad enough to take over the phone's traffic: \(dropped)")
+        }
+        if !settings.dnsServers.isEmpty && settings.matchDomains.isEmpty {
+            log("no DNS settings: the core named servers but no domains, and without domains they would answer for every name")
+        }
         let network = settings.networkSettings()
 
         // Applied without waiting: the completion arrives on another queue, and

@@ -40,3 +40,35 @@ final class TunnelSettingsTests: XCTestCase {
         XCTAssertNil(IPv4CIDR("not an address"))
     }
 }
+
+/// The two ways a tunnel can take a phone's whole connectivity: routes that
+/// pull in everything, and DNS that answers for every name. Neither may happen
+/// whatever the core sends.
+final class TunnelSafetyTests: XCTestCase {
+    private func settings(routes: [String], addresses: [String] = ["10.160.0.20/27"],
+                          dns: [String] = ["10.160.0.53"], match: [String] = ["ops.example"]) throws -> WaveSettings {
+        let json: [String: Any] = [
+            "addresses": addresses,
+            "routes": routes.map { ["cidr": $0, "source": "10.160.0.20"] },
+            "mtu": 1280, "dnsServers": dns, "matchDomains": match, "searchDomains": [],
+        ]
+        return try WaveSettings.decode(String(decoding: JSONSerialization.data(withJSONObject: json), as: UTF8.self))
+    }
+
+    func testADefaultRouteIsNeverApplied() throws {
+        let network = try settings(routes: ["0.0.0.0/0", "10.160.0.0/27", "::/0", "128.0.0.0/1"]).networkSettings()
+        XCTAssertEqual(network.ipv4Settings?.includedRoutes?.map(\.destinationAddress), ["10.160.0.0"])
+        XCTAssertNil(network.ipv6Settings)
+    }
+
+    func testAnAddressWidenedTooFarKeepsItsHostPrefix() throws {
+        let network = try settings(routes: [], addresses: ["10.160.0.20/0"]).networkSettings()
+        XCTAssertEqual(network.ipv4Settings?.subnetMasks, ["255.255.255.255"])
+    }
+
+    func testNoDNSWithoutMatchDomains() throws {
+        XCTAssertNil(try settings(routes: [], match: []).networkSettings().dnsSettings)
+        XCTAssertNil(try settings(routes: [], match: [""]).networkSettings().dnsSettings)
+        XCTAssertNotNil(try settings(routes: []).networkSettings().dnsSettings)
+    }
+}
