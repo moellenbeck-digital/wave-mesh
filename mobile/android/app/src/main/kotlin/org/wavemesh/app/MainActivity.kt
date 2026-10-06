@@ -1,25 +1,35 @@
-package de.robinlenz.wave
+package org.wavemesh.app
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,8 +37,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 
@@ -43,18 +55,35 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Status and navigation bar icons follow the theme instead of staying
+        // white on a light screen.
+        enableEdgeToEdge()
+        val prefs = getSharedPreferences("app", MODE_PRIVATE)
         setContent {
-            MaterialTheme {
-                WaveScreen(
-                    onConnect = ::connect,
-                    onDisconnect = ::disconnect,
-                    onLogin = { url -> WaveVpnService.instance?.login(url) { } },
-                    onLogout = { url -> WaveVpnService.instance?.logout(url) { } },
-                    onOpenAuthURL = ::openPendingAuthURL,
-                    pendingAuthURL = { WaveState.pendingAuthURL(this) },
-                    status = { WaveVpnService.instance?.status() ?: "{}" },
-                )
+            MaterialTheme(colorScheme = waveColors(isSystemInDarkTheme())) {
+                Surface(Modifier.fillMaxSize()) { Content(prefs) }
             }
+        }
+    }
+
+    @Composable
+    private fun Content(prefs: SharedPreferences) {
+        var disclosureAccepted by remember { mutableStateOf(prefs.getBoolean(DISCLOSURE_ACCEPTED, false)) }
+        if (!disclosureAccepted) {
+            DisclosureScreen(onAccept = {
+                prefs.edit { putBoolean(DISCLOSURE_ACCEPTED, true) }
+                disclosureAccepted = true
+            })
+        } else {
+            WaveScreen(
+                onConnect = ::connect,
+                onDisconnect = ::disconnect,
+                onLogin = { url -> WaveVpnService.instance?.login(url) { } },
+                onLogout = { url -> WaveVpnService.instance?.logout(url) { } },
+                onOpenAuthURL = ::openPendingAuthURL,
+                pendingAuthURL = { WaveState.pendingAuthURL(this) },
+                status = { WaveVpnService.instance?.status() ?: "{}" },
+            )
         }
     }
 
@@ -76,6 +105,66 @@ class MainActivity : ComponentActivity() {
         val url = WaveState.pendingAuthURL(this) ?: return
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         WaveState.clearPendingAuthURL(this)
+    }
+
+    private companion object {
+        /// Versioned, so a changed statement is shown again.
+        const val DISCLOSURE_ACCEPTED = "disclosureAccepted.v1"
+    }
+}
+
+/// Petrol is the one accent (DESIGN.md, "Mobile Apps"); on dark surfaces a
+/// shade lighter, as for the tray icon. Material's default surfaces carry a
+/// tint of its purple seed, so they are set neutral; the rest stays default.
+private fun waveColors(dark: Boolean) =
+    if (dark) {
+        darkColorScheme(
+            primary = Color(0xFF0F7F7F),
+            onPrimary = Color.White,
+            background = Color(0xFF121212),
+            surface = Color(0xFF121212),
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(0xFF0F6E6E),
+            onPrimary = Color.White,
+            background = Color.White,
+            surface = Color.White,
+        )
+    }
+
+/// What the app does with data, said before it does anything: the Play policy
+/// for VpnService and the same statement the iOS app shows. Once, before the
+/// first connect, and only what is true of this app -- there is no server of
+/// ours in the path, no analytics and no advertising.
+@Composable
+private fun DisclosureScreen(onAccept: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.disclosure_intro), style = MaterialTheme.typography.titleLarge)
+            DisclosurePoint(R.string.disclosure_connects_title, R.string.disclosure_connects_body)
+            DisclosurePoint(R.string.disclosure_control_title, R.string.disclosure_control_body)
+            DisclosurePoint(R.string.disclosure_ours_title, R.string.disclosure_ours_body)
+            Text(stringResource(R.string.disclosure_next), style = MaterialTheme.typography.bodySmall)
+        }
+        Button(onClick = onAccept, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.disclosure_continue))
+        }
+    }
+}
+
+@Composable
+private fun DisclosurePoint(title: Int, body: Int) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(body), style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -110,7 +199,9 @@ private fun WaveScreen(
         (0 until (array?.length() ?: 0)).map { array!!.getJSONObject(it) }
     }
 
-    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // From targetSdk 35 every app is drawn edge to edge; the insets keep the
+    // header out from under the status bar and the list above the gesture bar.
+    Column(Modifier.safeDrawingPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall)
             Button(onClick = { if (running) onDisconnect() else onConnect() }) {

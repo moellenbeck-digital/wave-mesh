@@ -159,3 +159,14 @@ deploy/*.sql
 mobile/.tools/
 mobile/ios/Frameworks/
 mobile/android/app/libs/
+# Schreibt `xcodegen generate` aus mobile/ios/project.yml, die Quelle ist dort.
+mobile/ios/Wave.xcodeproj/
+mobile/ios/*/Info.plist
+mobile/ios/*/*.entitlements
+mobile/ios/build/
+# Gradle-Ausgaben und der lokale SDK-Pfad.
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/android/.kotlin/

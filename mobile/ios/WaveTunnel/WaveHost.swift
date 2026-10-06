@@ -7,13 +7,13 @@ import Wavemobile
 /// Four things, and each is something only the platform can do: apply the
 /// settings it computed, keep a line, persist the keys, show an enrolment link.
 /// Nothing here decides anything.
-final class WaveHost: NSObject, WavemobileCallbacks {
+final class WaveHost: NSObject, WavemobileCallbacksProtocol {
     private weak var provider: NEPacketTunnelProvider?
     /// The private keys of every enrolment. The keychain, because a plain file
     /// in the container is backed up and readable by anything that gets the
     /// container.
     private let stateAccount = "wave.state"
-    private let stateService = "org.wave.enrolments"
+    private let stateService = "org.wavemesh.enrolments"
 
     init(provider: NEPacketTunnelProvider) {
         self.provider = provider
@@ -144,7 +144,7 @@ final class WaveHost: NSObject, WavemobileCallbacks {
 
 /// The app group both halves share. The extension owns the core; the app only
 /// ever asks it things.
-let appGroup = "group.org.wave"
+let appGroup = WaveIdentifiers.appGroup
 
 /// The union, as the core sends it. One definition of the shape lives in Go
 /// (`wavesettings.Settings`); this is its reading.

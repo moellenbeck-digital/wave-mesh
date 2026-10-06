@@ -1,4 +1,4 @@
-package de.robinlenz.wave
+package org.wavemesh.app
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -191,7 +191,7 @@ class WaveVpnService : VpnService(), Callbacks {
         val notification: Notification = Notification.Builder(this, CHANNEL)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.notification_running))
-            .setSmallIcon(android.R.drawable.stat_sys_vpn_ic)
+            .setSmallIcon(R.drawable.ic_notification)
             .build()
         startForeground(NOTIFICATION_ID, notification)
     }
@@ -237,7 +237,7 @@ class WaveVpnService : VpnService(), Callbacks {
     }
 
     companion object {
-        const val ACTION_STOP = "de.robinlenz.wave.STOP"
+        const val ACTION_STOP = "org.wavemesh.app.STOP"
         private const val TAG = "wave"
         private const val CHANNEL = "wave"
         private const val NOTIFICATION_ID = 1

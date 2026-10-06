@@ -6,7 +6,21 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Seit v0.8.0-develop.1 ist nichts hinzugekommen.*
+### Neue Funktionen
+
+- **Die Telefon-Apps sind bereit für App Store und Google Play.** Sie heißen
+  jetzt wave-mesh, tragen das Zeichen als App-Icon und Petrol als Akzent und
+  zeigen vor der ersten Verbindung einmal, was mit Daten geschieht: kein Server
+  von Moellenbeck Digital im Weg, keine Analyse, keine Werbung. Die iOS-App
+  läuft auf iPhone und iPad ab iOS 17, die Android-App ab Android 10 und zielt
+  auf API 36, wie Google Play es verlangt.
+
+### Fehlerbehebungen
+
+- Die iOS-App ließ sich nicht bauen: die Tunnel-Extension nutzte Schnittstellen, die es
+  nur unter macOS gibt, und den falschen Namen für die Rückrufe des Go-Kerns.
+- Die Android-App ließ sich nicht bauen: das Symbol ihrer Benachrichtigung war keine
+  öffentliche Ressource von Android.
 
 ---
 

@@ -121,9 +121,12 @@ Schalter soll zu wave-mesh gehören.
 
 ### Mobile Apps
 
-Die Apps unter `mobile/` haben noch kein eigenes Farbschema und verwenden die
-Systemvorgaben. Bekommen sie eines, gelten dieselben Regeln: Petrol als einziger
-Akzent, Zustandsfarben wie beim Zeichen.
+Die Apps unter `mobile/` verwenden die Systemvorgaben (SwiftUI, Material 3)
+mit genau einer Abweichung: der Akzent ist Petrol — `#0f6e6e` auf hellem,
+`#0f7f7f` auf dunklem Grund, aus demselben Grund wie beim Zeichen in dunklen
+Leisten. iOS: `AccentColor` im Asset-Katalog, Android: `primary` im
+`colorScheme`. Das App-Icon ist das Zeichen weiß auf Petrol (die Plattform gibt
+die Form vor, der Kreis entfällt), erzeugt aus `markSvg()`, nie nachgezeichnet.
 
 ---
 

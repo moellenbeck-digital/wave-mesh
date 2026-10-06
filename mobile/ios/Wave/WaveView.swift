@@ -6,8 +6,19 @@ import SwiftUI
 struct WaveView: View {
     @StateObject var model: WaveModel
     @State private var controlURL = ""
+    /// Versioned, so a changed disclosure is shown again rather than counted as
+    /// already accepted.
+    @AppStorage("disclosureAccepted.v1") private var disclosureAccepted = false
 
     var body: some View {
+        if disclosureAccepted {
+            waves
+        } else {
+            DisclosureView { disclosureAccepted = true }
+        }
+    }
+
+    private var waves: some View {
         NavigationStack {
             List {
                 if let failure = model.failure {
@@ -71,7 +82,7 @@ struct WaveView: View {
             }
             // The product name is a name, not a word: it stays as it is in
             // every language, so it does not go through the catalog.
-            .navigationTitle(Text(verbatim: "wave"))
+            .navigationTitle(Text(verbatim: "wave-mesh"))
             .toolbar {
                 // Spelled out rather than as a ternary of literals: which
                 // initializer a ternary picks is up to the type checker, and

@@ -1717,12 +1717,19 @@ der nur einmal funktionierte; der Neustart, der den UDP-Port wechselte; die
 fehlende Quelladresse; und eine nil-Map, die jede Wave mit Relay zum Absturz
 brachte — Letztere erst, als es zum ersten Mal ein Relay gab.
 
-Nur den Weg *durch die Plattform* deckt auch das nicht ab: es gibt hier weder
-einen Mac noch ein Android-Telefon.
-Für iOS fehlt außerdem das Xcode-Projekt — eine XML-Datei voller UUIDs, die
-ohne Xcode nicht entsteht — und das Entitlement `packet-tunnel-provider` gibt es
-nur mit bezahltem Developer-Account, auch fürs eigene Gerät. Derselbe Stand wie
-beim Windows-Tray: benannt, nicht verschwiegen.
+Nur den Weg *durch die Plattform* deckt auch das nicht ab. Beide Apps bauen
+(iOS mit Xcode aus `mobile/ios/project.yml`, Android mit dem Gradle-Wrapper)
+und starten im Simulator bzw. Emulator — der Tunnel selbst läuft dort nicht,
+`NEPacketTunnelProvider` gibt es im Simulator gar nicht. Der erste Lauf auf
+echter Hardware ist der über TestFlight und den internen Test in Google Play.
+
+**Die Store-Identität steht und ändert sich nie mehr:** Bundle-Id und
+`applicationId` `org.wavemesh.app`, Extension `org.wavemesh.app.tunnel`,
+App-Gruppe `group.org.wavemesh.app`, Team `L6R92A4Y7C` (Moellenbeck-Digital
+UG). Für iOS stehen sie zusätzlich in `Shared/Identifiers.swift`. Beide Apps
+zeigen vor der ersten Verbindung einmal, was mit Daten geschieht (App-Review
+5.4, Play-Richtlinie zu `VpnService`); ändert sich die Aussage, bekommt der
+Schlüssel `disclosureAccepted.v1` eine neue Nummer.
 
 ## Invarianten, die leicht kaputtgehen
 

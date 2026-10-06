@@ -155,6 +155,96 @@
           }
         }
       }
+    },
+    "wave-mesh sets up a VPN on this device that connects it with the other devices in your wave.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "wave-mesh richtet auf diesem Gerät ein VPN ein, das es mit den anderen Geräten deines Waves verbindet."
+          }
+        }
+      }
+    },
+    "What it connects": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was verbunden wird"
+          }
+        }
+      }
+    },
+    "Traffic between your devices runs encrypted with WireGuard, directly from device to device. Where no direct path is possible, it runs encrypted through a relay of your wave.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Verkehr zwischen deinen Geräten läuft verschlüsselt mit WireGuard, direkt von Gerät zu Gerät. Wo kein direkter Weg möglich ist, läuft er verschlüsselt über ein Relay deines Waves."
+          }
+        }
+      }
+    },
+    "What your control server learns": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was dein Control-Server erfährt"
+          }
+        }
+      }
+    },
+    "To join a wave, the app sends the control server you enter this device's name, its public keys and the network addresses it can be reached at. Neither the control server nor the relay can read your traffic.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um einem Wave beizutreten, sendet die App an den Control-Server, den du angibst, den Namen dieses Geräts, seine öffentlichen Schlüssel und die Netzwerkadressen, unter denen es erreichbar ist. Weder der Control-Server noch das Relay können deinen Verkehr lesen."
+          }
+        }
+      }
+    },
+    "What we do not do": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was wir nicht tun"
+          }
+        }
+      }
+    },
+    "The app sends no data to Moellenbeck Digital. It contains no analytics and no advertising, and no data is sold or passed on.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die App sendet keine Daten an Moellenbeck Digital. Sie enthält keine Analyse und keine Werbung, und es werden keine Daten verkauft oder weitergegeben."
+          }
+        }
+      }
+    },
+    "In the next step iOS asks whether wave-mesh may add a VPN configuration.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im nächsten Schritt fragt iOS, ob wave-mesh eine VPN-Konfiguration hinzufügen darf."
+          }
+        }
+      }
+    },
+    "Continue": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiter"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
