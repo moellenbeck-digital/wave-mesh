@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 	"sync"
 )
 
@@ -64,6 +65,14 @@ type FDLink struct {
 func NewFDLink(fd int, framing Framing, mtu int) (*FDLink, error) {
 	if fd < 0 {
 		return nil, errors.New("not a file descriptor")
+	}
+	// Non-blocking before os.NewFile, which then hands the descriptor to the
+	// runtime's poller. A blocking one ties a thread to every read, and Close
+	// cannot interrupt it: stopping the core waited for the next packet to
+	// arrive, so disconnecting could hang on a quiet tunnel. The platforms
+	// hand the descriptor over as they made it, blocking.
+	if err := syscall.SetNonblock(fd, true); err != nil {
+		return nil, fmt.Errorf("descriptor %d cannot be made non-blocking: %w", fd, err)
 	}
 	file := os.NewFile(uintptr(fd), "wave-tun")
 	if file == nil {

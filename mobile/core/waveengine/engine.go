@@ -1219,7 +1219,18 @@ func (e *Engine) candidateLoop() {
 func (e *Engine) refreshCandidates() error {
 	_, mapping := e.sock.DiscoverReflexive(2500 * time.Millisecond)
 	candidates := wavemagic.LocalCandidates(e.sock.Port())
+	local := map[string]bool{}
+	for _, candidate := range candidates {
+		local[fmt.Sprintf("%s:%d", candidate.IP, candidate.Port)] = true
+	}
 	for _, reflexive := range e.sock.ReflexiveCandidates() {
+		// Without a NAT in between, what a peer or STUN sees is our local
+		// address again. Listed twice it says nothing new, and the second copy
+		// arriving a minute after the first made a publish -- and a netmap for
+		// the whole wave -- out of no change at all.
+		if local[reflexive.String()] {
+			continue
+		}
 		candidates = append(candidates, waveproto.Candidate{
 			Kind: "stun", IP: reflexive.Addr().String(), Port: int(reflexive.Port()),
 		})
