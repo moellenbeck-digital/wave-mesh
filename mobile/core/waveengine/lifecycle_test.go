@@ -316,3 +316,32 @@ func TestHelloSaysWhatThePlatformIs(t *testing.T) {
 		t.Fatalf("hello %+v", hello)
 	}
 }
+
+// An older netmap verifies as well as a newer one; applied over it, it would
+// bring back a peer the server has removed since. It is refused.
+func TestAnOlderNetmapIsNotAppliedOverANewerOne(t *testing.T) {
+	engine, _ := newTestEngine(t)
+	entry := addWave(t, engine, "https://a.example")
+	laptop := testPeer(t, "laptop", "a.wave.example.com", "10.77.0.2", "fd7a:1::2")
+
+	older := netmapFor(t, "w1", "a.wave.example.com", "10.77.0.1", "fd7a:1::1", laptop)
+	older.IssuedAt = "2026-10-07T10:00:00Z"
+	newer := netmapFor(t, "w1", "a.wave.example.com", "10.77.0.1", "fd7a:1::1")
+	newer.IssuedAt = "2026-10-07T10:05:00Z"
+
+	if err := engine.applyNetmap(entry, newer); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.applyNetmap(entry, older); err == nil {
+		t.Fatal("an older netmap was applied over a newer one")
+	}
+	if peers := engine.Status().Waves[0].Peers; len(peers) != 0 {
+		t.Fatalf("the removed peer came back: %+v", peers)
+	}
+	// A newer one still goes through.
+	newest := netmapFor(t, "w1", "a.wave.example.com", "10.77.0.1", "fd7a:1::1", laptop)
+	newest.IssuedAt = "2026-10-07T10:10:00Z"
+	if err := engine.applyNetmap(entry, newest); err != nil {
+		t.Fatal(err)
+	}
+}
