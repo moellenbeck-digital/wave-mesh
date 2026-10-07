@@ -232,6 +232,22 @@ cd mobile/ios && xcodegen generate && \
   xcodebuild -scheme WaveTunnelTests -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
+```bash
+cd mobile/ios && xcodebuild -scheme Wave -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+test/e2e/docker/run.sh mobile-lifecycle.sh       # die App-Abläufe durch den echten Kern, auf Linux
+```
+
+Die App testet sich in zwei Hälften. **Über dem Tunnel** — was sie zeigt, fragt
+und tut — mit UI-Tests im Simulator (`WaveUITests`, auf Deutsch, also mit den
+Übersetzungen): Hinweis beim ersten Start, Beitritt, Gerätename, falsche
+Adresse, Abbruch, Pausieren, Verlassen mit Rückfrage, vom Server entfernt,
+anderes VPN, getrennter Tunnel, Dienste, Weboberfläche, Protokoll, „Automatisch
+verbinden“. Den Tunnel gibt es im Simulator nicht; an seiner Stelle steht
+`FakeTunnel`, das dieselben Nachrichten mit dem JSON des Kerns beantwortet — nur
+in Debug-Builds und nur mit `-UITestFakeTunnel`, im Release ist es nicht
+enthalten. **Den Tunnel selbst** testet `mobile-lifecycle.sh` auf Linux durch
+den echten Kern, über dieselbe Schnittstelle (`wavemobile`).
+
 `core/wavesettings/testdata/settings.json` und `core/waveengine/testdata/status.json`
 sind der Vertrag zwischen dem Kern und den Apps: Go prüft, dass es genau diese
 Form schreibt, die iOS-Tests lesen genau diese Dateien (neu erzeugen mit

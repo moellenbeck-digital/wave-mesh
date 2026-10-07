@@ -1,23 +1,4 @@
-import SafariServices
 import SwiftUI
-
-/// The enrolment page, inside the app.
-///
-/// Sending somebody to Safari and hoping they find their way back is where a
-/// login used to get lost; here they approve and close, and the wave is there.
-/// No callback URL is needed: the core polls the control server until the
-/// device is approved.
-struct SafariView: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        let controller = SFSafariViewController(url: url)
-        controller.dismissButtonStyle = .close
-        return controller
-    }
-
-    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
-}
 
 /// The shared log (`WaveLog`): what the tunnel and the app did, newest last,
 /// to be read here or shared with whoever helps.

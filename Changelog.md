@@ -24,6 +24,18 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   und Namen und Adressen der Geräte lassen sich kopieren.
 - Die iPhone-App hat ein **Protokoll** (teilbar), in dem steht, was Tunnel und
   App getan haben.
+- **Aus der App in die Weboberfläche**, und Dienste öffnen sich mit einem
+  Tippen. Ein Wave sagt, was mit ihm nicht stimmt — vom Server entfernt (mit
+  „Erneut anmelden“), abgelehnte Netzkarte, nicht hochgekommen — statt nur
+  „nicht verbunden“; bei jedem Gerät steht der letzte Handshake.
+- **Neben Tailscale:** iOS lässt nur ein VPN zu. Die App nimmt beim ersten
+  Öffnen keinem anderen den Platz weg, fragt, bevor sie einen anderen VPN
+  verdrängt, und „Automatisch verbinden“ lässt sich ausschalten.
+- Die Bestätigungsseite teilt die Anmeldung mit Safari: wer im Control-Server
+  angemeldet ist, muss sich nicht jedes Mal neu anmelden.
+- In der Weboberfläche: Telefone erscheinen als iOS bzw. Android mit ihrer
+  Version, Geräte lassen sich umbenennen, und Mitglieder können einen Wave
+  selbst verlassen.
 
 ### Fehlerbehebungen
 
@@ -42,6 +54,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   Wave, der nicht hochkommt, hält die anderen nicht mehr auf.
 - Mit zwei Waves sprang die Liste in der App jede Sekunde; sie bleibt jetzt in
   der Reihenfolge, in der die Waves dazukamen.
+- Auf dem Telefon rissen neue Netzkarten jedes Mal alle WireGuard-Sitzungen ab,
+  und das Telefon meldete jede Minute seine Adressen neu — womit der Server dem
+  ganzen Wave eine neue Netzkarte schickte. Beides passiert nur noch bei einer
+  echten Änderung; nach einem Netzwechsel verbindet es sofort neu, und ein vom
+  Server entferntes Gerät hängt nicht mehr ohne Hinweis.
+- Trennen konnte auf einem stillen Tunnel hängen, bis zufällig ein Paket kam.
 - Die iOS-App ließ sich nicht bauen: die Tunnel-Extension nutzte Schnittstellen, die es
   nur unter macOS gibt, und den falschen Namen für die Rückrufe des Go-Kerns.
 - Die Android-App ließ sich nicht bauen: das Symbol ihrer Benachrichtigung war keine

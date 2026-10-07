@@ -50,21 +50,30 @@ final class WaveHost: NSObject, WavemobileCallbacksProtocol {
         }
         let network = settings.networkSettings()
 
-        // Applied without waiting: the completion arrives on another queue, and
-        // blocking the core's caller here would hold up the netmap handler that
-        // asked for it. A failure is logged, which is what the core would do
-        // with it anyway.
-        provider.setTunnelNetworkSettings(network) { [weak self] error in
-            if let error {
-                self?.log("could not apply the tunnel settings: \(error.localizedDescription)")
-                return
-            }
-            // What a missing route or an unresolved name is checked against.
-            self?.log(
-                "applied: addresses \(settings.addresses), routes \(settings.routes.map(\.cidr)), "
-                    + "dns \(settings.dnsServers) for \(settings.matchDomains), mtu \(settings.mtu)"
-            )
+        // Waited for, with a limit: the core calls this from its own thread,
+        // never from the one the completion arrives on, so blocking here is
+        // safe -- and only an answer tells the core whether to try again. An
+        // application that failed used to count as done, and the phone kept
+        // the old routes until something else changed.
+        let done = DispatchSemaphore(value: 0)
+        var failure: Error?
+        provider.setTunnelNetworkSettings(network) { error in
+            failure = error
+            done.signal()
         }
+        if done.wait(timeout: .now() + 15) == .timedOut {
+            log("applying the tunnel settings did not finish within 15 s")
+            throw WaveError.settingsTimedOut
+        }
+        if let failure {
+            log("could not apply the tunnel settings: \(failure.localizedDescription)")
+            throw failure
+        }
+        // What a missing route or an unresolved name is checked against.
+        log(
+            "applied: addresses \(settings.addresses), routes \(settings.routes.map(\.cidr)), "
+                + "dns \(settings.dnsServers) for \(settings.matchDomains), mtu \(settings.mtu)"
+        )
     }
 
     func log(_ line: String?) {

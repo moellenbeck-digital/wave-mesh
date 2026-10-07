@@ -104,6 +104,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         )
         if let error { throw error }
         guard let core else { throw WaveError.noCore }
+        // What the control server shows next to this device: the phones
+        // register as "other", and say what they are in their hello.
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+        core.setClientInfo("ios", version: "\(version) (\(build))")
         self.core = core
         self.descriptor = descriptor
     }
@@ -274,6 +279,7 @@ private struct AppRequest: Decodable {
 enum WaveError: LocalizedError {
     case noTunnelDescriptor
     case noCore
+    case settingsTimedOut
 
     /// Shown by iOS when the tunnel fails to start, so it is localized. The
     /// lookup goes to the extension's own bundle -- which is why the catalog
@@ -284,6 +290,8 @@ enum WaveError: LocalizedError {
             return String(localized: "the tunnel interface has no descriptor; the extension cannot carry traffic")
         case .noCore:
             return String(localized: "the wave core did not start")
+        case .settingsTimedOut:
+            return String(localized: "iOS did not apply the tunnel settings in time")
         }
     }
 }
