@@ -13,14 +13,14 @@ func twoWaves() []wavesettings.Wave {
 			Routes:          []string{"10.77.0.0/16"},
 			Suffix:          "rl.wave.example.com",
 			ReverseZones:    []string{"77.10.in-addr.arpa"},
-			ResolverAddress: "10.77.0.2",
+			ResolverAddress: "10.77.0.53",
 		},
 		{
 			Addresses:       []string{"10.96.0.5/32"},
 			Routes:          []string{"10.96.0.0/16"},
 			Suffix:          "work.wave.example.com",
 			ReverseZones:    []string{"96.10.in-addr.arpa"},
-			ResolverAddress: "10.96.0.5",
+			ResolverAddress: "10.96.0.53",
 			MTU:             1200,
 		},
 	}
@@ -31,7 +31,8 @@ func TestUnionAddsUpAndTakesTheSmallestMTU(t *testing.T) {
 	if len(settings.Addresses) != 3 {
 		t.Fatalf("addresses %v", settings.Addresses)
 	}
-	if len(settings.Routes) != 2 {
+	// Each wave's block, and each reserved resolver routed on its own.
+	if len(settings.Routes) != 4 {
 		t.Fatalf("routes %v", settings.Routes)
 	}
 	// One interface cannot have two MTUs, and the smaller is the one that gets
@@ -106,7 +107,13 @@ func TestADuplicateRouteIsNotTwoRoutes(t *testing.T) {
 	waves := twoWaves()
 	waves[1].Routes = []string{"10.77.0.0/16"}
 	settings := wavesettings.Union(waves)
-	if len(settings.Routes) != 1 {
+	count := 0
+	for _, route := range settings.Routes {
+		if route.CIDR == "10.77.0.0/16" {
+			count++
+		}
+	}
+	if count != 1 {
 		t.Fatalf("routes %v", settings.Routes)
 	}
 }
@@ -121,5 +128,52 @@ func TestAResolverWithoutNamesIsNotOffered(t *testing.T) {
 	}})
 	if len(settings.DNSServers) != 0 || len(settings.MatchDomains) != 0 {
 		t.Fatalf("servers %v for domains %v", settings.DNSServers, settings.MatchDomains)
+	}
+}
+
+// A wave whose server reserved no resolver falls back to an address the phone
+// itself holds. A query to that never reaches the tunnel -- the kernel delivers
+// it locally -- so offering it beside a reserved one sends some lookups into
+// nothing: on a phone in two waves, the second's names stopped resolving. The
+// one resolver answers every zone on any of its addresses, so the reserved one
+// carries both.
+func TestAResolverThePhoneHoldsIsNotOffered(t *testing.T) {
+	waves := twoWaves()
+	waves[1].ResolverAddress = "10.96.0.5"
+	settings := wavesettings.Union(waves)
+	if len(settings.DNSServers) != 1 || settings.DNSServers[0] != "10.77.0.53" {
+		t.Fatalf("dns servers %v", settings.DNSServers)
+	}
+	for _, zone := range []string{"rl.wave.example.com", "work.wave.example.com", "96.10.in-addr.arpa"} {
+		if !contains(settings.MatchDomains, zone) {
+			t.Fatalf("%s is no longer sent to the resolver: %v", zone, settings.MatchDomains)
+		}
+	}
+	for _, route := range settings.Routes {
+		if route.CIDR == "10.96.0.5/32" {
+			t.Fatalf("our own address is routed into the tunnel: %v", settings.Routes)
+		}
+	}
+}
+
+// Held by another wave counts the same: it is one interface.
+func TestAResolverAnotherWaveHoldsIsNotOffered(t *testing.T) {
+	waves := twoWaves()
+	waves[1].ResolverAddress = "10.77.0.2"
+	settings := wavesettings.Union(waves)
+	if len(settings.DNSServers) != 1 || settings.DNSServers[0] != "10.77.0.53" {
+		t.Fatalf("dns servers %v", settings.DNSServers)
+	}
+}
+
+// With no reservation anywhere there is no address the phone can ask, and no
+// DNS is better than DNS that times out: the app then sets none.
+func TestOnlyHeldResolversOfferNone(t *testing.T) {
+	waves := twoWaves()
+	waves[0].ResolverAddress = "10.77.0.2"
+	waves[1].ResolverAddress = "10.96.0.5"
+	settings := wavesettings.Union(waves)
+	if len(settings.DNSServers) != 0 {
+		t.Fatalf("dns servers %v", settings.DNSServers)
 	}
 }
