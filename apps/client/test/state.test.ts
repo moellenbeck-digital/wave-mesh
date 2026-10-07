@@ -7,10 +7,14 @@ import {
   ambiguity,
   defaultStatePath,
   ensureProfile,
+  findProfile,
   loadProfiles,
   matchProfiles,
   normaliseControlUrl,
+  profileKey,
+  removeProfile,
   saveProfiles,
+  updateProfile,
 } from "../src/state.ts";
 
 const statePath = async () => join(await mkdtemp(join(tmpdir(), "wave-state-")), "state.json");
@@ -184,6 +188,8 @@ describe("several enrolments side by side", () => {
         discoKey: { publicKey: "e", privateKey: "f" },
         nodeId: null,
         netmapPublicKey: null,
+        id: null,
+        label: null,
         interfaceName: "wave0",
         listenPort: 41641,
         certs: [],
@@ -208,5 +214,49 @@ describe("where the state lives", () => {
     expect(defaultStatePath("linux", { XDG_STATE_HOME: "/home/x/.local/state" }, false)).toBe(
       "/home/x/.local/state/wave/state.json",
     );
+  });
+});
+
+// One server, several projects: a wave each, and a device in more than one of
+// them. Each is an enrolment of its own, and everything finds it by its key.
+describe("several waves at one server", () => {
+  test("a further enrolment gets its own keys and an id, the first keeps its address", async () => {
+    const path = await statePath();
+    const first = await ensureProfile(path, "https://wave.example");
+    const second = await ensureProfile(path, "https://wave.example", { another: true });
+    expect(first.id).toBeNull();
+    expect(profileKey(first)).toBe("https://wave.example");
+    expect(second.id).toMatch(/^https:\/\/wave\.example#[0-9a-f]{8}$/);
+    expect(second.machineKey.publicKey).not.toBe(first.machineKey.publicKey);
+    expect(second.interfaceName).not.toBe(first.interfaceName);
+    // Asking again without --new-wave finds the first, not a third.
+    expect(profileKey(await ensureProfile(path, "https://wave.example"))).toBe("https://wave.example");
+    expect(await loadProfiles(path)).toHaveLength(2);
+  });
+
+  test("the key finds exactly one; the wave's name finds it too; the address alone is ambiguous", async () => {
+    const path = await statePath();
+    const first = await ensureProfile(path, "https://wave.example");
+    const second = await ensureProfile(path, "https://wave.example", { another: true });
+    await updateProfile(path, profileKey(first), { label: "project-a.example" });
+    await updateProfile(path, profileKey(second), { label: "project-b.example" });
+    const profiles = await loadProfiles(path);
+
+    expect(matchProfiles(profiles, profileKey(second)).map(profileKey)).toEqual([profileKey(second)]);
+    expect(matchProfiles(profiles, "project-b.example").map(profileKey)).toEqual([profileKey(second)]);
+    expect(matchProfiles(profiles, "wave.example")).toHaveLength(2);
+    // Bringing one up by its key gets that one's keys, not the first's.
+    const keyed = await ensureProfile(path, "https://wave.example", { key: profileKey(second) });
+    expect(keyed.machineKey.publicKey).toBe(second.machineKey.publicKey);
+  });
+
+  test("updating or removing one leaves the other alone", async () => {
+    const path = await statePath();
+    const first = await ensureProfile(path, "https://wave.example");
+    const second = await ensureProfile(path, "https://wave.example", { another: true });
+    await updateProfile(path, profileKey(second), { nodeId: "n_2" });
+    expect(findProfile(await loadProfiles(path), profileKey(first))?.nodeId).toBeNull();
+    await removeProfile(path, profileKey(second));
+    expect((await loadProfiles(path)).map(profileKey)).toEqual([profileKey(first)]);
   });
 });

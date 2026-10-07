@@ -18,12 +18,16 @@ const en = {
   wave uninstall  remove the service again                     (needs root)
 
   wave login <url>   join the wave run by that control server
-                     (--auth-key <key> for a machine with no browser)
+                     (--auth-key <key> for a machine with no browser,
+                      --new-wave for a further wave at a server already joined)
   wave profiles      list the waves this device belongs to
-  wave up    [url]   connect and show the tunnels (all of them by default)
-  wave down  [url]   tear them down (keeps the enrolment)
+  wave up    [wave]  connect and show the tunnels (all of them by default)
+  wave down  [wave]  tear them down (keeps the enrolment)
   wave status        watch the tunnels and their peers until Ctrl-C
-  wave logout <url>  leave one wave and forget its keys
+  wave logout <wave> leave one wave and forget its keys
+
+  A wave is named by its server, or -- with several at one server -- by its
+  name in "wave profiles" (its DNS domain).
 
   wave cert  [name…] get a TLS certificate for this device and keep it renewed
   wave certs         list the certificates this device holds
@@ -36,9 +40,10 @@ const en = {
   wave tray       run the tray icon in the foreground
 
 "wave install" sets up the machine and knows no server; joining one is always
-"wave login <url>", and a device may join as many as it likes. A wave is always
-named by its control server -- there is no profile name to remember, and a
-command without one means every wave at once. After the install the everyday
+"wave login <url>", and a device may join as many as it likes -- several at one
+server too, with --new-wave. A wave is named by its control server, or by its
+own name when one server runs several; a command without one means every wave
+at once. After the install the everyday
 commands need no privileges. Without the service they do the work themselves
 and have to run as root.
 
@@ -97,6 +102,8 @@ The language follows the system (LANG, LC_ALL, …); WAVE_LANG=en|de overrides i
   installedRestarting: "installed; the service is restarting with the new version",
   unexpectedAnswer: "unexpected answer",
   nameTheServer: "name the server: `wave login <control-server-url>`",
+  newWaveNeedsDaemon:
+    "--new-wave needs the wave service: it keeps several waves at one server apart. Install it with `sudo wave install`.",
   notAControlUrl: (typed: string) => `${typed} is not a control server address`,
   down: "down",
   nameTheWaveToLeave:
@@ -224,12 +231,16 @@ const de: typeof en = {
   wave uninstall  den Dienst wieder entfernen                    (braucht root)
 
   wave login <url>   dem Wave dieses Control-Servers beitreten
-                     (--auth-key <key> für eine Maschine ohne Browser)
+                     (--auth-key <key> für eine Maschine ohne Browser,
+                      --new-wave für einen weiteren Wave am selben Server)
   wave profiles      die Waves auflisten, in denen dieses Gerät ist
-  wave up    [url]   verbinden und die Tunnel zeigen (ohne URL alle)
-  wave down  [url]   sie abbauen (die Anmeldung bleibt)
+  wave up    [wave]  verbinden und die Tunnel zeigen (ohne Angabe alle)
+  wave down  [wave]  sie abbauen (die Anmeldung bleibt)
   wave status        Tunnel und Peers beobachten, bis Strg-C
-  wave logout <url>  einen Wave verlassen und seine Schlüssel vergessen
+  wave logout <wave> einen Wave verlassen und seine Schlüssel vergessen
+
+  Ein Wave heißt nach seinem Server oder -- bei mehreren am selben Server --
+  nach seinem Namen in "wave profiles" (seiner DNS-Domain).
 
   wave cert  [name…] ein TLS-Zertifikat für dieses Gerät holen und erneuern
   wave certs         die Zertifikate dieses Geräts auflisten
@@ -243,8 +254,9 @@ const de: typeof en = {
 
 "wave install" richtet die Maschine ein und kennt keinen Server; beigetreten
 wird immer mit "wave login <url>", und ein Gerät darf so vielen beitreten, wie
-es mag. Ein Wave heißt immer nach seinem Control-Server -- es gibt keinen
-Profilnamen, und ein Befehl ohne einen meint alle Waves auf einmal. Nach dem
+es mag -- mit --new-wave auch mehreren am selben Server. Ein Wave heißt nach
+seinem Control-Server, oder nach seinem eigenen Namen, wenn ein Server mehrere
+führt; ein Befehl ohne einen meint alle Waves auf einmal. Nach dem
 Install brauchen die Alltagsbefehle keine Rechte. Ohne den Dienst machen sie
 die Arbeit selbst und müssen als root laufen.
 
@@ -302,6 +314,8 @@ Die Sprache folgt dem System (LANG, LC_ALL, …); WAVE_LANG=en|de setzt sie fest
   installedRestarting: "installiert; der Dienst startet mit der neuen Version neu",
   unexpectedAnswer: "unerwartete Antwort",
   nameTheServer: "nenne den Server: `wave login <control-server-url>`",
+  newWaveNeedsDaemon:
+    "--new-wave braucht den wave-Dienst: er hält mehrere Waves an einem Server auseinander. Einrichten mit `sudo wave install`.",
   notAControlUrl: (typed) => `${typed} ist keine Adresse eines Control-Servers`,
   down: "getrennt",
   nameTheWaveToLeave:

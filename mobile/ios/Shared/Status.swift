@@ -13,8 +13,12 @@ struct Status: Codable, Equatable {
 }
 
 struct WaveStatus: Codable, Identifiable, Equatable {
-    var id: String { controlUrl }
+    /// The enrolment's key, what every action passes back: the server's
+    /// address for the first wave there, an id of its own for every further
+    /// one -- several waves can share a server.
+    let id: String
     let controlUrl: String
+    /// The wave's DNS suffix once known, otherwise the server's host.
     let label: String
     let suffix: String
     let hostname: String

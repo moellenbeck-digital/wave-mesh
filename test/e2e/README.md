@@ -105,6 +105,19 @@ Container. Die `node_modules` des Rechners bleiben unberührt: jedes Paket des
 Workspaces bekommt im Container ein eigenes Volume für seine Linux-Installation.
 Die Go-Module werden vorher geholt, denn gebaut wird in Namespaces ohne Netz.
 
+## `same-server.sh` — zwei Waves an einem Server
+
+Ein Control-Server, ein Konto, zwei Waves (zwei Projekte), und Gerät A in
+beiden: die zweite Anmeldung mit `wave login <url> --new-wave`, die Freigabe
+nennt den Wave. Geprüft wird, dass A beide Peers erreicht und beide Zonen
+auflöst, dass die Peers der beiden Waves sich *nicht* erreichen, dass
+`wave profiles` beide nach ihrer Zone nennt und dass `wave down`, `wave up`
+und `wave logout` nur den genannten treffen — auch auf dem Server.
+
+```bash
+test/e2e/docker/run.sh same-server.sh
+```
+
 ## `mobile-lifecycle.sh` — die Telefon-App, Schritt für Schritt
 
 Was ein Mensch in der App tut, gegen zwei echte Control-Server, über genau die

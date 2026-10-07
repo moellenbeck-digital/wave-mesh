@@ -36,9 +36,20 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 - In der Weboberfläche: Telefone erscheinen als iOS bzw. Android mit ihrer
   Version, Geräte lassen sich umbenennen, und Mitglieder können einen Wave
   selbst verlassen.
+- **Mehrere Waves am selben Server**, für getrennte Projekte oder Firmen auf
+  einem Control-Server: auf dem Desktop mit `wave login <url> --new-wave`, in
+  der iPhone-App mit „Weiteren Wave an diesem Server hinzufügen". Jeder ist
+  eine eigene Anmeldung mit eigenen Schlüsseln und Adressen, heißt nach seiner
+  DNS-Zone (`wave down project-b.wave.internal`) und lässt sich einzeln
+  pausieren und verlassen; die Geräte des einen sehen die des anderen nicht.
 
 ### Fehlerbehebungen
 
+- **Mit zwei Waves löste das iPhone nur die Namen des ersten auf**, wenn der
+  Server des anderen keine eigene Resolver-Adresse reserviert hatte. Dann stand
+  eine Adresse des Telefons selbst in der DNS-Liste, und Anfragen dorthin kamen
+  nie im Tunnel an. Sie wird nicht mehr angeboten; der Resolver an der
+  reservierten Adresse beantwortet die Namen aller Waves.
 - **Auf dem Telefon kam nach dem Anmelden nichts an.** Beide Apps lasen die
   Routen aus dem Kern in einer Form, die es nicht mehr gab; iOS wendete
   deshalb weder Adressen noch Routen noch DNS an, Android ebenso wenig. Ein

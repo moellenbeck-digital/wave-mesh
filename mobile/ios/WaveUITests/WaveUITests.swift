@@ -100,9 +100,9 @@ final class WaveUITests: XCTestCase {
     func testJoiningStartsTheTunnelAndShowsTheWave() {
         launch()
         join("wave.example.org")
-        XCTAssertTrue((appear("wave.self.wave.example.org", timeout: 8) != nil))
+        XCTAssertTrue((appear("wave.self.ops.example.org", timeout: 8) != nil))
         XCTAssertTrue(element("tunnel.disconnect").exists, "the tunnel did not start by itself")
-        XCTAssertTrue(element("wave.self.wave.example.org").label.contains(".ops.example.org"))
+        XCTAssertTrue(element("wave.self.ops.example.org").label.contains(".ops.example.org"))
         snapshot("3 joined")
     }
 
@@ -117,9 +117,9 @@ final class WaveUITests: XCTestCase {
         XCTAssertTrue(reveal("device.preview").label.contains("moellenbeck-buero"), element("device.preview").label)
         app.swipeDown()
         join("wave.example.org")
-        XCTAssertTrue((appear("wave.self.wave.example.org", timeout: 8) != nil))
-        XCTAssertTrue(element("wave.self.wave.example.org").label.contains("moellenbeck-buero."),
-                      element("wave.self.wave.example.org").label)
+        XCTAssertTrue((appear("wave.self.ops.example.org", timeout: 8) != nil))
+        XCTAssertTrue(element("wave.self.ops.example.org").label.contains("moellenbeck-buero."),
+                      element("wave.self.ops.example.org").label)
     }
 
     func testTheWavesDomainInsteadOfItsControlServerIsExplained() {
@@ -145,34 +145,34 @@ final class WaveUITests: XCTestCase {
     func testAWaveIsPausedAndResumedWithoutLeaving() {
         launch()
         join("wave.example.org")
-        XCTAssertNotNil(appear("wave.toggle.wave.example.org"))
-        tapSwitch("wave.toggle.wave.example.org")
-        XCTAssertTrue((appear("wave.paused.wave.example.org", timeout: 5) != nil))
+        XCTAssertNotNil(appear("wave.toggle.ops.example.org"))
+        tapSwitch("wave.toggle.ops.example.org")
+        XCTAssertTrue((appear("wave.paused.ops.example.org", timeout: 5) != nil))
         snapshot("6 paused")
-        tapSwitch("wave.toggle.wave.example.org")
-        XCTAssertTrue((appear("wave.self.wave.example.org", timeout: 5) != nil))
+        tapSwitch("wave.toggle.ops.example.org")
+        XCTAssertTrue((appear("wave.self.ops.example.org", timeout: 5) != nil))
     }
 
     func testLeavingAsksFirst() {
         launch()
         join("wave.example.org")
-        XCTAssertTrue((appear("wave.self.wave.example.org", timeout: 8) != nil))
-        reveal("wave.leave.wave.example.org").tap()
+        XCTAssertTrue((appear("wave.self.ops.example.org", timeout: 8) != nil))
+        reveal("wave.leave.ops.example.org").tap()
         XCTAssertTrue(app.buttons["leave.confirm"].waitForExistence(timeout: 3), "leaving did not ask")
         snapshot("7 leave?")
         app.buttons["leave.confirm"].firstMatch.tap()
-        XCTAssertTrue(element("wave.toggle.wave.example.org").waitForNonExistence(timeout: 5))
+        XCTAssertTrue(element("wave.toggle.ops.example.org").waitForNonExistence(timeout: 5))
     }
 
     func testARemovedWaveSaysSoAndOffersANewLogin() {
         launch(["-UITestRemovedWave"])
         XCTAssertNotNil(appear("tunnel.connect"))
         element("tunnel.connect").tap()
-        XCTAssertTrue((appear("wave.removed.wave.example.org", timeout: 8) != nil))
+        XCTAssertTrue((appear("wave.removed.ops.example.org", timeout: 8) != nil))
         snapshot("8 removed")
-        reveal("wave.loginAgain.wave.example.org").tap()
-        XCTAssertTrue((appear("wave.self.wave.example.org", timeout: 8) != nil))
-        XCTAssertFalse(element("wave.removed.wave.example.org").exists)
+        reveal("wave.loginAgain.ops.example.org").tap()
+        XCTAssertTrue((appear("wave.self.ops.example.org", timeout: 8) != nil))
+        XCTAssertFalse(element("wave.removed.ops.example.org").exists)
     }
 
     func testAnotherVPNIsAskedAboutBeforeConnecting() {
@@ -188,27 +188,27 @@ final class WaveUITests: XCTestCase {
     func testDisconnectingKeepsTheWavesOnScreen() {
         launch()
         join("wave.example.org")
-        XCTAssertTrue((appear("wave.self.wave.example.org", timeout: 8) != nil))
+        XCTAssertTrue((appear("wave.self.ops.example.org", timeout: 8) != nil))
         XCTAssertNotNil(appear("tunnel.disconnect"))
         element("tunnel.disconnect").tap()
         XCTAssertTrue((appear("tunnelOff", timeout: 5) != nil))
-        XCTAssertTrue(element("wave.toggle.wave.example.org").exists, "the wave vanished with the tunnel")
+        XCTAssertTrue(element("wave.toggle.ops.example.org").exists, "the wave vanished with the tunnel")
         snapshot("10 tunnel off")
     }
 
     func testServicesAndTheWebInterfaceAreOneTapAway() {
         launch()
         join("wave.example.org")
-        XCTAssertTrue((appear("wave.self.wave.example.org", timeout: 8) != nil))
+        XCTAssertTrue((appear("wave.self.ops.example.org", timeout: 8) != nil))
         XCTAssertTrue(reveal("service.grafana").exists)
-        XCTAssertTrue(reveal("wave.web.wave.example.org").exists)
+        XCTAssertTrue(reveal("wave.web.ops.example.org").exists)
         snapshot("11 services and web")
     }
 
     func testTheLogSaysWhatHappened() {
         launch()
         join("wave.example.org")
-        XCTAssertTrue((appear("wave.self.wave.example.org", timeout: 8) != nil))
+        XCTAssertTrue((appear("wave.self.ops.example.org", timeout: 8) != nil))
         reveal("log").tap()
         let text = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "join wave.example.org")).firstMatch
         XCTAssertTrue(text.waitForExistence(timeout: 5), "the join is not in the log")
@@ -234,5 +234,20 @@ final class WaveUITests: XCTestCase {
         app.terminate()
         launch()
         XCTAssertEqual(reveal("autoConnect").value as? String, "1", "a fresh start kept the last choice")
+    }
+
+    /// One server, two projects: the second wave is added at the same server,
+    /// listed beside the first under its own name, and paused on its own.
+    func testASecondWaveAtTheSameServerStaysApart() {
+        launch()
+        join("wave.example.org")
+        XCTAssertNotNil(appear("wave.self.ops.example.org"))
+        reveal("wave.add.ops.example.org").tap()
+        XCTAssertNotNil(appear("wave.self.project-b.example.org"), "the second wave did not appear")
+        XCTAssertTrue(element("wave.self.ops.example.org").exists, "the first wave went away")
+        snapshot("13 two waves at one server")
+        tapSwitch("wave.toggle.project-b.example.org")
+        XCTAssertNotNil(appear("wave.paused.project-b.example.org"))
+        XCTAssertTrue(element("wave.self.ops.example.org").exists, "pausing the second paused the first")
     }
 }

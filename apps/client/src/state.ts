@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -49,6 +50,16 @@ export const CertRecord = z.object({
 export type CertRecord = z.infer<typeof CertRecord>;
 
 export const Profile = NodeState.extend({
+  /**
+   * Tells apart further enrolments at the same server. One server can run
+   * many waves -- one per project or customer, kept apart on purpose -- and a
+   * device in several of them needs an enrolment, with keys of its own, in
+   * each. Null for the first enrolment at a server, whose key stays its
+   * address: every state file written before keeps working unchanged.
+   */
+  id: z.string().nullable().default(null),
+  /** The wave's DNS suffix, kept from its netmap: the name when several share a server. */
+  label: z.string().nullable().default(null),
   /** Whether `wave up` without an address brings this one up. */
   autoStart: z.boolean().default(true),
   /**
@@ -152,7 +163,10 @@ async function loadState(path: string): Promise<{ profiles: Profile[]; update: U
 
   const legacy = NodeState.safeParse(raw);
   if (legacy.success)
-    return { profiles: [{ ...legacy.data, autoStart: true, certs: [] }], update: defaultUpdate() };
+    return {
+      profiles: [{ ...legacy.data, id: null, label: null, autoStart: true, certs: [] }],
+      update: defaultUpdate(),
+    };
 
   throw new Error(`${path} is not a wave state file`);
 }
@@ -195,9 +209,18 @@ export async function updateUpdateSettings(
   return update;
 }
 
-/** Enrolments are found by the server they belong to, never by a nickname. */
-export const findProfile = (profiles: Profile[], controlUrl: string): Profile | undefined =>
-  profiles.find((profile) => profile.controlUrl === controlUrl);
+/** How an enrolment is filed: its address for the first at a server, its id for any further one. */
+export const profileKey = (profile: Pick<Profile, "id" | "controlUrl">): string =>
+  profile.id ?? profile.controlUrl;
+
+/**
+ * Finds an enrolment by its key. An address alone is the key of the first
+ * enrolment at that server, so callers that only ever knew addresses still
+ * find what they meant.
+ */
+export const findProfile = (profiles: Profile[], key: string): Profile | undefined =>
+  profiles.find((profile) => profileKey(profile) === key) ??
+  profiles.find((profile) => profile.controlUrl === key);
 
 /**
  * What someone typed, as a control server address. `wave profiles` prints the
@@ -234,6 +257,10 @@ export function normaliseControlUrl(input: string): string | null {
  */
 export function matchProfiles(profiles: Profile[], wanted: string): Profile[] {
   for (const by of [
+    // Exactly one enrolment, or the wave's own name -- with several waves at
+    // one server, the server's address names all of them.
+    (profile: Profile) => profileKey(profile),
+    (profile: Profile) => profile.label ?? "",
     (profile: Profile) => profile.controlUrl,
     (profile: Profile) => waveLabel(profile.controlUrl),
     (profile: Profile) => waveLabel(profile.controlUrl).replace(/:\d+$/, ""),
@@ -249,7 +276,7 @@ export const ambiguity = (wanted: string, found: Profile[]): Notice =>
   notice("ambiguous-wave", {
     name: wanted,
     count: String(found.length),
-    urls: found.map((p) => p.controlUrl).join(", "),
+    urls: found.map((p) => (p.label ? `${p.label} (${profileKey(p)})` : p.controlUrl)).join(", "),
   });
 
 /**
@@ -270,6 +297,10 @@ export function allocateSlot(profiles: Profile[]): { interfaceName: string; list
 export interface ProfileDefaults {
   interfaceName?: string;
   listenPort?: number;
+  /** Exactly this enrolment, by its key -- for bringing up a further wave at a server. */
+  key?: string;
+  /** A further enrolment at a server that already has one: fresh keys and an id. */
+  another?: boolean;
 }
 
 /**
@@ -283,11 +314,18 @@ export async function ensureProfile(
   defaults: ProfileDefaults = {},
 ): Promise<Profile> {
   const profiles = await loadProfiles(path);
-  const existing = findProfile(profiles, controlUrl);
+  if (defaults.key) {
+    const keyed = findProfile(profiles, defaults.key);
+    if (keyed) return keyed;
+  }
+  const existing = defaults.another ? undefined : findProfile(profiles, controlUrl);
   if (existing) return existing;
 
   const slot = allocateSlot(profiles);
+  const another = defaults.another && profiles.some((profile) => profile.controlUrl === controlUrl);
   const profile: Profile = {
+    id: another ? `${controlUrl}#${randomBytes(4).toString("hex")}` : null,
+    label: null,
     autoStart: true,
     controlUrl,
     machineKey: generateKeyPair("ed25519"),
@@ -306,27 +344,28 @@ export async function ensureProfile(
 /** Writes back what enrolment learned, leaving the other profiles alone. */
 export async function updateProfile(
   path: string,
-  controlUrl: string,
+  key: string,
   patch: Partial<Profile>,
 ): Promise<Profile | null> {
   const profiles = await loadProfiles(path);
-  const current = findProfile(profiles, controlUrl);
+  const current = findProfile(profiles, key);
   if (!current) return null;
 
   const next = { ...current, ...patch };
   await saveProfiles(
     path,
-    profiles.map((profile) => (profile.controlUrl === controlUrl ? next : profile)),
+    profiles.map((profile) => (profile === current ? next : profile)),
   );
   return next;
 }
 
-export async function removeProfile(path: string, controlUrl: string): Promise<boolean> {
+export async function removeProfile(path: string, key: string): Promise<boolean> {
   const profiles = await loadProfiles(path);
-  if (!findProfile(profiles, controlUrl)) return false;
+  const current = findProfile(profiles, key);
+  if (!current) return false;
   await saveProfiles(
     path,
-    profiles.filter((profile) => profile.controlUrl !== controlUrl),
+    profiles.filter((profile) => profile !== current),
   );
   return true;
 }

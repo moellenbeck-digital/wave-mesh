@@ -13,10 +13,15 @@
 // Commands, one per line:
 //
 //	login <control-url> [auth-key]   join a wave (blocks until approved)
+//	add <control-url> [auth-key]     join a further wave at a server already joined
 //	cancel <control-url>             give up on a login waiting for approval
-//	pause <control-url>              switch a wave off without leaving it
-//	resume <control-url>             switch it back on
-//	logout <control-url>             leave a wave
+//	pause <wave-id>                  switch a wave off without leaving it
+//	resume <wave-id>                 switch it back on
+//	logout <wave-id>                 leave a wave
+//
+// A wave id is the "id" in the status: the server's address for the first
+// wave there, and an id of its own for every further one.
+//
 //	hostname <name>                  the name the next enrolment asks for
 //	network                          the platform saw the network change
 //
@@ -145,6 +150,8 @@ func execute(core *wavemobile.Core, words []string) error {
 	switch words[0] {
 	case "login":
 		return core.Login(argument(1), argument(2))
+	case "add":
+		return core.AddWave(argument(1), argument(2))
 	case "cancel":
 		core.CancelLogin(argument(1))
 		return nil

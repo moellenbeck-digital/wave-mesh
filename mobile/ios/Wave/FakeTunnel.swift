@@ -19,7 +19,9 @@
     final class FakeTunnel: TunnelControl {
 
         private struct Wave {
+            var id: String
             var controlUrl: String
+            var suffix: String
             var enabled = true
             var problem = ""
             var hostname: String
@@ -34,7 +36,8 @@
 
         init(arguments: [String]) {
             if arguments.contains("-UITestRemovedWave") {
-                waves = [Wave(controlUrl: "https://wave.example.org", enabled: false, problem: "removed", hostname: "phone")]
+                waves = [Wave(id: "https://wave.example.org", controlUrl: "https://wave.example.org", suffix: "ops.example.org",
+                              enabled: false, problem: "removed", hostname: "phone")]
             }
             otherSelected = arguments.contains("-UITestOtherVPN")
         }
@@ -65,12 +68,21 @@
                 return statusJSON()
             case "login":
                 return await login(url, hostname: message["hostname"] as? String ?? "phone")
+            case "add":
+                // A further wave at the same server, as the core adds one:
+                // its own key, its own name.
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                let server = normalised(url)
+                let count = waves.filter { $0.controlUrl == server }.count
+                waves.append(Wave(id: "\(server)#\(count)", controlUrl: server, suffix: "project-b.example.org",
+                                  hostname: message["hostname"] as? String ?? "phone"))
+                return ""
             case "cancelLogin":
                 pending.removeValue(forKey: normalised(url))?.resume(returning: "context canceled")
                 PendingAuth.clear()
                 return ""
             case "setEnabled":
-                guard let index = waves.firstIndex(where: { $0.controlUrl == normalised(url) }) else {
+                guard let index = waves.firstIndex(where: { $0.id == url || $0.id == normalised(url) }) else {
                     return "not in a wave at \(url)"
                 }
                 if waves[index].problem == "removed" {
@@ -79,7 +91,7 @@
                 waves[index].enabled = message["enabled"] as? Bool ?? true
                 return ""
             case "logout":
-                waves.removeAll { $0.controlUrl == normalised(url) }
+                waves.removeAll { $0.id == url || $0.id == normalised(url) }
                 return ""
             default:
                 return nil
@@ -90,6 +102,19 @@
         /// fails, "slow" waits for an approval until it is cancelled, anything
         /// else is approved after a moment.
         private func login(_ address: String, hostname: String) async -> String {
+            // A wave's own key logs that enrolment in again.
+            if let index = waves.firstIndex(where: { $0.id == address && $0.id.contains("#") }) {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                waves[index].problem = ""
+                waves[index].enabled = true
+                return ""
+            }
+            if let index = waves.firstIndex(where: { $0.id == normalised(address) }), waves[index].problem == "removed" {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                waves[index].problem = ""
+                waves[index].enabled = true
+                return ""
+            }
             let url = normalised(address)
             if url.contains("ops.") {
                 return #"Post "\#(url)/v1/machine/register": tls: failed to verify certificate: x509: certificate is valid for *.github.com, not \#(url.replacingOccurrences(of: "https://", with: ""))"#
@@ -101,8 +126,10 @@
                 return await withCheckedContinuation { pending[url] = $0 }
             }
             try? await Task.sleep(nanoseconds: 800_000_000)
-            waves.removeAll { $0.controlUrl == url }
-            waves.append(Wave(controlUrl: url, hostname: hostname.isEmpty ? "phone" : hostname))
+            if waves.contains(where: { $0.id == url }) { return "" }
+            let host = url.replacingOccurrences(of: "https://", with: "")
+            waves.append(Wave(id: url, controlUrl: url, suffix: "ops.\(host.split(separator: ".").dropFirst().joined(separator: "."))",
+                              hostname: hostname.isEmpty ? "phone" : hostname))
             return ""
         }
 
@@ -114,12 +141,11 @@
 
         private func statusJSON() -> String {
             let views: [[String: Any]] = waves.enumerated().map { index, wave in
-                let host = wave.controlUrl.replacingOccurrences(of: "https://", with: "")
-                let suffix = "ops.\(host.split(separator: ".").dropFirst().joined(separator: "."))"
+                let suffix = wave.suffix
                 let live = wave.enabled && wave.problem.isEmpty
                 let third = index + 10
                 return [
-                    "controlUrl": wave.controlUrl, "label": host, "waveId": "w\(index)",
+                    "id": wave.id, "controlUrl": wave.controlUrl, "label": suffix, "waveId": "w\(index)",
                     "suffix": live ? suffix : "", "hostname": live ? wave.hostname : "",
                     "dnsName": live ? "\(wave.hostname).\(suffix)" : "",
                     "ipv4": live ? "10.\(third).0.2" : "", "ipv6": "",

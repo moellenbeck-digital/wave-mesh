@@ -42,6 +42,16 @@
         }
       }
     },
+    "Add another wave at this server": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiteren Wave an diesem Server hinzufügen"
+          }
+        }
+      }
+    },
     "After a restart or a network change the tunnel comes back by itself. iOS runs one VPN at a time: switch this off if you also use another one and want to choose each time.": {
       "localizations": {
         "de": {

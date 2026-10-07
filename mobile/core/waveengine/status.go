@@ -42,16 +42,20 @@ type ServiceView struct {
 
 // WaveView is one enrolment.
 type WaveView struct {
-	// The control server, which is the identity. Everything else here is a
-	// label.
+	// ID is the enrolment's key: what the apps pass back to pause, resume or
+	// leave this wave. The control server's address for the first enrolment
+	// there, an ID of its own for every further one at the same server.
+	ID string `json:"id"`
+	// The control server this wave is on. Several waves can share one.
 	ControlURL string `json:"controlUrl"`
-	Label      string `json:"label"`
-	WaveID     string `json:"waveId"`
-	Suffix     string `json:"suffix"`
-	Hostname   string `json:"hostname"`
-	DNSName    string `json:"dnsName"`
-	IPv4       string `json:"ipv4"`
-	IPv6       string `json:"ipv6"`
+	// The wave's DNS suffix once known, otherwise the server's host.
+	Label    string `json:"label"`
+	WaveID   string `json:"waveId"`
+	Suffix   string `json:"suffix"`
+	Hostname string `json:"hostname"`
+	DNSName  string `json:"dnsName"`
+	IPv4     string `json:"ipv4"`
+	IPv6     string `json:"ipv6"`
 	// Switched on: false for a wave the person paused, which stays enrolled
 	// and shows with nothing else filled in.
 	Enabled bool `json:"enabled"`
@@ -98,7 +102,7 @@ func (e *Engine) Status() Status {
 	e.mu.Lock()
 	entries := make([]listed, 0, len(e.state.Profiles))
 	for _, profile := range e.state.Profiles {
-		entry := e.waves[profile.ControlURL]
+		entry := e.waves[profile.Key()]
 		if entry == nil && profile.NetmapPublicKey == "" {
 			continue
 		}
@@ -142,8 +146,9 @@ func (e *Engine) Status() Status {
 		entry := item.entry
 		if entry == nil {
 			view := WaveView{
+				ID:         item.profile.Key(),
 				ControlURL: item.profile.ControlURL,
-				Label:      WaveLabel(item.profile.ControlURL),
+				Label:      labelOf(item.profile),
 				Enabled:    item.profile.AutoStart,
 				Peers:      []PeerView{},
 				Services:   []ServiceView{},
@@ -151,15 +156,16 @@ func (e *Engine) Status() Status {
 			switch {
 			case item.profile.Removed != "":
 				view.Problem, view.Detail = "removed", item.profile.Removed
-			case item.profile.AutoStart && failures[item.profile.ControlURL] != "":
-				view.Problem, view.Detail = "failed", failures[item.profile.ControlURL]
+			case item.profile.AutoStart && failures[item.profile.Key()] != "":
+				view.Problem, view.Detail = "failed", failures[item.profile.Key()]
 			}
 			status.Waves = append(status.Waves, view)
 			continue
 		}
 		view := WaveView{
-			ControlURL: entry.key(),
-			Label:      WaveLabel(entry.key()),
+			ID:         entry.key(),
+			ControlURL: entry.profile.ControlURL,
+			Label:      labelOf(entry.profile),
 			Enabled:    true,
 			Connected:  entry.socket != nil && entry.socket.Connected(),
 			Peers:      []PeerView{},
@@ -176,6 +182,9 @@ func (e *Engine) Status() Status {
 		view.Resolver = entry.resolver
 		e.mu.Unlock()
 		if netmap != nil {
+			if netmap.DNS.Suffix != "" {
+				view.Label = netmap.DNS.Suffix
+			}
 			view.WaveID = netmap.WaveID
 			view.Suffix = netmap.DNS.Suffix
 			view.Hostname = netmap.Self.Hostname
