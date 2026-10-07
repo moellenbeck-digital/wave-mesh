@@ -32,7 +32,7 @@ struct WaveSettings: Decodable, Equatable {
         // The remote address is a label in a packet tunnel -- there is no peer
         // at the other end of a utun. The first of our own addresses is the
         // honest thing to put there.
-        let remote = addresses.first.map { String($0.split(separator: "/")[0]) } ?? "127.0.0.1"
+        let remote = addresses.first.flatMap { $0.split(separator: "/").first.map(String.init) } ?? "127.0.0.1"
         let network = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
         network.mtu = NSNumber(value: mtu)
 

@@ -141,6 +141,10 @@ type Engine struct {
 	hasAppl  bool
 	started  bool
 	stopping bool
+	// live is set once the socket and the multiplexer exist. Start runs on its
+	// own thread on iOS, and a wake or a path change can arrive before it is
+	// through -- with no socket to rebind yet.
+	live bool
 	// Why a wave that should be running is not, by control URL; shown in the
 	// status until it comes up.
 	failures map[string]string
@@ -234,6 +238,9 @@ func (e *Engine) Start(link wavetun.Link, mtu int) error {
 
 	e.mux = wavetun.New(link, mtu, func(line string) { e.log("%s", line) })
 	e.mux.Start()
+	e.mu.Lock()
+	e.live = true
+	e.mu.Unlock()
 
 	e.done.Add(1)
 	go e.candidateLoop()
@@ -1275,6 +1282,13 @@ func (e *Engine) punch(entry *wave, nodeID string, candidates []waveproto.Candid
 // would mean a tunnel that stalls for ten seconds every time somebody walks out
 // of the building.
 func (e *Engine) NetworkChanged() {
+	e.mu.Lock()
+	live := e.live && !e.stopping
+	e.mu.Unlock()
+	if !live {
+		// Nothing bound yet, or going away: Start binds on the path there is.
+		return
+	}
 	e.log("the network changed; rebinding and re-publishing")
 	if _, err := e.sock.Rebind(); err != nil {
 		e.log("could not rebind: %v", err)

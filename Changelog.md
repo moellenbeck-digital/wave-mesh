@@ -50,6 +50,11 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   für iOS zu groß war, und als Text geteilt, den Messenger wie Telegram ab
   einer gewissen Länge nicht verschicken. Jetzt Zeile für Zeile und als Datei
   `wave-mesh-log-<datum>.txt`.
+- **Die iPhone-App ist sparsamer und robuster geworden**, nachdem sie sich bei
+  einem Tester von selbst beendet hatte. Ein Netzwechsel, der vor dem fertigen
+  Start des Tunnels ankam, konnte den Tunnel abstürzen lassen. Die App las bei
+  jedem Neuzeichnen das ganze Protokoll und stapelte Statusabfragen, wenn der
+  Tunnel langsam antwortete; beides passiert nicht mehr.
 - **Mit zwei Waves löste das iPhone nur die Namen des ersten auf**, wenn der
   Server des anderen keine eigene Resolver-Adresse reserviert hatte. Dann stand
   eine Adresse des Telefons selbst in der DNS-Liste, und Anfragen dorthin kamen
