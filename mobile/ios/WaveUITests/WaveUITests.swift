@@ -215,6 +215,23 @@ final class WaveUITests: XCTestCase {
         snapshot("12 log")
     }
 
+    /// Half a megabyte of log once drew as a black page, and sharing it as
+    /// text sent nothing. Now it is drawn line by line and shared as a file.
+    func testALongLogIsReadableAndSharedAsAFile() {
+        launch(["-UITestLongLog"])
+        reveal("log").tap()
+        let last = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "line 6000 of a long day")).firstMatch
+        XCTAssertTrue(last.waitForExistence(timeout: 5), "the end of a long log is not shown")
+        snapshot("13 long log")
+        let share = app.buttons["log.share"]
+        XCTAssertTrue(share.waitForExistence(timeout: 2))
+        share.tap()
+        // The share sheet offers a document, which is what a messenger takes.
+        let sheet = app.otherElements["ActivityListView"]
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5), "the share sheet did not open")
+        snapshot("14 share log")
+    }
+
     func testConnectingAutomaticallyIsAChoiceThatIsKept() {
         launch()
         XCTAssertEqual(reveal("autoConnect").value as? String, "1")
