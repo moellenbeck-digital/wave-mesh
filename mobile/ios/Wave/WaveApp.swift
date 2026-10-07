@@ -17,6 +17,11 @@ struct WaveApp: App {
                 }
                 WaveLog.clear()
             }
+            // A day's worth of log, to see that the page still draws it.
+            if ProcessInfo.processInfo.arguments.contains("-UITestLongLog") {
+                let lines = (1 ... 6000).map { "2026-10-07T12:00:00Z [tunnel] line \($0) of a long day: applied: addresses [...], dns [...]" }
+                WaveLog.seed(lines.joined(separator: "\n") + "\n")
+            }
         #endif
     }
 
