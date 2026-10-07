@@ -88,3 +88,45 @@ Das Relay sieht dabei nur zwei öffentliche Schlüssel und einen undurchsichtige
 Payload. Authentifiziert wird mit einer Challenge, die an den Disco-Key des
 Clients versiegelt ist: nur wer den passenden privaten Schlüssel hat, kann sie
 lesen — mehr Vertrauen als Verfügbarkeit braucht das Relay nicht.
+
+## Auf jedem Rechner: `docker/run.sh`
+
+Die Tests brauchen Linux — Netzwerk-Namespaces, veth-Paare, nftables, TUN.
+Auf einem Mac (oder überall mit Docker) laufen sie in einem Container, der
+nur die Werkzeuge mitbringt; das Repo wird eingehängt, nicht kopiert.
+
+```bash
+test/e2e/docker/run.sh mobile-lifecycle.sh
+test/e2e/docker/run.sh mobile-nat.sh --symmetric
+```
+
+Privilegiert, weil die Tests Namespaces und TUN-Geräte anlegen — nur im
+Container. Die `node_modules` des Rechners bleiben unberührt: jedes Paket des
+Workspaces bekommt im Container ein eigenes Volume für seine Linux-Installation.
+Die Go-Module werden vorher geholt, denn gebaut wird in Namespaces ohne Netz.
+
+## `mobile-lifecycle.sh` — die Telefon-App, Schritt für Schritt
+
+Was ein Mensch in der App tut, gegen zwei echte Control-Server, über genau die
+Schnittstelle, die iOS und Android rufen: `wavemobile`, gesteuert von
+`mobile/core/cmd/wave-phone` über eine Befehls-Pipe (`login`, `cancel`,
+`pause`, `resume`, `logout`, `hostname`, `network`). Jeder Schritt ist etwas,
+das schon einmal schiefging:
+
+- Beitritt unter einem gewählten Namen; der Server kennt Plattform und Version
+  aus dem `hello` (vorher: „Unbekannt, Version unbekannt").
+- Eine Sitzung überlebt eine Netzkarte, die einen Peer hinzufügt — geprüft am
+  Alter des letzten Handshakes (vorher: `replace_peers` bei jeder Netzkarte).
+- Über eine Minute wird nichts neu veröffentlicht und nichts neu angewendet
+  (vorher: Kandidaten jede Minute, und damit eine Netzkarte für den ganzen Wave).
+- Pausieren und Fortsetzen ohne neue Freigabe.
+- Ein Netzwechsel baut die Control-Verbindung binnen 5 s neu auf.
+- Eine abgebrochene Anmeldung hinterlässt nichts.
+- Ein zweiter Wave, in stabiler Reihenfolge.
+- Wer einen pausierten Wave verlässt, meldet sich beim Server ab (vorher: ein
+  Geister-Gerät).
+- Entfernt der Server das Gerät, geht der Wave herunter und sagt es; eine neue
+  Anmeldung bringt ihn zurück.
+- Ein Umbenennen im Web erreicht das Telefon.
+- Ein Neustart kommt ohne Freigabe zurück, und Stoppen hängt nicht (vorher:
+  ein blockierender TUN-Deskriptor hielt die Leseschleife fest).
