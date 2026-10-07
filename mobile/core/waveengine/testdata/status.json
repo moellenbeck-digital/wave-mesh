@@ -12,6 +12,8 @@
       "ipv4": "10.77.0.1",
       "ipv6": "fd7a:1::1",
       "enabled": true,
+      "problem": "",
+      "detail": "",
       "connected": false,
       "relay": "",
       "resolver": "10.77.0.1",
@@ -23,10 +25,18 @@
           "ipv6": "fd7a:1::2",
           "online": true,
           "via": "",
-          "rttMs": 0
+          "rttMs": 0,
+          "lastHandshakeSeconds": -1
         }
       ],
-      "services": []
+      "services": [
+        {
+          "name": "grafana",
+          "dnsName": "grafana.a.wave.example.com",
+          "ipv4": "10.77.0.9",
+          "url": "https://grafana.a.wave.example.com"
+        }
+      ]
     },
     {
       "controlUrl": "https://b.example",
@@ -38,6 +48,26 @@
       "ipv4": "",
       "ipv6": "",
       "enabled": false,
+      "problem": "",
+      "detail": "",
+      "connected": false,
+      "relay": "",
+      "resolver": "",
+      "peers": [],
+      "services": []
+    },
+    {
+      "controlUrl": "https://c.example",
+      "label": "c.example",
+      "waveId": "",
+      "suffix": "",
+      "hostname": "",
+      "dnsName": "",
+      "ipv4": "",
+      "ipv6": "",
+      "enabled": false,
+      "problem": "removed",
+      "detail": "node-removed",
       "connected": false,
       "relay": "",
       "resolver": "",

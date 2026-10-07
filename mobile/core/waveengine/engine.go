@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -85,6 +86,10 @@ type Options struct {
 	// core opens goes through it. Without it on Android, our WireGuard traffic
 	// would be routed into the tunnel it is carrying.
 	Protect func(fd uintptr)
+	// Platform and Version go to the server in the hello of every control
+	// connection ("ios", "0.8.0"), which is what it shows next to the device.
+	Platform string
+	Version  string
 }
 
 type wave struct {
@@ -103,6 +108,11 @@ type wave struct {
 	pendingHints map[string][]waveproto.Candidate
 	// What the last policy line said, so a change is logged once.
 	filterSaid string
+	// The candidates last published for this wave, so an unchanged list is
+	// not sent again. The socket resends it by itself after a reconnect.
+	published string
+	// Why the last netmap from the server was refused, until one is accepted.
+	rejected string
 }
 
 // key is how a wave is filed everywhere in the core.
@@ -128,6 +138,14 @@ type Engine struct {
 	hasAppl  bool
 	started  bool
 	stopping bool
+	// Why a wave that should be running is not, by control URL; shown in the
+	// status until it comes up.
+	failures map[string]string
+
+	// reconcileMu keeps two reconciles from interleaving: several waves'
+	// sockets, Logout and SetEnabled all reconcile, and an older union
+	// overtaking a newer one would leave stale routes on the platform.
+	reconcileMu sync.Mutex
 
 	stop chan struct{}
 	done sync.WaitGroup
@@ -227,6 +245,7 @@ func (e *Engine) Start(link wavetun.Link, mtu int) error {
 		}
 		if err := e.bringUp(profile); err != nil {
 			e.log("[%s] did not come up: %v", WaveLabel(profile.ControlURL), err)
+			e.noteFailure(profile.ControlURL, err)
 		}
 	}
 	return nil
@@ -331,6 +350,9 @@ func (e *Engine) enrol(ctx context.Context, profile *Profile, authKey string) er
 
 	e.mu.Lock()
 	profile.NodeID, profile.NetmapPublicKey = nodeID, netmapKey
+	// A new approval undoes a removal.
+	profile.Removed = ""
+	profile.AutoStart = true
 	for i, existing := range e.state.Profiles {
 		if existing.ControlURL == profile.ControlURL {
 			e.state.Profiles[i] = *profile
@@ -401,7 +423,14 @@ func (e *Engine) bringUp(profile Profile) error {
 		},
 		OnLogout: func(reason string) {
 			e.log("[%s] the server ended this enrolment: %s", WaveLabel(profile.ControlURL), reason)
+			go e.endedByServer(profile.ControlURL, reason)
 		},
+		OnRejectedNetmap: func(err error) {
+			e.mu.Lock()
+			entry.rejected = err.Error()
+			e.mu.Unlock()
+		},
+		Hello: e.hello(),
 	})
 
 	// The first netmap over REST rather than waiting for the socket to push
@@ -418,12 +447,85 @@ func (e *Engine) bringUp(profile Profile) error {
 	}
 
 	entry.socket.Connect()
+	e.clearFailure(profile.ControlURL)
 	go func() {
 		if err := e.refreshCandidates(); err != nil {
 			e.log("could not publish candidates: %v", err)
 		}
 	}()
+	go e.refreshRegistration(entry)
 	return nil
+}
+
+// refreshRegistration registers again with the keys the wave already has, as
+// the desktop does on every start. For a known machine the server answers at
+// once and moves the key expiry forward; a phone that only ever registered at
+// enrolment would expire after 180 days the moment expiry is enforced. An
+// answer other than "authorized" means the server no longer knows this
+// device: it was removed while the phone was away, and the socket alone would
+// never say so.
+func (e *Engine) refreshRegistration(entry *wave) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	registration, err := entry.client.Register(ctx, "")
+	if err != nil {
+		e.log("[%s] could not refresh the registration: %v", WaveLabel(entry.key()), err)
+		return
+	}
+	if registration.Status != "authorized" {
+		e.endedByServer(entry.key(), "node-removed")
+	}
+}
+
+// endedByServer takes a wave down that the server has ended -- the device was
+// removed in the web interface, or the server stopped knowing it. The
+// enrolment stays, marked, so the screen can say what happened instead of
+// "not connected" forever; only a new login brings the wave back.
+func (e *Engine) endedByServer(controlURL, reason string) {
+	e.mu.Lock()
+	entry := e.waves[controlURL]
+	delete(e.waves, controlURL)
+	for i := range e.state.Profiles {
+		if e.state.Profiles[i].ControlURL == controlURL {
+			e.state.Profiles[i].Removed = reason
+			e.state.Profiles[i].AutoStart = false
+		}
+	}
+	e.mu.Unlock()
+	if entry != nil {
+		e.teardown(controlURL, entry)
+	}
+	e.saveState()
+	if err := e.reconcile(); err != nil {
+		e.log("[%s] %v", WaveLabel(controlURL), err)
+	}
+}
+
+// hello is what every control connection opens with, when the platform said
+// what it is.
+func (e *Engine) hello() *waveproto.ClientMessage {
+	e.mu.Lock()
+	platform, version := e.options.Platform, e.options.Version
+	e.mu.Unlock()
+	if platform == "" || version == "" {
+		return nil
+	}
+	return &waveproto.ClientMessage{Type: "hello", Version: version, Platform: platform}
+}
+
+func (e *Engine) noteFailure(controlURL string, err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.failures == nil {
+		e.failures = map[string]string{}
+	}
+	e.failures[controlURL] = err.Error()
+}
+
+func (e *Engine) clearFailure(controlURL string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.failures, controlURL)
 }
 
 // Logout leaves one wave and takes everything of it off the device.
@@ -432,15 +534,17 @@ func (e *Engine) Logout(ctx context.Context, controlURL string) error {
 	if !ok {
 		normalised = controlURL
 	}
+	hostname := e.hostname()
 
 	e.mu.Lock()
 	entry := e.waves[normalised]
 	delete(e.waves, normalised)
 	kept := e.state.Profiles[:0]
-	found := false
+	var left *Profile
 	for _, profile := range e.state.Profiles {
 		if profile.ControlURL == normalised {
-			found = true
+			copied := profile
+			left = &copied
 			continue
 		}
 		kept = append(kept, profile)
@@ -448,17 +552,32 @@ func (e *Engine) Logout(ctx context.Context, controlURL string) error {
 	e.state.Profiles = kept
 	e.mu.Unlock()
 
-	if !found && entry == nil {
+	if left == nil && entry == nil {
 		return fmt.Errorf("not in a wave at %s", normalised)
 	}
-	if entry != nil {
-		// Best effort and bounded: the enrolment goes either way, and an
-		// unreachable server must not hold this open.
-		if err := entry.client.Logout(ctx); err != nil {
+
+	// Best effort and bounded: the enrolment goes either way, and an
+	// unreachable server must not hold this open. The server is told even
+	// when the wave is not running -- paused, or never came up this time --
+	// or the device would stay in the wave there as a ghost.
+	client := (*wavecontrol.Client)(nil)
+	switch {
+	case entry != nil:
+		client = entry.client
+	case left != nil && left.NetmapPublicKey != "" && left.Removed == "":
+		client = wavecontrol.NewClient(identityOf(*left, hostname), e.http)
+	}
+	if client != nil {
+		bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if err := client.Logout(bounded); err != nil {
 			e.log("[%s] the server was not told: %v", WaveLabel(normalised), err)
 		}
+		cancel()
+	}
+	if entry != nil {
 		e.teardown(normalised, entry)
 	}
+	e.clearFailure(normalised)
 	e.saveState()
 	return e.reconcile()
 }
@@ -498,6 +617,10 @@ func (e *Engine) SetEnabled(controlURL string, enabled bool) error {
 		e.mu.Unlock()
 		return fmt.Errorf("not in a wave at %s", normalised)
 	}
+	if enabled && e.state.Profiles[index].Removed != "" {
+		e.mu.Unlock()
+		return fmt.Errorf("the server removed this device from the wave at %s; log in again", normalised)
+	}
 	e.state.Profiles[index].AutoStart = enabled
 	profile := e.state.Profiles[index]
 	entry := e.waves[normalised]
@@ -520,6 +643,14 @@ func (e *Engine) SetEnabled(controlURL string, enabled bool) error {
 		e.teardown(normalised, entry)
 	}
 	return e.reconcile()
+}
+
+// SetClientInfo says what this device is, for the hello on every control
+// connection. Called before Start; a wave already running keeps what it had.
+func (e *Engine) SetClientInfo(platform, version string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.options.Platform, e.options.Version = platform, version
 }
 
 // SetHostname is the name the next enrolment asks for. A device that is
@@ -547,6 +678,7 @@ func (e *Engine) applyNetmap(entry *wave, netmap waveproto.Netmap) error {
 
 	e.mu.Lock()
 	entry.netmap = &netmap
+	entry.rejected = ""
 	e.mu.Unlock()
 
 	e.syncRelay(entry, netmap)
@@ -593,7 +725,15 @@ func (e *Engine) applyNetmap(entry *wave, netmap waveproto.Netmap) error {
 		entry.filterSaid = said
 	}
 
-	if err := entry.device.IpcSet(uapiConfig(netmap)); err != nil {
+	// Against what the device holds now, not what was last written: peers
+	// that left are removed, every other one is updated in place and keeps
+	// its session. Declaring the whole set with replace_peers dropped every
+	// session in the wave on every netmap -- once a minute per phone.
+	current, err := entry.device.IpcGet()
+	if err != nil {
+		return err
+	}
+	if err := entry.device.IpcSet(uapiConfig(netmap, configuredPeers(current))); err != nil {
 		return err
 	}
 	return e.reconcile()
@@ -629,9 +769,16 @@ func claimOf(controlURL string, netmap waveproto.Netmap) waveoverlap.Claim {
 // reconcile rebuilds everything that is a property of all the waves at once:
 // the routing table, the resolver, and the settings the platform applies.
 func (e *Engine) reconcile() error {
+	e.reconcileMu.Lock()
+	defer e.reconcileMu.Unlock()
+
+	// In the order the waves were added, never in map order: the union keeps
+	// its search domains in input order and compares them in order, so a
+	// shuffled input looked like a change and re-applied -- interrupting the
+	// tunnel -- for nothing, and made "which wave answers a bare name" random.
 	e.mu.Lock()
 	entries := make([]*wave, 0, len(e.waves))
-	for _, entry := range e.waves {
+	for _, entry := range e.orderedWaves() {
 		if entry.netmap != nil {
 			entries = append(entries, entry)
 		}
@@ -725,7 +872,54 @@ func (e *Engine) reconcile() error {
 	if unchanged || e.host == nil {
 		return nil
 	}
-	return e.host.ApplySettings(settings)
+	if err := e.host.ApplySettings(settings); err != nil {
+		// Not applied, so not remembered as applied: otherwise the next,
+		// identical union counts as "unchanged" and the device keeps the old
+		// routes and DNS until something else happens to change. Tried again
+		// shortly, since nothing else may come along.
+		e.mu.Lock()
+		e.hasAppl = false
+		stopping := e.stopping
+		e.mu.Unlock()
+		if !stopping {
+			time.AfterFunc(applyRetry, func() {
+				if err := e.reconcile(); err != nil {
+					e.log("could not apply the tunnel settings: %v", err)
+				}
+			})
+		}
+		return err
+	}
+	return nil
+}
+
+// applyRetry is how soon settings the platform refused are offered again. A
+// variable only so the test need not wait it out.
+var applyRetry = 5 * time.Second
+
+// orderedWaves is every running wave in the order its enrolment was added,
+// then any without one (tests add waves directly), sorted. Called with e.mu
+// held.
+func (e *Engine) orderedWaves() []*wave {
+	ordered := make([]*wave, 0, len(e.waves))
+	seen := map[string]bool{}
+	for _, profile := range e.state.Profiles {
+		if entry, running := e.waves[profile.ControlURL]; running {
+			ordered = append(ordered, entry)
+			seen[profile.ControlURL] = true
+		}
+	}
+	rest := []string{}
+	for key := range e.waves {
+		if !seen[key] {
+			rest = append(rest, key)
+		}
+	}
+	slices.Sort(rest)
+	for _, key := range rest {
+		ordered = append(ordered, e.waves[key])
+	}
+	return ordered
 }
 
 // resolverAddressFor decides where this wave's resolver answers.
@@ -811,15 +1005,29 @@ func routableCIDRs(netmap waveproto.Netmap) []string {
 	return cidrs
 }
 
-// uapiConfig is the whole peer set, written the way wireguard-go reads it.
+// uapiConfig brings the device's peers to the netmap, written the way
+// wireguard-go reads it.
 //
-// Whole rather than incremental (replace_peers), for the same reason the
-// desktop diffs against observed state rather than replaying remembered
-// commands: a restart, a missed update and an externally modified device all
-// have to converge on the same result.
-func uapiConfig(netmap waveproto.Netmap) string {
+// It converges on observed state -- the keys the device holds now -- for the
+// same reason the desktop diffs against the interface rather than replaying
+// remembered commands: a restart, a missed update and an externally modified
+// device all have to end in the same place. What it no longer does is declare
+// the set whole with replace_peers: that removes every peer and adds it back,
+// and with it every handshake, so each netmap -- and a phone sees one at least
+// every time anybody's candidates change -- cost every session in the wave.
+func uapiConfig(netmap waveproto.Netmap, configured []string) string {
 	var out strings.Builder
-	out.WriteString("replace_peers=true\n")
+	wanted := map[string]bool{}
+	for _, peer := range netmap.Peers {
+		if publicKey, err := wavecrypto.KeyToHex(peer.NodeKey); err == nil {
+			wanted[publicKey] = true
+		}
+	}
+	for _, publicKey := range configured {
+		if !wanted[publicKey] {
+			out.WriteString("public_key=" + publicKey + "\nremove=true\n")
+		}
+	}
 	for _, peer := range netmap.Peers {
 		publicKey, err := wavecrypto.KeyToHex(peer.NodeKey)
 		if err != nil {
@@ -858,6 +1066,23 @@ func (e *Engine) syncRelay(entry *wave, netmap waveproto.Netmap) {
 			stun = append(stun, address)
 		}
 	}
+	// One list for the device, from every wave's relays: each netmap used to
+	// replace it with its own, so the last wave to update decided alone.
+	e.mu.Lock()
+	for _, other := range e.waves {
+		if other == entry || other.netmap == nil {
+			continue
+		}
+		for _, relay := range other.netmap.Relays {
+			if relay.STUN == nil {
+				continue
+			}
+			if address, err := netip.ParseAddrPort(relay.STUN.String()); err == nil && !slices.Contains(stun, address) {
+				stun = append(stun, address)
+			}
+		}
+	}
+	e.mu.Unlock()
 	if len(stun) > 0 {
 		e.sock.SetSTUNServers(stun)
 	}
@@ -954,6 +1179,20 @@ func (e *Engine) NetworkChanged() {
 	if err := e.refreshCandidates(); err != nil {
 		e.log("could not publish candidates: %v", err)
 	}
+	// The control and relay connections are bound to the old path as well.
+	// Left alone they die only when their heartbeat notices, up to a minute
+	// later, and peers reachable only through the relay wait that long.
+	e.mu.Lock()
+	entries := e.orderedWaves()
+	e.mu.Unlock()
+	for _, entry := range entries {
+		if entry.socket != nil {
+			entry.socket.Reconnect()
+		}
+		if entry.relay != nil {
+			entry.relay.Reconnect()
+		}
+	}
 }
 
 func (e *Engine) candidateLoop() {
@@ -993,13 +1232,40 @@ func (e *Engine) refreshCandidates() error {
 	}
 	e.mu.Unlock()
 
+	// Only on change, like the desktop. Every publish makes the server bump
+	// the wave's netmap and push it to every node with punch hints for all of
+	// them; sent once a minute regardless, a phone kept its whole wave busy.
+	signature := candidateSignature(candidates)
+	sent := 0
 	for _, entry := range entries {
-		if entry.socket != nil {
-			entry.socket.PublishEndpoints(candidates)
+		if entry.socket == nil {
+			continue // nothing sent, so nothing remembered as sent
 		}
+		e.mu.Lock()
+		same := entry.published == signature
+		entry.published = signature
+		e.mu.Unlock()
+		if same {
+			continue
+		}
+		entry.socket.PublishEndpoints(candidates)
+		sent++
 	}
-	e.log("published %d candidate(s); NAT mapping %s", len(candidates), mapping)
+	if sent > 0 {
+		e.log("published %d candidate(s); NAT mapping %s", len(candidates), mapping)
+	}
 	return nil
+}
+
+// candidateSignature is a candidate list in a form two lists can be compared
+// in, whatever order discovery returned them in.
+func candidateSignature(candidates []waveproto.Candidate) string {
+	parts := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		parts = append(parts, fmt.Sprintf("%s|%s|%d", candidate.Kind, candidate.IP, candidate.Port))
+	}
+	slices.Sort(parts)
+	return strings.Join(parts, ",")
 }
 
 // Stop takes everything down.
@@ -1065,6 +1331,17 @@ func identityOf(profile Profile, hostname string) *wavecontrol.Identity {
 		NodeID:          profile.NodeID,
 		Hostname:        hostname,
 	}
+}
+
+// configuredPeers reads the public keys out of a device's IpcGet answer.
+func configuredPeers(uapi string) []string {
+	var keys []string
+	for _, line := range strings.Split(uapi, "\n") {
+		if key, found := strings.CutPrefix(line, "public_key="); found {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 func candidateAddrs(candidates []waveproto.Candidate) []netip.AddrPort {

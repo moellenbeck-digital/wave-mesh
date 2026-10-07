@@ -39,6 +39,8 @@ type Client struct {
 
 	cancel context.CancelFunc
 	done   chan struct{}
+	// wake cuts a reconnect wait short after a network change.
+	wake chan struct{}
 }
 
 // Options configures a Client. Everything but the callbacks is required.
@@ -72,6 +74,7 @@ func New(options Options) *Client {
 		maxBackoff:      options.MaxBackoff,
 		heartbeat:       options.Heartbeat,
 		done:            make(chan struct{}),
+		wake:            make(chan struct{}, 1),
 	}
 	if client.log == nil {
 		client.log = func(string) {}
@@ -102,6 +105,22 @@ func (c *Client) Connected() bool {
 }
 
 // Start connects and keeps reconnecting until Close.
+// Reconnect drops the relay connection and dials again at once: after a
+// network change the old connection is bound to a path that may be gone, and
+// a peer reachable only through the relay would wait for the heartbeat.
+func (c *Client) Reconnect() {
+	c.mu.Lock()
+	socket := c.socket
+	c.mu.Unlock()
+	select {
+	case c.wake <- struct{}{}:
+	default:
+	}
+	if socket != nil {
+		socket.CloseNow()
+	}
+}
+
 func (c *Client) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
@@ -124,6 +143,9 @@ func (c *Client) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-c.wake:
+			backoff = c.minBackoff
+			continue
 		case <-time.After(backoff):
 		}
 		if !reachedReady {

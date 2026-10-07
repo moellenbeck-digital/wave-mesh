@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/waveproto"
 )
 
 var updateContract = flag.Bool("update", false, "rewrite testdata/status.json from the current shape")
@@ -18,8 +20,13 @@ var updateContract = flag.Bool("update", false, "rewrite testdata/status.json fr
 func TestStatusJSONMatchesTheContractFile(t *testing.T) {
 	engine, _ := newTestEngine(t)
 	entry := addWave(t, engine, "https://a.example")
-	if err := engine.applyNetmap(entry, netmapFor(t, "w1", "a.wave.example.com", "10.77.0.1", "fd7a:1::1",
-		testPeer(t, "laptop", "a.wave.example.com", "10.77.0.2", "fd7a:1::2"))); err != nil {
+	netmap := netmapFor(t, "w1", "a.wave.example.com", "10.77.0.1", "fd7a:1::1",
+		testPeer(t, "laptop", "a.wave.example.com", "10.77.0.2", "fd7a:1::2"))
+	netmap.Services = append(netmap.Services, waveproto.Service{
+		Name: "grafana", DNSName: "grafana.a.wave.example.com", IPv4: "10.77.0.9",
+		URL: "https://grafana.a.wave.example.com",
+	})
+	if err := engine.applyNetmap(entry, netmap); err != nil {
 		t.Fatal(err)
 	}
 	paused, err := NewProfile("https://b.example")
@@ -28,8 +35,15 @@ func TestStatusJSONMatchesTheContractFile(t *testing.T) {
 	}
 	paused.NetmapPublicKey = "pinned"
 	paused.AutoStart = false
+	removed, err := NewProfile("https://c.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed.NetmapPublicKey = "pinned"
+	removed.Removed = "node-removed"
+	removed.AutoStart = false
 	engine.mu.Lock()
-	engine.state.Profiles = append(engine.state.Profiles, entry.profile, paused)
+	engine.state.Profiles = append(engine.state.Profiles, entry.profile, paused, removed)
 	engine.mu.Unlock()
 
 	status := engine.Status()

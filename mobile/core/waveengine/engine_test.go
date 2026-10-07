@@ -2,6 +2,7 @@ package waveengine
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -50,11 +51,18 @@ type fakeHost struct {
 	lines    []string
 	saved    []byte
 	authURLs []string
+	// refuse is how many applications to refuse before taking one, as a
+	// platform that is not ready yet would.
+	refuse int
 }
 
 func (h *fakeHost) ApplySettings(settings wavesettings.Settings) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.refuse > 0 {
+		h.refuse--
+		return errors.New("the platform refused the settings")
+	}
 	h.applied = append(h.applied, settings)
 	return nil
 }
@@ -298,13 +306,16 @@ func TestTheUAPIConfigNamesPeersRatherThanAddresses(t *testing.T) {
 		NodeKey:    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 		AllowedIPs: []string{"10.77.0.2/32", "fd7a:1::2/128"},
 	}
-	config := uapiConfig(waveproto.Netmap{Peers: []waveproto.Peer{peer}})
+	config := uapiConfig(waveproto.Netmap{Peers: []waveproto.Peer{peer}}, nil)
 
 	if !strings.Contains(config, "endpoint=wave://"+peer.NodeKey) {
 		t.Fatalf("config:\n%s", config)
 	}
-	if !strings.Contains(config, "replace_peers=true") || !strings.Contains(config, "replace_allowed_ips=true") {
-		t.Fatalf("the peer set has to be declared whole:\n%s", config)
+	if strings.Contains(config, "replace_peers") {
+		t.Fatalf("replace_peers drops every session in the wave:\n%s", config)
+	}
+	if !strings.Contains(config, "replace_allowed_ips=true") {
+		t.Fatalf("a peer's allowed IPs have to be declared whole:\n%s", config)
 	}
 	for _, allowed := range peer.AllowedIPs {
 		if !strings.Contains(config, "allowed_ip="+allowed) {

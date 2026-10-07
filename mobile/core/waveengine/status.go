@@ -3,8 +3,11 @@ package waveengine
 import (
 	"encoding/json"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavecrypto"
 	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavemagic"
 )
 
@@ -23,6 +26,9 @@ type PeerView struct {
 	// tunnel is down while a ping over it answers in 16 ms.
 	Via   string `json:"via"`
 	RTTMs int    `json:"rttMs"`
+	// Seconds since the last WireGuard handshake with this peer, or -1 for
+	// none yet. Online in the netmap is the server's view; this is ours.
+	LastHandshakeSeconds int `json:"lastHandshakeSeconds"`
 }
 
 // ServiceView is a name in the wave that is not a device (D11).
@@ -30,6 +36,8 @@ type ServiceView struct {
 	Name    string `json:"name"`
 	DNSName string `json:"dnsName"`
 	IPv4    string `json:"ipv4"`
+	// Where to open it; https and the DNS name when the server sent none.
+	URL string `json:"url"`
 }
 
 // WaveView is one enrolment.
@@ -47,6 +55,12 @@ type WaveView struct {
 	// Switched on: false for a wave the person paused, which stays enrolled
 	// and shows with nothing else filled in.
 	Enabled bool `json:"enabled"`
+	// Why this wave is not working, when it is not: "removed" (the server
+	// ended the enrolment), "netmap-rejected" (the last netmap did not verify
+	// against the pinned key) or "failed" (it did not come up). Empty when
+	// fine. Detail is the core's own words, for the log and the curious.
+	Problem string `json:"problem"`
+	Detail  string `json:"detail"`
 	// Whether the control connection is up. A tunnel keeps carrying traffic
 	// without it -- the netmap is signed and already here -- so this is a
 	// warning, not an outage.
@@ -103,6 +117,10 @@ func (e *Engine) Status() Status {
 		entries = append(entries, listed{profile: e.waves[key].profile, entry: e.waves[key]})
 	}
 	running := e.started && !e.stopping
+	failures := map[string]string{}
+	for url, failure := range e.failures {
+		failures[url] = failure
+	}
 	e.mu.Unlock()
 
 	// Empty lists rather than nil throughout: Go marshals a nil slice as null,
@@ -123,13 +141,20 @@ func (e *Engine) Status() Status {
 	for _, item := range entries {
 		entry := item.entry
 		if entry == nil {
-			status.Waves = append(status.Waves, WaveView{
+			view := WaveView{
 				ControlURL: item.profile.ControlURL,
 				Label:      WaveLabel(item.profile.ControlURL),
 				Enabled:    item.profile.AutoStart,
 				Peers:      []PeerView{},
 				Services:   []ServiceView{},
-			})
+			}
+			switch {
+			case item.profile.Removed != "":
+				view.Problem, view.Detail = "removed", item.profile.Removed
+			case item.profile.AutoStart && failures[item.profile.ControlURL] != "":
+				view.Problem, view.Detail = "failed", failures[item.profile.ControlURL]
+			}
+			status.Waves = append(status.Waves, view)
 			continue
 		}
 		view := WaveView{
@@ -142,6 +167,9 @@ func (e *Engine) Status() Status {
 		}
 		e.mu.Lock()
 		netmap := entry.netmap
+		if entry.rejected != "" {
+			view.Problem, view.Detail = "netmap-rejected", entry.rejected
+		}
 		if entry.relay != nil && entry.relay.Connected() {
 			view.Relay = entry.relay.URL()
 		}
@@ -154,10 +182,17 @@ func (e *Engine) Status() Status {
 			view.DNSName = netmap.Self.DNSName
 			view.IPv4 = netmap.Self.IPv4
 			view.IPv6 = netmap.Self.IPv6
+			handshakes := handshakeAges(entry)
 			for _, peer := range netmap.Peers {
 				peerView := PeerView{
 					Hostname: peer.Hostname, DNSName: peer.DNSName,
 					IPv4: peer.IPv4, IPv6: peer.IPv6, Online: peer.Online,
+					LastHandshakeSeconds: -1,
+				}
+				if hexKey, err := wavecrypto.KeyToHex(peer.NodeKey); err == nil {
+					if age, known := handshakes[hexKey]; known {
+						peerView.LastHandshakeSeconds = age
+					}
 				}
 				if path, known := paths[entry.key()+"|"+peer.NodeKey]; known {
 					switch {
@@ -171,8 +206,12 @@ func (e *Engine) Status() Status {
 				view.Peers = append(view.Peers, peerView)
 			}
 			for _, service := range netmap.Services {
+				url := service.URL
+				if url == "" && service.DNSName != "" {
+					url = "https://" + service.DNSName
+				}
 				view.Services = append(view.Services, ServiceView{
-					Name: service.Name, DNSName: service.DNSName, IPv4: service.IPv4,
+					Name: service.Name, DNSName: service.DNSName, IPv4: service.IPv4, URL: url,
 				})
 			}
 		}
@@ -190,4 +229,32 @@ func (e *Engine) StatusJSON() string {
 		return `{"running":false,"waves":[]}`
 	}
 	return string(encoded)
+}
+
+// handshakeAges reads, per peer public key in hex, the seconds since the last
+// handshake from the wave's WireGuard device. A peer that never shook hands is
+// absent.
+func handshakeAges(entry *wave) map[string]int {
+	ages := map[string]int{}
+	if entry.device == nil {
+		return ages
+	}
+	state, err := entry.device.IpcGet()
+	if err != nil {
+		return ages
+	}
+	now := time.Now().Unix()
+	current := ""
+	for _, line := range strings.Split(state, "\n") {
+		if key, found := strings.CutPrefix(line, "public_key="); found {
+			current = key
+			continue
+		}
+		if seconds, found := strings.CutPrefix(line, "last_handshake_time_sec="); found && current != "" {
+			if value, err := strconv.ParseInt(seconds, 10, 64); err == nil && value > 0 {
+				ages[current] = int(max(0, now-value))
+			}
+		}
+	}
+	return ages
 }

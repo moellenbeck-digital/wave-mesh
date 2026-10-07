@@ -19,10 +19,17 @@ type SocketOptions struct {
 	// OnNetmap is called with a netmap that has already been verified against
 	// the pinned key. A netmap that does not verify never gets here.
 	OnNetmap func(waveproto.Netmap)
+	// OnRejectedNetmap is a netmap that did not verify against the pinned key:
+	// the wave stays on its last one, and the person should be told.
+	OnRejectedNetmap func(error)
 	// OnDiscoHint is the signal to start punching at a particular peer.
 	OnDiscoHint func(nodeID string, candidates []waveproto.Candidate)
 	// OnLogout is the server saying this node is no longer in the wave.
 	OnLogout func(reason string)
+	// Hello is sent first on every connection, when set: the version and
+	// platform the server shows next to the device. Without it a phone is
+	// "unknown, version unknown" in the device list.
+	Hello *waveproto.ClientMessage
 	Log      func(string)
 	// HTTPClient carries the dial; a phone passes a protected one.
 	HTTPClient  *http.Client
@@ -48,11 +55,14 @@ type Socket struct {
 
 	cancel context.CancelFunc
 	done   chan struct{}
+	// wake cuts a reconnect wait short: the network changed, so waiting out a
+	// backoff that was chosen for the old one helps nobody.
+	wake chan struct{}
 }
 
 // NewSocket makes a socket. Connect starts it.
 func NewSocket(options SocketOptions) *Socket {
-	socket := &Socket{options: options, log: options.Log, done: make(chan struct{})}
+	socket := &Socket{options: options, log: options.Log, done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	if socket.log == nil {
 		socket.log = func(string) {}
 	}
@@ -79,16 +89,26 @@ func (s *Socket) run(ctx context.Context) {
 	defer close(s.done)
 	backoff := s.options.MinBackoff
 	for ctx.Err() == nil {
-		err := s.session(ctx)
+		connected, err := s.session(ctx)
 		if ctx.Err() != nil {
 			return
 		}
 		if err != nil {
 			s.log("control disconnected: " + err.Error())
 		}
+		// A connection that came up proves the server is there: the next
+		// attempt starts from the shortest wait again. Without this the wait
+		// only ever grew, and after a few network changes every reconnect of
+		// a phone took the full 30 seconds.
+		if connected {
+			backoff = s.options.MinBackoff
+		}
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.wake:
+			backoff = s.options.MinBackoff
+			continue
 		case <-time.After(backoff):
 		}
 		backoff *= 2
@@ -98,20 +118,36 @@ func (s *Socket) run(ctx context.Context) {
 	}
 }
 
-func (s *Socket) session(ctx context.Context) error {
+// Reconnect drops the connection and dials again at once. For a network
+// change: the old connection is bound to a path that may be gone, and waiting
+// for the heartbeat to notice takes up to a minute.
+func (s *Socket) Reconnect() {
+	s.mu.Lock()
+	socket := s.socket
+	s.mu.Unlock()
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+	if socket != nil {
+		socket.CloseNow()
+	}
+}
+
+func (s *Socket) session(ctx context.Context) (connected bool, err error) {
 	target := strings.TrimSuffix(s.options.Identity.ControlURL, "/") + "/v1/control"
 	target = strings.Replace(strings.Replace(target, "https://", "wss://", 1), "http://", "ws://", 1)
 
 	authorization, err := signedRequestHeader(s.options.Identity, http.MethodGet, "/v1/control", time.Now())
 	if err != nil {
-		return err
+		return false, err
 	}
 	socket, _, err := websocket.Dial(ctx, target, &websocket.DialOptions{
 		HTTPClient: s.options.HTTPClient,
 		HTTPHeader: http.Header{"Authorization": []string{authorization}},
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
 	// A netmap of a large wave is the biggest thing that ever arrives here.
 	socket.SetReadLimit(8 << 20)
@@ -130,6 +166,9 @@ func (s *Socket) session(ctx context.Context) error {
 	}()
 
 	s.log("control connected")
+	if s.options.Hello != nil {
+		s.send(ctx, *s.options.Hello)
+	}
 	// Candidates are published before the socket is necessarily open, and after
 	// a reconnect the server needs them again, so re-send what we have.
 	if endpoints != nil {
@@ -146,7 +185,7 @@ func (s *Socket) session(ctx context.Context) error {
 	for {
 		_, data, err := socket.Read(ctx)
 		if err != nil {
-			return err
+			return true, err
 		}
 		s.onMessage(data)
 	}
@@ -202,6 +241,9 @@ func (s *Socket) onMessage(raw []byte) {
 			// A netmap that does not verify is the one case worth shouting
 			// about.
 			s.log("rejected netmap: " + err.Error())
+			if s.options.OnRejectedNetmap != nil {
+				s.options.OnRejectedNetmap(err)
+			}
 			return
 		}
 		if s.options.OnNetmap != nil {
@@ -238,6 +280,9 @@ func (s *Socket) send(ctx context.Context, message waveproto.ClientMessage) {
 // PublishEndpoints sends our candidates and remembers them for the next
 // reconnect.
 func (s *Socket) PublishEndpoints(candidates []waveproto.Candidate) {
+	if candidates == nil {
+		candidates = []waveproto.Candidate{}
+	}
 	s.mu.Lock()
 	s.lastEndpoints = candidates
 	s.mu.Unlock()

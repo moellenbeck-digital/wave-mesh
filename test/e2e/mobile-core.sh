@@ -127,7 +127,11 @@ ok "robin@example.com on one, someone-else@example.com on the other"
 approve_link() {
   local jar="$1" want="$2" what="$3" url=""
   for _ in $(seq 1 120); do
-    if [[ "$(grep -c 'machine/authorize?request=' "$PHONE_LOG" 2>/dev/null || echo 0)" -ge "$want" ]]; then
+    # grep -c prints 0 *and* fails when nothing matches, so `|| echo 0` made
+    # "0\n0", which is no number; and nothing at all when the log is missing.
+    local seen
+    seen="$(grep -c 'machine/authorize?request=' "$PHONE_LOG" 2>/dev/null || true)"
+    if [[ "${seen:-0}" -ge "$want" ]]; then
       url=$(grep -o 'http://[^ ]*machine/authorize?request=[A-Za-z0-9_]*' "$PHONE_LOG" | tail -1)
       break
     fi

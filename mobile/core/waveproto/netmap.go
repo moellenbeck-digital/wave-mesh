@@ -78,6 +78,10 @@ type Service struct {
 	IPv4      string `json:"ipv4"`
 	IPv6      string `json:"ipv6"`
 	ViaNodeID string `json:"viaNodeId"`
+	// Where the service is opened, e.g. "https://grafana.ops.example". The
+	// server builds it; an older server sends none, and the client falls back
+	// to https and the DNS name, like the desktop.
+	URL string `json:"url,omitempty"`
 }
 
 type DNSRoute struct {

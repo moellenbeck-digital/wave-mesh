@@ -30,6 +30,10 @@ type Profile struct {
 	// Pinned at enrolment; every later netmap must verify against it.
 	NetmapPublicKey string `json:"netmapPublicKey"`
 	AutoStart       bool   `json:"autoStart"`
+	// Removed is why the server ended this enrolment ("node-removed"), when it
+	// did. The wave stays listed so the person sees what happened, and comes
+	// back only through a new login.
+	Removed string `json:"removed,omitempty"`
 }
 
 // State is everything worth surviving a restart. The three private keys per
