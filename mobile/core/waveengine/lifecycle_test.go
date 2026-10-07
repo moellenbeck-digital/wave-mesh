@@ -411,3 +411,11 @@ func TestAddingAWaveWhereThereIsNoneIsALogin(t *testing.T) {
 		t.Fatalf("left %d enrolments behind", len(engine.state.Profiles))
 	}
 }
+
+// iOS starts the core on its own thread and can report a wake or a path
+// change before that is through. There is no socket to rebind then, and the
+// nil one used to take the whole tunnel down.
+func TestANetworkChangeBeforeStartIsIgnored(t *testing.T) {
+	engine := New(Options{Host: &fakeHost{}})
+	engine.NetworkChanged()
+}

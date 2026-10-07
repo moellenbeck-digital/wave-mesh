@@ -10,6 +10,9 @@ import Foundation
 enum WaveLog {
     private static let limit = 512 * 1024
     private static let queue = DispatchQueue(label: "org.wavemesh.log")
+    /// Shared: ISO8601DateFormatter is safe to use from several threads, and
+    /// making one per line is most of what writing a line costs.
+    private static let stamper = ISO8601DateFormatter()
 
     static var fileURL: URL? {
         // The shared container is what lets the app read what the extension
@@ -30,7 +33,7 @@ enum WaveLog {
     static func write(_ line: String, from source: Source) {
         NSLog("[wave] %@", line)
         guard let url = fileURL else { return }
-        let stamp = ISO8601DateFormatter().string(from: Date())
+        let stamp = stamper.string(from: Date())
         let entry = Data("\(stamp) [\(source.rawValue)] \(line)\n".utf8)
         queue.async {
             if let handle = try? FileHandle(forWritingTo: url) {

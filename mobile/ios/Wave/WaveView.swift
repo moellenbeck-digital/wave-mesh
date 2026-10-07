@@ -109,7 +109,7 @@ struct WaveView: View {
                 }
 
                 Section {
-                    NavigationLink("Log") { LogView() }
+                    NavigationLink("Log") { LogPage() }
                         .accessibilityIdentifier("log")
                 }
             }
@@ -407,10 +407,15 @@ private struct PeerRow: View {
         }
     }
 
-    private static func ago(_ seconds: Int) -> String {
+    /// One for all rows: every row is drawn again each second.
+    private static let agoFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
-        return formatter.localizedString(fromTimeInterval: -TimeInterval(seconds))
+        return formatter
+    }()
+
+    private static func ago(_ seconds: Int) -> String {
+        agoFormatter.localizedString(fromTimeInterval: -TimeInterval(seconds))
     }
 
     /// No confirmed path is not the same as a tunnel that is down: without one
