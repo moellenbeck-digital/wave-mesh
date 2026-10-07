@@ -45,6 +45,11 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Fehlerbehebungen
 
+- **Das Protokoll der iPhone-App war nach längerer Laufzeit schwarz**, und
+  Teilen schickte nichts: es wurde als ein einziger Textblock gezeichnet, der
+  für iOS zu groß war, und als Text geteilt, den Messenger wie Telegram ab
+  einer gewissen Länge nicht verschicken. Jetzt Zeile für Zeile und als Datei
+  `wave-mesh-log-<datum>.txt`.
 - **Mit zwei Waves löste das iPhone nur die Namen des ersten auf**, wenn der
   Server des anderen keine eigene Resolver-Adresse reserviert hatte. Dann stand
   eine Adresse des Telefons selbst in der DNS-Liste, und Anfragen dorthin kamen

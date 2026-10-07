@@ -51,6 +51,30 @@ enum WaveLog {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// A copy of the log to hand to the share sheet, named so that whoever
+    /// receives it knows what it is. In the app's own temporary directory: the
+    /// share sheet reads it after this returns, and the extension keeps
+    /// writing to the original meanwhile.
+    static func export(now: Date = Date()) -> URL? {
+        guard let url = fileURL, let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
+        let day = ISO8601DateFormatter.string(from: now, timeZone: .current, formatOptions: [.withFullDate])
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("wave-mesh-log-\(day).txt")
+        do {
+            try data.write(to: copy, options: .atomic)
+            return copy
+        } catch {
+            return nil
+        }
+    }
+
+    #if DEBUG
+        /// Replaces the log in one go, for the UI tests.
+        static func seed(_ text: String) {
+            guard let url = fileURL else { return }
+            queue.sync { try? Data(text.utf8).write(to: url, options: .atomic) }
+        }
+    #endif
+
     static func clear() {
         guard let url = fileURL else { return }
         queue.async { try? Data().write(to: url, options: .atomic) }
