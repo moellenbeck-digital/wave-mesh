@@ -167,6 +167,8 @@ jobs:
         run: ./test/e2e/two-waves.sh
       - name: One device in two waves at the same server
         run: ./test/e2e/same-server.sh
+      - name: A phone opens a cluster's services through a connector
+        run: ./test/e2e/mobile-services.sh
       - name: Two nodes behind NATs punch a direct path
         run: ./test/e2e/nat-traversal.sh
       - name: Two nodes behind symmetric NATs fall back to the relay

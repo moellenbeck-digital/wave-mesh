@@ -118,6 +118,21 @@ und `wave logout` nur den genannten treffen — auch auf dem Server.
 test/e2e/docker/run.sh same-server.sh
 ```
 
+## `mobile-services.sh` — Dienste eines Clusters auf dem Telefon
+
+Der Telefon-Kern in zwei Waves, im zweiten ein Connector wie im Cluster: Dienste
+signiert angemeldet wie vom Operator, das nftables-Regelwerk des Connectors
+(DNAT auf ein reines IPv4-Ziel, IPv6 abgewiesen), dazu ein Gerät mit Port im
+ersten Wave. Geprüft: Auflösung und Routen, eine Seite und 3 MB über IPv4,
+40 Netzkarten-Wechsel ohne verlorene Anfrage, IPv6 sofort abgewiesen statt
+hängend, Gerät per Name im anderen Wave, alles noch einmal nur über das Relay,
+und mit einer Zugriffsregel, deren Filter auf dem Telefon nachweislich greift.
+
+```bash
+test/e2e/docker/run.sh mobile-services.sh
+test/e2e/docker/run.sh mobile-services.sh --harness <datei>   # gegen einen älteren Kern
+```
+
 ## `mobile-lifecycle.sh` — die Telefon-App, Schritt für Schritt
 
 Was ein Mensch in der App tut, gegen zwei echte Control-Server, über genau die
