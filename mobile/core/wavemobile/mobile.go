@@ -184,32 +184,51 @@ func (c *Core) ReplaceTunnel(tunFD int, utunFraming bool, mtu int) error {
 // the main thread. An empty authKey means the interactive way; a pre-auth key
 // is an approval given in advance.
 func (c *Core) Login(controlURL string, authKey string) error {
+	ctx, done := c.track(controlURL)
+	defer done()
+	return c.engine.Login(ctx, controlURL, authKey)
+}
+
+// AddWave joins a further wave at a server this device is already in --
+// another project's network on the same server. A new enrolment with fresh
+// keys; the server asks whoever approves it which wave it goes to. Blocks
+// like Login, and CancelLogin ends it the same way.
+func (c *Core) AddWave(controlURL string, authKey string) error {
+	ctx, done := c.track("+" + controlURL)
+	defer done()
+	return c.engine.AddWave(ctx, controlURL, authKey)
+}
+
+// CancelLogin gives up on a login -- or a wave being added -- still waiting
+// for approval at this server. It returns, and an enrolment that was never
+// approved is forgotten.
+func (c *Core) CancelLogin(controlURL string) {
+	c.mu.Lock()
+	cancels := []context.CancelFunc{c.pending[controlURL], c.pending["+"+controlURL]}
+	c.mu.Unlock()
+	for _, cancel := range cancels {
+		if cancel != nil {
+			cancel()
+		}
+	}
+}
+
+// track registers a cancellable wait under a name, until done is called.
+func (c *Core) track(name string) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.mu.Lock()
 	if c.pending == nil {
 		c.pending = map[string]context.CancelFunc{}
 	}
-	if previous, waiting := c.pending[controlURL]; waiting {
+	if previous, waiting := c.pending[name]; waiting {
 		previous()
 	}
-	c.pending[controlURL] = cancel
+	c.pending[name] = cancel
 	c.mu.Unlock()
-	defer func() {
+	return ctx, func() {
 		c.mu.Lock()
-		delete(c.pending, controlURL)
+		delete(c.pending, name)
 		c.mu.Unlock()
-		cancel()
-	}()
-	return c.engine.Login(ctx, controlURL, authKey)
-}
-
-// CancelLogin gives up on a login still waiting for approval. Login then
-// returns, and a first enrolment that was never approved is forgotten.
-func (c *Core) CancelLogin(controlURL string) {
-	c.mu.Lock()
-	cancel := c.pending[controlURL]
-	c.mu.Unlock()
-	if cancel != nil {
 		cancel()
 	}
 }

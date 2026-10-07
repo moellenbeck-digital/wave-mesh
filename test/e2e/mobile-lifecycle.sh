@@ -16,6 +16,7 @@
 #   the server removing the device takes the wave down, a new login brings it back
 #   a rename in the web reaches the phone
 #   a restart comes back, and stopping does not hang
+#   a second wave at the same server: its own enrolment, names, pause, leave
 
 set -euo pipefail
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -105,11 +106,11 @@ devices() { curl -s -b "$1" "$2/api/waves/$3/nodes"; }
 
 # --- the world -------------------------------------------------------------
 
-step "three namespaces on one segment"
+step "four namespaces on one segment"
 mount -t tmpfs tmpfs /run
 mkdir -p /run/wireguard
 ip link set lo up
-for peer in nodeb nodec; do
+for peer in nodeb nodec noded; do
   ip netns add "$peer"
   ip link add "veth-$peer" type veth peer name "veth-in-$peer"
   ip link set "veth-in-$peer" netns "$peer"
@@ -121,10 +122,12 @@ ip link add br0 type bridge
 ip link set br0 up
 ip link set veth-nodeb master br0
 ip link set veth-nodec master br0
+ip link set veth-noded master br0
 ip addr add 10.99.0.1/24 dev br0
 ip netns exec nodeb ip addr add 10.99.0.2/24 dev veth-in-nodeb
 ip netns exec nodec ip addr add 10.99.0.3/24 dev veth-in-nodec
-ok "phone 10.99.0.1, B 10.99.0.2, C 10.99.0.3"
+ip netns exec noded ip addr add 10.99.0.4/24 dev veth-in-noded
+ok "phone 10.99.0.1, B 10.99.0.2, C 10.99.0.3, D 10.99.0.4"
 
 step "build the phone"
 ( cd "$REPO/mobile/core" && go build -o "$WORK/wave-phone" ./cmd/wave-phone ) || fail "wave-phone did not build"
@@ -303,5 +306,64 @@ wait_status "$(up_query "$ONE")" "the wave after the restart"
 [[ "$(links)" == "$LINKS" ]] || fail "the restart asked for an approval"
 ping_until "$B_IP" "B is unreachable after the restart"
 ok "back as $(wave_field "$ONE" dnsName), nothing approved, B reachable"
+
+# --- 12 --------------------------------------------------------------------
+step "a second wave at the same server, kept apart"
+# One server, two projects: a wave each, and the phone in both. Last, because
+# from here on every approval on this server has to say which wave.
+code=$(curl -s -o /dev/null -w '%{http_code}' -b "$WORK/cookies-one.txt" -c "$WORK/cookies-one.txt" -X POST "$ONE/waves" \
+  --data-urlencode "name=project-b" --data-urlencode "suffix=project-b.wave.internal")
+[[ "$code" == 303 ]] || fail "creating the second wave answered $code"
+B_WAVE=$(curl -s -b "$WORK/cookies-one.txt" "$ONE/api/me" | jq -r '.waves[] | select(.name == "project-b") | .id')
+[[ -n "$B_WAVE" ]] || fail "the second wave is not listed"
+
+# Approving names the wave: with two, the server asks which.
+approve_into() {
+  local url="$1" wave="$2" code
+  code=$(curl -s -o /dev/null -w '%{http_code}' -b "$WORK/cookies-one.txt" \
+    --data-urlencode "request=${url##*request=}" --data-urlencode "wave=$wave" "${url%%\?*}")
+  [[ "$code" == 2* || "$code" == 3* ]] || fail "approving into $wave answered $code"
+}
+
+LINKS=$(links)
+say "add $ONE"
+for _ in $(seq 1 60); do [[ "$(links)" -gt "$LINKS" ]] && break; sleep 0.5; done
+approve_into "$(grep -o 'open this link: http://[^ ]*' "$PHONE_LOG" | tail -1 | sed 's/^open this link: //')" "$B_WAVE"
+[[ "$(result_of "add $ONE")" == "ok" ]] || fail "adding the second wave did not succeed"
+wait_status "[.waves[] | select(.label == \"project-b.wave.internal\") | .ipv4] | (length == 1 and .[0] != \"\")" "the second wave at the same server"
+SECOND_ID=$(status '.waves[] | select(.label == "project-b.wave.internal") | .id')
+[[ "$SECOND_ID" != "$ONE" && "$SECOND_ID" == "$ONE#"* ]] || fail "the second wave is filed as $SECOND_ID"
+[[ "$(status "[.waves[] | select(.controlUrl == \"$ONE\")] | length")" == "2" ]] || fail "not two waves at $ONE"
+ok "two waves at $ONE: $(status '[.waves[] | select(.controlUrl == "'"$ONE"'") | .label] | join(" and ")')"
+
+# A device that is only in the second wave.
+log="$WORK/d.log"
+WAVE_WIREGUARD_GO="$WG_BIN" ip netns exec noded bun "$REPO/apps/client/src/cli.ts" login "$ONE" \
+  --state "$WORK/d/state.json" --interface wave4 --socket /run/wireguard/wave4.sock >"$log" 2>&1 &
+wait_for_line "$log" 'machine/authorize\?request=' "D's connect link"
+approve_into "$(grep -o 'http://[^ ]*machine/authorize?request=[A-Za-z0-9_]*' "$log" | head -1)" "$B_WAVE"
+wait_for_line "$log" ' up as ' "D's tunnel"
+wait_status "[.waves[] | select(.id == \"$SECOND_ID\") | .peers | length] == [1]" "the phone to see D"
+D_NAME=$(status ".waves[] | select(.id == \"$SECOND_ID\") | .peers[0].dnsName")
+D_IP=$(status ".waves[] | select(.id == \"$SECOND_ID\") | .peers[0].ipv4")
+FIRST_RESOLVER=$(wave_field "$ONE" resolver | head -1)
+ANSWER=$(dig +short +time=2 +tries=2 @"$FIRST_RESOLVER" "$D_NAME" A | head -1)
+[[ "$ANSWER" == "$D_IP" ]] || fail "$D_NAME did not resolve to $D_IP through $FIRST_RESOLVER (got '$ANSWER')"
+ok "$D_NAME -> $D_IP, through the first wave's resolver: one resolver, both waves' names"
+ping_until "$D_IP" "D is unreachable in the second wave"
+ping_ok "$B_IP" || fail "B became unreachable when the second wave came up"
+ok "D reachable in the second wave, B still in the first"
+
+say "pause $SECOND_ID"
+[[ "$(result_of "pause $SECOND_ID")" == "ok" ]] || fail "pausing the second wave failed"
+wait_status "[.waves[] | select(.id == \"$SECOND_ID\") | .enabled] == [false]" "the second wave paused"
+[[ "$(status "[.waves[] | select(.id == \"$ONE\") | .enabled] == [true]")" == "true" ]] || fail "pausing the second paused the first"
+ping_ok "$B_IP" || fail "B is unreachable after pausing the other wave"
+say "logout $SECOND_ID"
+[[ "$(result_of "logout $SECOND_ID")" == "ok" ]] || fail "leaving the second wave failed"
+IN_B=$(devices "$WORK/cookies-one.txt" "$ONE" "$B_WAVE" | jq '[.nodes[] | select(.hostname | startswith("test-phone") or startswith("max-iphone"))] | length')
+[[ "$IN_B" == "0" ]] || fail "the phone is still in the second wave on the server"
+[[ "$(status "[.waves[] | select(.id == \"$ONE\")] | length")" == "1" ]] || fail "leaving the second wave took the first with it"
+ok "paused and left the second wave; the first untouched, the server told"
 
 printf '\n\033[32mPASS: every step of the phone app, against real control servers, through wavemobile\033[0m\n'

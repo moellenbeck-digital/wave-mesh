@@ -32,6 +32,7 @@ cd apps/web && bun run typecheck   # eigener Lauf: DOM und JSX, nicht Bun
 
 ./test/e2e/two-nodes.sh      # Tunnel im LAN
 ./test/e2e/two-waves.sh      # ein Gerät in zwei Waves gleichzeitig
+./test/e2e/same-server.sh    # ... in zwei Waves am selben Server
 ./test/e2e/nat-traversal.sh  # Hole Punching durch zwei NATs
 ./test/e2e/relay-fallback.sh # symmetrisches NAT → Relay
 ./test/e2e/acl.sh            # eine Policy: Peers über die Netzkarte, Ports über nftables
@@ -937,13 +938,38 @@ eigenem gepinnten Signaturschlüssel, eigenem Interface und eigenem UDP-Port:
 Tunnel; `wave up` ohne Adresse bringt alle mit `autoStart`,
 `wave logout <url>` verlässt genau eine.
 
-**Der Control-Server ist die Identität — es gibt keinen zweiten Namen.** Jedes
+**Der Control-Server ist die Identität — bis auf weitere Waves dort.** Jedes
 Kommando, das eine Anmeldung meint, nennt ihre URL: `wave up <url>`,
 `wave down <url>`, `wave logout <url>`. Im IPC-Protokoll heißt das Feld deshalb
 `controlUrl` und nicht `profile`, und `waveLabel()` in `@wave/ipc` kürzt die
 URL fürs Anzeigen auf Host und Port — ein Etikett, nie ein Schlüssel. Zwei
 Identitäten nebeneinander zu führen war genau der Fehler, der weiter unten
 beschrieben ist.
+
+**Ein Server kann mehrere Waves tragen, und ein Gerät in mehreren davon sein**
+— getrennte Projekte oder Firmen auf einem Control-Server. Dort reicht die URL
+nicht mehr als Name, also bekommt erst die *zweite* Anmeldung am selben Server
+einen eigenen Schlüssel: `id` = `<url>#<8 Hex>` (`profileKey()` in
+`state.ts`, `Profile.Key()` im Go-Kern). Die erste behält die nackte URL, damit
+jede bestehende Anmeldung, jedes Skript und jede Logzeile bleibt, wie sie war.
+Was daran festliegt:
+
+- **Weiter heißt ausdrücklich weiter.** `wave login <url>` meint die Anmeldung,
+  die es dort schon gibt; eine neue gibt es nur mit `--new-wave` (und nur über
+  den Daemon), in der App mit „Weiteren Wave an diesem Server hinzufügen".
+  Welcher Wave es wird, sagt der Mensch bei der Freigabe im Browser — der
+  Server fragt bei mehreren Mitgliedschaften ohnehin.
+- **Angezeigt wird die DNS-Zone.** `label` wird beim Beitritt aus
+  `netmap.dns.suffix` gespeichert; `wave profiles`, Tray und App zeigen sie,
+  und `matchProfiles()` nimmt Schlüssel, Zone, URL und Host, in dieser
+  Reihenfolge. Die URL trifft dabei genau die erste Anmeldung dort — einen
+  Schlüssel, der passt, gibt es nur einmal.
+- **Die Laufzeit hängt am Schlüssel, nicht an der URL**: Runtimes, Claims,
+  Logpräfix (`[<url>#<hex>]`) und Zertifikate. Der Updater vergisst einen
+  Server erst, wenn keine Anmeldung dort mehr übrig ist.
+- `test/e2e/same-server.sh` fährt das durch: ein Server, zwei Waves, Gerät A
+  in beiden, ein Peer in jedem, die beiden Peers erreichen sich nicht, und
+  `wave down`/`up`/`logout` treffen nur den genannten.
 
 **`wave install` kennt keinen Server.** Es richtet die Maschine ein — Dienst,
 Tray, Autostart — und sonst nichts; es gibt keine Datei, in der „der" Server
@@ -1558,9 +1584,11 @@ existiert dort nicht. Also:
 | OS-Settings | **eines** — Adressen und Routen als Vereinigung, MTU als Minimum |
 | DNS | **ein Resolver** mit Suffix→Wave-Tabelle, ohne eigenen Socket |
 
-**Die Wave heißt hier wie überall sonst: nach ihrem Control-Server.** Nicht nach
-der `waveId` aus der Netmap — die gibt es erst, wenn die erste Netmap da ist,
-und ein zweiter Name wäre einer, den man in Übereinstimmung halten müsste.
+**Die Wave heißt hier wie überall sonst: nach ihrem Control-Server** — und eine
+weitere am selben Server nach `<url>#<hex>`, genau wie auf dem Desktop (siehe
+„Mehrere Waves auf einem Gerät"). Nicht nach der `waveId` aus der Netmap — die
+gibt es erst, wenn die erste Netmap da ist, und ein zweiter Name wäre einer,
+den man in Übereinstimmung halten müsste.
 
 Was daran festliegt:
 
@@ -1620,8 +1648,15 @@ Was daran festliegt:
     Genau die Regel, die für alles unterhalb von `Netmap` gilt; `resolverAddress`
     und `upstream` hatten sie bis dahin verletzt.
   - **Fehlt die Reservierung, fällt der Kern auf die eigene Adresse zurück** und
-    sagt in einer Logzeile, dass Auflösung *auf dem Gerät selbst* damit nicht
-    geht. Über den Tunnel — ein Peer fragt uns — funktioniert sie weiter.
+    sagt es in einer Logzeile. Über den Tunnel — ein Peer fragt uns —
+    funktioniert sie weiter; **dem System angeboten wird sie nie**
+    (`wavesettings.Union`). Stand sie neben der reservierten Adresse eines
+    anderen Waves in der DNS-Liste, fragte iOS mal die eine, mal die andere,
+    und die Namen hinter der eigenen blieben ohne Antwort — auf einem Telefon
+    in zwei Waves löste nur der erste auf. Nötig ist sie auch nicht: *ein*
+    Resolver beantwortet die Zonen aller Waves, an welche seiner Adressen die
+    Anfrage auch ging. Hat kein Wave eine Reservierung, gibt es auf dem Gerät
+    gar kein DNS statt einem, das ins Leere läuft.
 - **Zwei Waves auf einem Interface brauchen eine Quelladressen-Regel.** Mit
   lauter `/32` gibt es keine, nach der der Kernel wählen könnte: er nimmt die
   erste Adresse des Interfaces, ein Paket in die zweite Wave geht mit der

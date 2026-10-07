@@ -1,4 +1,13 @@
-import { type ProfileStatus, pathKind, pathWords, type Status, tunnelWords, waveLabel } from "@wave/ipc";
+import {
+  type ProfileStatus,
+  pathKind,
+  pathWords,
+  profileKeyOf,
+  profileName,
+  type Status,
+  tunnelWords,
+  waveLabel,
+} from "@wave/ipc";
 import { locale, t, type WindowLabels } from "./messages.ts";
 import { updateNotice } from "./view.ts";
 
@@ -124,8 +133,10 @@ export function windowView(status: Status | null, deviceName: string): WindowVie
   const up = profiles.filter((profile) => profile.state === "up");
 
   const connections: ConnectionRow[] = profiles.map((profile) => ({
-    controlUrl: profile.controlUrl,
-    label: waveLabel(profile.controlUrl),
+    // The key is what the switch sends; the name is the wave's own, so two
+    // waves at one server do not show as the same row twice.
+    controlUrl: profileKeyOf(profile),
+    label: profileName(profile),
     connected: profile.state === "up",
     busy: profile.state === "starting" || profile.state === "waiting-for-approval",
     detail: detailFor(profile),
@@ -136,15 +147,15 @@ export function windowView(status: Status | null, deviceName: string): WindowVie
   // hostname could otherwise mean two different machines.
   const machines: MachineRow[] = profiles.flatMap((profile) =>
     profile.peers.map((peer) => ({
-      key: `${profile.controlUrl}/${peer.dnsName}`,
+      key: `${profileKeyOf(profile)}/${peer.dnsName}`,
       hostname: peer.hostname,
       address: peer.ipv4,
       dnsName: peer.dnsName,
       path: describePath(peer),
       online: pathKind(peer) !== "none",
-      waveLabel: waveLabel(profile.controlUrl),
+      waveLabel: profileName(profile),
       services: peer.services.map((service) => ({
-        key: `${profile.controlUrl}/${service.dnsName}`,
+        key: `${profileKeyOf(profile)}/${service.dnsName}`,
         label: service.dnsName,
         url: service.url,
         address: service.ipv4,

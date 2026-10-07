@@ -30,7 +30,7 @@ type SocketOptions struct {
 	// platform the server shows next to the device. Without it a phone is
 	// "unknown, version unknown" in the device list.
 	Hello *waveproto.ClientMessage
-	Log      func(string)
+	Log   func(string)
 	// HTTPClient carries the dial; a phone passes a protected one.
 	HTTPClient  *http.Client
 	MinBackoff  time.Duration

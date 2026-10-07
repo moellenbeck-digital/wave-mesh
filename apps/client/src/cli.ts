@@ -9,6 +9,8 @@ import {
   DEFAULT_SOCKET_PATH,
   type Notice,
   PLATFORM,
+  profileKeyOf,
+  profileName,
   profileStatusFromSnapshot,
   readNotice,
   type Status,
@@ -29,6 +31,7 @@ import {
   matchProfiles,
   normaliseControlUrl,
   type Profile,
+  profileKey,
   removeProfile,
 } from "./state.ts";
 
@@ -50,6 +53,7 @@ const { values, positionals } = parseArgs({
     hook: { type: "string" },
     "auth-key": { type: "string", default: process.env.WAVE_AUTH_KEY ?? "" },
     wildcard: { type: "boolean", default: false },
+    "new-wave": { type: "boolean", default: false },
     channel: { type: "string" },
     "auto-update": { type: "string" },
     "wg-socket": { type: "string" },
@@ -397,6 +401,12 @@ async function main(): Promise<number> {
       console.error(t().notAControlUrl(typed));
       return 1;
     }
+    // A further wave at a server this device is already in needs the daemon:
+    // it is the one that keeps several enrolments apart.
+    if (!daemon && values["new-wave"]) {
+      console.error(t().newWaveNeedsDaemon);
+      return 1;
+    }
     if (!daemon) return runHere(url, values["auth-key"] || undefined);
 
     // Painted while we wait, because the approval link only ever travels on
@@ -406,7 +416,12 @@ async function main(): Promise<number> {
     // did on Windows the moment there was a daemon there to ask.
     const stream = await openStatusStream();
     const response = await daemon.request(
-      { command: "login", controlUrl: url, authKey: values["auth-key"] || undefined },
+      {
+        command: "login",
+        controlUrl: url,
+        authKey: values["auth-key"] || undefined,
+        newWave: values["new-wave"] || undefined,
+      },
       15 * 60 * 1000,
     );
     stream?.close();
@@ -534,17 +549,20 @@ async function main(): Promise<number> {
       }
       for (const profile of response.status.profiles) {
         rows.push({
-          label: waveLabel(profile.controlUrl),
+          // The wave's own name: with several at one server, its host would
+          // name them all alike. That name is also what `up`, `down` and
+          // `logout` take.
+          label: profileName(profile),
           where: profile.interfaceName ?? profile.state,
-          controlUrl: profile.controlUrl,
+          controlUrl: profileKeyOf(profile),
         });
       }
     } else {
       for (const profile of await loadProfiles(values.state)) {
         rows.push({
-          label: waveLabel(profile.controlUrl),
+          label: profile.label ?? waveLabel(profile.controlUrl),
           where: profile.nodeId ? profile.interfaceName : t().notEnrolledRow,
-          controlUrl: profile.controlUrl,
+          controlUrl: profileKey(profile),
         });
       }
     }

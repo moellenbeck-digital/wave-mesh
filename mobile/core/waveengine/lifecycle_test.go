@@ -345,3 +345,69 @@ func TestAnOlderNetmapIsNotAppliedOverANewerOne(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Two waves at one server -- two projects, kept apart on purpose -- are two
+// enrolments with keys of their own, and everything addresses them by key:
+// pausing or leaving one leaves the other alone, and the server's address
+// alone still means the first, as it did for apps that only knew addresses.
+func TestTwoWavesAtOneServerStayApart(t *testing.T) {
+	engine, _ := newTestEngine(t)
+	first := addWave(t, engine, "https://wave.example")
+	extra, err := NewAdditionalProfile("https://wave.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := addProfile(t, engine, extra)
+	if first.key() == second.key() {
+		t.Fatalf("both enrolments are filed as %s", first.key())
+	}
+	engine.mu.Lock()
+	engine.state.Profiles = append(engine.state.Profiles, first.profile, second.profile)
+	engine.mu.Unlock()
+	if err := engine.applyNetmap(first, netmapFor(t, "w1", "project-a.example", "10.77.0.1", "fd7a:1::1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.applyNetmap(second, netmapFor(t, "w2", "project-b.example", "10.96.0.1", "fd7a:2::1")); err != nil {
+		t.Fatal(err)
+	}
+
+	waves := engine.Status().Waves
+	if len(waves) != 2 || waves[0].Label != "project-a.example" || waves[1].Label != "project-b.example" {
+		t.Fatalf("status %+v", waves)
+	}
+	if waves[0].ControlURL != waves[1].ControlURL || waves[0].ID == waves[1].ID {
+		t.Fatalf("ids %q and %q at %q and %q", waves[0].ID, waves[1].ID, waves[0].ControlURL, waves[1].ControlURL)
+	}
+
+	if err := engine.SetEnabled(second.key(), false); err != nil {
+		t.Fatal(err)
+	}
+	waves = engine.Status().Waves
+	if !waves[0].Enabled || waves[1].Enabled {
+		t.Fatalf("pausing the second touched the first: %+v", waves)
+	}
+	// The address alone means the first enrolment there.
+	if key, ok := engine.resolve("wave.example"); !ok || key != first.key() {
+		t.Fatalf("the address resolved to %q", key)
+	}
+	if err := engine.Logout(context.Background(), second.key()); err != nil {
+		t.Fatal(err)
+	}
+	waves = engine.Status().Waves
+	if len(waves) != 1 || waves[0].ID != first.key() {
+		t.Fatalf("leaving the second took the first with it: %+v", waves)
+	}
+}
+
+// AddWave with nothing at that server yet is a plain login: there is nothing
+// to add to.
+func TestAddingAWaveWhereThereIsNoneIsALogin(t *testing.T) {
+	host := &fakeHost{}
+	engine := New(Options{Host: host})
+	if err := engine.AddWave(context.Background(), unreachableControlURL(t), ""); err == nil {
+		t.Fatal("joined nobody")
+	}
+	if len(engine.state.Profiles) != 0 {
+		t.Fatalf("left %d enrolments behind", len(engine.state.Profiles))
+	}
+}
