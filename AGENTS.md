@@ -1766,7 +1766,13 @@ den Tunnel selbst: der Kern läuft in der Extension, und solange die nicht
 läuft, gibt es niemanden, den die App fragen könnte. Was Tunnel und App tun,
 landet in einem geteilten Protokoll (`Shared/WaveLog.swift`), das die App
 anzeigt und teilen kann — auf einem Telefon die einzige Stelle, an der man
-sieht, warum ein Name nicht aufgelöst wurde. Verbinden schaltet „On Demand"
+sieht, warum ein Name nicht aufgelöst wurde. Deshalb schreibt der Kern nach
+jedem Anwenden eine Zeile **pro Wave** (Zone, eigene Adresse, Resolver,
+Geräte, Dienste) — die Zeile der Plattform listet alle Adressen und Routen
+gemischt, und welche zu welchem Wave gehört, war daraus schon einmal falsch
+gelesen —, und der Resolver sagt, wenn ein Name gefragt wurde, den die
+Netzkarte nicht hat (je Name einmal pro Minute, höchstens 20 Zeilen pro
+Minute; Rückwärtsanfragen nicht). Verbinden schaltet „On Demand"
 ein, damit der Tunnel nach Neustart und Netzwechsel von selbst wiederkommt;
 Trennen schaltet es aus, sonst holte iOS ihn sofort zurück. Ein Wave lässt sich
 pausieren, ohne ihn zu verlassen (`SetEnabled`, gespeichert als `autoStart`),

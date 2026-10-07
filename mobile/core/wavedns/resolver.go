@@ -33,6 +33,9 @@ type Zone struct {
 	// Inside them an unknown address is NXDOMAIN; outside, the query is not
 	// ours.
 	Reverse []string
+	// How many of Records are services rather than devices -- only so a log
+	// line about a name that is missing can say what the wave does hold.
+	Services int
 }
 
 // Config is the whole resolver: every wave on the device at once.

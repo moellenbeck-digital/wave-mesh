@@ -251,6 +251,20 @@ if ! bun "$REPO/test/e2e/dnsquery.ts" "$RESOLVER" "$B_NAME" AAAA >/dev/null 2>&1
 fi
 ok "both families answered"
 
+# On a phone the log is the only way to see why a name did not resolve: one
+# line per wave once the settings are in, and one for a name the wave's
+# netmap does not have.
+MISSING="nothing-here.${B_NAME#*.}"
+bun "$REPO/test/e2e/dnsquery.ts" "$RESOLVER" "$MISSING" >/dev/null 2>&1 || true
+for _ in $(seq 1 20); do grep -q "dns: $MISSING is not in the netmap of ${B_NAME#*.}" "$PHONE_LOG" && break; sleep 0.25; done
+grep -q "dns: $MISSING is not in the netmap of ${B_NAME#*.}" "$PHONE_LOG" \
+  || { tail -30 "$PHONE_LOG"; fail "the log does not say that $MISSING is missing"; }
+grep -q "zone ${B_NAME#*.}: this device .*, resolver $RESOLVER (reserved)" "$PHONE_LOG" \
+  || { tail -30 "$PHONE_LOG"; fail "the log has no summary line for the first wave"; }
+grep -q "zone ${C_NAME#*.}: this device " "$PHONE_LOG" \
+  || { tail -30 "$PHONE_LOG"; fail "the log has no summary line for the second wave"; }
+ok "the log names each wave and the name that was missing"
+
 step "the resolver address is routed, never assigned"
 # The invariant the whole socket-less design rests on, and the one thing that
 # has to be checked rather than assumed: assigned to the interface, the kernel

@@ -36,6 +36,11 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 - In der Weboberfläche: Telefone erscheinen als iOS bzw. Android mit ihrer
   Version, Geräte lassen sich umbenennen, und Mitglieder können einen Wave
   selbst verlassen.
+- **Das Protokoll der Telefon-Apps sagt, was mit DNS los ist:** eine Zeile
+  pro Wave mit Zone, eigener Adresse, Resolver und der Zahl der Geräte und
+  Dienste, und eine Zeile, wenn ein Name gefragt wurde, den die Netzkarte
+  nicht kennt („dns: grafana.… is not in the netmap of …"), je Name höchstens
+  einmal pro Minute.
 - **Mehrere Waves am selben Server**, für getrennte Projekte oder Firmen auf
   einem Control-Server: auf dem Desktop mit `wave login <url> --new-wave`, in
   der iPhone-App mit „Weiteren Wave an diesem Server hinzufügen". Jeder ist

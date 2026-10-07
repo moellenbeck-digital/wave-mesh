@@ -178,6 +178,7 @@ func New(options Options) *Engine {
 		waves: map[string]*wave{},
 		stop:  make(chan struct{}),
 	}
+	engine.resolver.log = func(line string) { engine.log("%s", line) }
 	if engine.state.Version == 0 {
 		engine.state.Version = StateVersion
 	}
@@ -900,6 +901,10 @@ func (e *Engine) reconcile() error {
 		zones        []wavedns.Zone
 		unionInput   []wavesettings.Wave
 		resolverAddr []netip.Addr
+		// One line per wave once the settings are in: the platform's own
+		// line lists every address and route at once, and which belongs to
+		// which wave cannot be read off it.
+		summaries []string
 	)
 	for _, entry := range entries {
 		netmap := *entry.netmap
@@ -944,6 +949,7 @@ func (e *Engine) reconcile() error {
 			Records:    records,
 			Routes:     dnsRoutes,
 			Reverse:    reverse,
+			Services:   len(netmap.Services),
 		})
 		e.mu.Lock()
 		entry.resolver = resolverAddress
@@ -955,6 +961,14 @@ func (e *Engine) reconcile() error {
 				"The wave needs a reserved resolver address from its control server.",
 				WaveLabel(entry.key()), resolverAddress)
 		}
+		reserved := "reserved"
+		if resolverAddress == netmap.Self.IPv4 {
+			reserved = "this device's own address"
+		}
+		summaries = append(summaries, fmt.Sprintf(
+			"[%s] zone %s: this device %s, resolver %s (%s), %d devices, %d services, %d routes",
+			WaveLabel(entry.key()), netmap.DNS.Suffix, netmap.Self.IPv4, resolverAddress, reserved,
+			len(netmap.Peers), len(netmap.Services), len(routableCIDRs(netmap))))
 		unionInput = append(unionInput, wavesettings.Wave{
 			Addresses:         netmap.Self.Addresses,
 			Routes:            routableCIDRs(netmap),
@@ -1000,6 +1014,9 @@ func (e *Engine) reconcile() error {
 			})
 		}
 		return err
+	}
+	for _, line := range summaries {
+		e.log("%s", line)
 	}
 	return nil
 }
