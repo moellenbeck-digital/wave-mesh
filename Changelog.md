@@ -60,6 +60,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   eine Adresse des Telefons selbst in der DNS-Liste, und Anfragen dorthin kamen
   nie im Tunnel an. Sie wird nicht mehr angeboten; der Resolver an der
   reservierten Adresse beantwortet die Namen aller Waves.
+- Liegt die DNS-Zone eines Waves innerhalb der eines anderen
+  (`team.ops.example.com` in `ops.example.com`), antwortet auf dem Telefon
+  jetzt die nähere Zone. Vorher meldete die äußere für jedes Gerät der inneren
+  „gibt es nicht".
 - **Auf dem Telefon kam nach dem Anmelden nichts an.** Beide Apps lasen die
   Routen aus dem Kern in einer Form, die es nicht mehr gab; iOS wendete
   deshalb weder Adressen noch Routen noch DNS an, Android ebenso wenig. Ein
