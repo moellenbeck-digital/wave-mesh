@@ -31,6 +31,14 @@ export interface DeviceView {
    */
   clientVersion: string | null;
   updateChannel: string | null;
+  /**
+   * What the device said it is in its `hello` ("ios", "android"). The phones
+   * register as `other` -- an older server refuses anything else -- so this is
+   * where they say what they really are.
+   */
+  clientPlatform: string | null;
+  /** Who brought the device in: they may rename it, besides the managers. */
+  userId: string;
   services: { name: string; ipv4: string; ipv6: string; url: string }[];
 }
 
@@ -60,6 +68,8 @@ export async function listDevices(
       keyExpiresAt: nodes.keyExpiresAt,
       clientVersion: nodes.clientVersion,
       updateChannel: nodes.updateChannel,
+      clientPlatform: nodes.clientPlatform,
+      userId: nodes.userId,
     })
     .from(nodes)
     .where(eq(nodes.waveId, waveId))

@@ -25,7 +25,7 @@ import {
   revokeInvite,
 } from "../waves/invites.ts";
 import { canManage, listMembers, removeMember, roleOf } from "../waves/members.ts";
-import { removeNode } from "../waves/nodes.ts";
+import { ownerOfNode, removeNode, renameNode } from "../waves/nodes.ts";
 import {
   createWave,
   deleteWave,
@@ -331,6 +331,61 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     await audit(db, waveId, userActor(auth.user), { action: "member.remove", target: c.req.param("userId") });
     // Their devices are gone from the database; the ones still up learn it
     // with this push, which is what drops them from everyone's netmap.
+    await hub?.broadcast(waveId);
+    return c.redirect("/", 303);
+  });
+
+  /**
+   * Gives a device another name, from the browser.
+   *
+   * Whoever brought the device in may, and whoever manages the wave: it is
+   * their device's name in a zone they share. The phones can only ask for a
+   * name at enrolment -- since iOS 16 the system gives an app nothing better
+   * than "iPhone" -- so this is how one becomes "max-iphone" afterwards.
+   */
+  app.post("/waves/:id/nodes/:nodeId/name", async (c) => {
+    const waveId = c.req.param("id");
+    const nodeId = c.req.param("nodeId");
+    const auth = await authorize(c, waveId, "member");
+    if (auth instanceof Response) return auth;
+
+    const owner = await ownerOfNode(db, waveId, nodeId);
+    if (!owner) return page(c, (m) => [m.noSuchDevice, m.notInThisWave], 404);
+    if (owner !== auth.user.id && !canManage(auth.role ?? "member")) {
+      return page(c, (m) => [m.notAllowed, m.renameOwnOnly], 403);
+    }
+    const form = await c.req.parseBody();
+    const requested = String(form.name ?? "").trim();
+    if (!requested) return c.redirect("/", 303);
+
+    const renamed = await renameNode(db, waveId, nodeId, requested);
+    if (!renamed) return page(c, (m) => [m.noSuchDevice, m.notInThisWave], 404);
+    if (renamed.hostname !== renamed.previous) {
+      await audit(db, waveId, userActor(auth.user), {
+        action: "device.rename",
+        target: `${renamed.previous} -> ${renamed.hostname}`,
+      });
+      await hub?.broadcast(waveId);
+    }
+    return c.redirect("/", 303);
+  });
+
+  /**
+   * A member leaves a wave, with their devices.
+   *
+   * Until now only a manager could take somebody out, so a member who wanted
+   * to go had to ask. The owner cannot: the wave hangs off their account.
+   */
+  app.post("/waves/:id/leave", async (c) => {
+    const waveId = c.req.param("id");
+    const auth = await authorize(c, waveId, "member");
+    if (auth instanceof Response) return auth;
+    if (auth.role === "owner") return page(c, (m) => [m.ownerStays, m.ownerCannotLeave], 403);
+
+    // As the owner would: leaving is always one's own business.
+    const result = await removeMember(db, waveId, "owner", auth.user.id);
+    if (typeof result === "string") return page(c, (m) => [m.notAMember, m.nothingToRemove], 404);
+    await audit(db, waveId, userActor(auth.user), { action: "member.leave", target: auth.user.id });
     await hub?.broadcast(waveId);
     return c.redirect("/", 303);
   });

@@ -83,6 +83,8 @@ const en = {
   notInThisWave: "It is not in this wave.",
   notItsName: "That is not its name",
   typeToConfirm: (name: string) => `Type ${name} to confirm. Nothing was deleted.`,
+  renameOwnOnly: "Only whoever brought a device in, or a manager of the wave, can rename it.",
+  ownerCannotLeave: "The owner cannot leave the wave. Hand ownership over, or delete the wave.",
 
   // --- invitations ----------------------------------------------------------
   invited: (email: string, wave: string) => `${email} is invited to ${wave}`,
@@ -182,6 +184,9 @@ const de: typeof en = {
   notInThisWave: "Es ist nicht in diesem Wave.",
   notItsName: "Das ist nicht sein Name",
   typeToConfirm: (name) => `Tippe ${name} zur Bestätigung. Es wurde nichts gelöscht.`,
+  renameOwnOnly: "Umbenennen kann ein Gerät nur, wer es hinzugefügt hat, oder wer den Wave verwaltet.",
+  ownerCannotLeave:
+    "Der Eigentümer kann den Wave nicht verlassen. Übergib die Eigentümerschaft oder lösche den Wave.",
 
   invited: (email, wave) => `${email} ist in ${wave} eingeladen`,
   sendLink: (until) => `Schick diesen Link weiter. Er funktioniert einmal und gilt bis ${until}.`,

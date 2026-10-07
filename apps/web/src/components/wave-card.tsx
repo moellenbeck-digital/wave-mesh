@@ -9,12 +9,14 @@ export function WaveCard({
   wave,
   nodes,
   membership,
+  meId,
   delay,
   locale,
 }: {
   wave: Wave;
   nodes: Node[];
   membership: Membership;
+  meId: string;
   delay: number;
   locale: Locale;
 }) {
@@ -132,7 +134,7 @@ export function WaveCard({
       <h3 className="wc-section-title">{t.devicesTitle}</h3>
       {/* Wer Mitglieder verwalten darf, darf auch ein einzelnes Gerät
           entfernen -- das ist der kleinere der beiden Schnitte. */}
-      <LiveNodeList wave={wave} initial={nodes} mayRemove={canManage(membership.role)} />
+      <LiveNodeList wave={wave} initial={nodes} mayRemove={canManage(membership.role)} meId={meId} />
 
       {/* Alle Geräte eines Waves sehen sich gegenseitig -- wer hier steht, ist
           im Netz. Deshalb steht die Liste neben den Geräten, nicht auf einer
@@ -178,7 +180,19 @@ export function WaveCard({
             })}
           </p>
         </details>
-      ) : null}
+      ) : (
+        /* Jeder außer dem Eigentümer kann gehen, ohne jemanden darum zu
+           bitten. Eingeklappt, weil die eigenen Geräte mitgehen. */
+        <details className="mt-8 border-line border-t pt-6">
+          <summary className="cursor-pointer text-caption text-slate">{t.leaveWave}</summary>
+          <form method="post" action={`/waves/${wave.id}/leave`} className="mt-4">
+            <p className="mb-3 text-caption text-slate">{t.leaveWaveHint}</p>
+            <button type="submit" className="wc-btn wc-btn-secondary">
+              {t.leaveWaveConfirm}
+            </button>
+          </form>
+        </details>
+      )}
     </section>
   );
 }

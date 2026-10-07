@@ -56,7 +56,19 @@ const OS_NAMES: Record<string, string> = {
   linux: "Linux",
   darwin: "macOS",
   windows: "Windows",
+  ios: "iOS",
+  android: "Android",
 };
 
-export const osName = (os: string, locale: Locale): string =>
-  OS_NAMES[os] ?? (os === "other" ? appMessages(locale).osUnknown : os);
+/**
+ * The phones register as "other" -- an older server refuses anything else --
+ * and say what they are in their hello, so that is asked when the system says
+ * nothing.
+ */
+export const osName = (os: string, locale: Locale, platform?: string | null): string =>
+  OS_NAMES[os] ??
+  (os === "other" && platform && OS_NAMES[platform]
+    ? OS_NAMES[platform]
+    : os === "other"
+      ? appMessages(locale).osUnknown
+      : os);

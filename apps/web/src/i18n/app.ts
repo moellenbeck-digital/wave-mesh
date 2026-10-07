@@ -74,12 +74,13 @@ const en = {
   connectedWave: "It now belongs to {wave}{ip}.",
   connectedIp: " and listens on {ip}",
   connectedNoWave: "The device has been added to your wave.",
-  connectedClose: "You can close this window — the command line has taken over.",
+  connectedClose: "You can close this window — the device connects on its own now.",
 
   expiredTitle: "Request expired",
   expiredText:
     "The link was only valid for a short while, so that an intercepted link cannot let a stranger's device into the network.",
   expiredRetry: "Start the sign-in on the device again:",
+  expiredRetryApp: "In the wave-mesh app on a phone or tablet: tap Log in again.",
 
   // ---- invitations ----
   goneTitle: "This invitation is no longer valid",
@@ -130,6 +131,14 @@ const en = {
   devicesTitle: "Devices",
   peopleTitle: "People",
   deleteWave: "Delete wave",
+  leaveWave: "Leave wave",
+  leaveWaveHint:
+    "You leave this wave, and your devices in it leave with you. Coming back takes a new invitation.",
+  leaveWaveConfirm: "Leave this wave",
+  renameDevice: "Rename",
+  newDeviceName: "New name",
+  renameDeviceHint:
+    "Lower case letters, digits and hyphens; anything else becomes a hyphen. A name already taken gets a number. Every device in the wave learns the new name.",
   deleteConfirm: "Type {name} to confirm",
   deleteForGood: "Delete for good",
   deleteHint:
@@ -221,11 +230,12 @@ const de: typeof en = {
   connectedWave: "Es gehört jetzt zu {wave}{ip}.",
   connectedIp: " und hört auf {ip}",
   connectedNoWave: "Das Gerät wurde deinem Wave hinzugefügt.",
-  connectedClose: "Dieses Fenster kann zu — die Kommandozeile hat übernommen.",
+  connectedClose: "Dieses Fenster kann zu — das Gerät verbindet sich jetzt von selbst.",
 
   expiredTitle: "Anfrage abgelaufen",
   expiredText: "Der Link war nur kurz gültig, damit ein abgefangener Link kein fremdes Gerät ins Netz lässt.",
   expiredRetry: "Starte die Anmeldung auf dem Gerät noch einmal:",
+  expiredRetryApp: "In der wave-mesh-App auf Telefon oder Tablet: noch einmal auf Anmelden tippen.",
 
   goneTitle: "Diese Einladung gilt nicht mehr",
   goneText:
@@ -276,6 +286,14 @@ const de: typeof en = {
   devicesTitle: "Geräte",
   peopleTitle: "Personen",
   deleteWave: "Wave löschen",
+  leaveWave: "Wave verlassen",
+  leaveWaveHint:
+    "Du verlässt diesen Wave, und deine Geräte darin gehen mit. Zurück geht es nur mit einer neuen Einladung.",
+  leaveWaveConfirm: "Diesen Wave verlassen",
+  renameDevice: "Umbenennen",
+  newDeviceName: "Neuer Name",
+  renameDeviceHint:
+    "Kleinbuchstaben, Ziffern und Bindestriche; alles andere wird zum Bindestrich. Ein vergebener Name bekommt eine Nummer. Alle Geräte im Wave lernen den neuen Namen.",
   deleteConfirm: "Zum Bestätigen {name} eintippen",
   deleteForGood: "Endgültig löschen",
   deleteHint:
