@@ -219,6 +219,11 @@ func (c *Core) SetEnabled(controlURL string, enabled bool) error {
 	return c.engine.SetEnabled(controlURL, enabled)
 }
 
+// SetClientInfo is the platform ("ios", "android") and the app's version, sent
+// to the control server so it can show them next to the device. Call it
+// before Start.
+func (c *Core) SetClientInfo(platform, version string) { c.engine.SetClientInfo(platform, version) }
+
 // SetHostname is the name the next enrolment asks for; a wave the device is
 // already in keeps the name it got there.
 func (c *Core) SetHostname(name string) { c.engine.SetHostname(name) }

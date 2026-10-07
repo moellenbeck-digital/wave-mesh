@@ -42,7 +42,13 @@ type ClientMessage struct {
 	NodeKey    string      `json:"nodeKey,omitempty"`
 	DiscoKey   string      `json:"discoKey,omitempty"`
 	Version    string      `json:"version,omitempty"`
-	Candidates []Candidate `json:"candidates,omitempty"`
+	// For "hello": what this device is. Free text on the server, which is why
+	// the phones say "ios" or "android" here while registering as "other".
+	Platform string `json:"platform,omitempty"`
+	// Not omitempty: an "endpoints" message with no candidates must say so
+	// with [], which the server accepts and an absent field it does not.
+	// The other message types carry it as null, which the server ignores.
+	Candidates []Candidate `json:"candidates"`
 	// For "filter": whether the ports of the wave's policy hold here. A pointer
 	// so false is sent and not dropped by omitempty.
 	Enforced *bool  `json:"enforced,omitempty"`

@@ -150,6 +150,9 @@ type Sock struct {
 	options Options
 	log     func(string)
 	now     func() time.Time
+	// probeKick puts the probe loop back on the fast tick at once, when a
+	// fast phase starts while it is ticking slowly.
+	probeKick chan struct{}
 
 	mu    sync.Mutex
 	conn  *net.UDPConn
@@ -204,6 +207,7 @@ func New(options Options) *Sock {
 		pendingSTUN:     map[string]chan waveproto.Endpoint{},
 		relays:          map[string]Relay{},
 		stop:            make(chan struct{}),
+		probeKick:       make(chan struct{}, 1),
 	}
 	if sock.log == nil {
 		sock.log = func(string) {}
@@ -434,6 +438,7 @@ func (s *Sock) SetPeers(waveID string, configs []PeerConfig) error {
 	s.mu.Unlock()
 
 	s.probeAll()
+	s.kickProbing()
 	return errors.Join(failures...)
 }
 
@@ -452,6 +457,7 @@ func (s *Sock) EnableProbing() {
 	if !already {
 		s.probeAll()
 	}
+	s.kickProbing()
 }
 
 // PunchNow restarts aggressive probing for one peer, e.g. after the control
@@ -467,6 +473,7 @@ func (s *Sock) PunchNow(waveID, nodeKey string, candidates []netip.AddrPort) {
 	target.probingSince = s.now()
 	s.mu.Unlock()
 	s.probePeer(target)
+	s.kickProbing()
 }
 
 // HasUnreachablePeers reports whether at least one peer has no usable path.
@@ -546,6 +553,7 @@ func (s *Sock) Rebind() (int, error) {
 	}
 	s.done.Add(1)
 	go s.readLoop(conn)
+	s.kickProbing()
 	s.log(fmt.Sprintf("rebound to port %d", conn.LocalAddr().(*net.UDPAddr).Port))
 	s.probeAll()
 	return conn.LocalAddr().(*net.UDPAddr).Port, nil
@@ -836,18 +844,64 @@ func (s *Sock) sendDisco(snap snapshot, path target, message wavedisco.Message) 
 
 // --- probing ----------------------------------------------------------------
 
+// probeLoop ticks every probeFast while some peer is in its fast phase, and
+// every probeIdle otherwise. Four wake-ups a second for the life of the
+// tunnel cost a phone battery for nothing: outside a fast phase no path is
+// owed a probe more often than every probeSlow, and a one-second tick meets
+// that within its slack. A fast phase that starts -- a punch hint, a new
+// peer, a rebind -- kicks the loop back to the fast tick at once.
 func (s *Sock) probeLoop() {
 	defer s.done.Done()
-	ticker := time.NewTicker(probeFast)
-	defer ticker.Stop()
+	timer := time.NewTimer(probeFast)
+	defer timer.Stop()
 	for {
 		select {
 		case <-s.stop:
 			return
-		case <-ticker.C:
+		case <-s.probeKick:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			s.probeAll()
+		case <-timer.C:
 			s.probeAll()
 		}
+		interval := probeIdle
+		if s.anyFastPhase() {
+			interval = probeFast
+		}
+		timer.Reset(interval)
 	}
+}
+
+// probeIdle is the loop's tick while no peer is in its fast phase.
+const probeIdle = time.Second
+
+// kickProbing wakes the probe loop for a fast phase that just began.
+func (s *Sock) kickProbing() {
+	select {
+	case s.probeKick <- struct{}{}:
+	default:
+	}
+}
+
+// anyFastPhase reports whether some peer is still in its fast phase.
+func (s *Sock) anyFastPhase() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.probingEnabled {
+		return false
+	}
+	now := s.now()
+	for _, peer := range s.peers {
+		if now.Sub(peer.probingSince) < probeFastDuration {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Sock) probeAll() {
