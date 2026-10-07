@@ -14,7 +14,14 @@ import Wavemobile
 /// not a JavaScript runtime -- and why there is nothing in this file that could
 /// be in the core instead.
 class PacketTunnelProvider: NEPacketTunnelProvider {
-    private var core: WavemobileCore?
+    /// Read from the app's message queue and from background work, cleared by
+    /// stopTunnel on another: unguarded, a read could meet the release halfway.
+    private var core: WavemobileCore? {
+        get { coreLock.withLock { storedCore } }
+        set { coreLock.withLock { storedCore = newValue } }
+    }
+    private var storedCore: WavemobileCore?
+    private let coreLock = NSLock()
     private var host: WaveHost?
     private let monitor = NWPathMonitor()
     /// The core needs the descriptor, and the descriptor only exists once

@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// What the list links to. SwiftUI makes a NavigationLink's destination with
+/// every redraw of the list -- once a second, with the status -- and LogView's
+/// initial values read the whole log, up to half a megabyte. This page has
+/// nothing to compare, so its body, and with it LogView, is made only when the
+/// page is actually opened.
+struct LogPage: View {
+    var body: some View { LogView() }
+}
+
 /// The shared log (`WaveLog`): what the tunnel and the app did, newest last,
 /// to be read here or shared with whoever helps.
 struct LogView: View {
@@ -9,6 +18,11 @@ struct LogView: View {
     /// Line by line, newest last.
     private static func load() -> [String] {
         WaveLog.read().split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    private func reload() {
+        lines = Self.load()
+        export = WaveLog.export()
     }
 
     var body: some View {
@@ -48,10 +62,7 @@ struct LogView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    lines = Self.load()
-                    export = WaveLog.export()
-                }
+                Button("Refresh", systemImage: "arrow.clockwise") { reload() }
                 // A file, not the text: a messenger refuses a message of half
                 // a megabyte -- Telegram sent nothing at all -- and takes a
                 // document of any size.

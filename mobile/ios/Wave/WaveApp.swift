@@ -287,6 +287,8 @@ final class WaveModel: ObservableObject {
         }
     }
 
+    private var pollingSince: Date?
+
     private func startPolling() {
         timer?.invalidate()
         // A path, an RTT and a handshake age say nothing until you watch them
@@ -299,6 +301,16 @@ final class WaveModel: ObservableObject {
     }
 
     private func poll() async {
+        // One at a time. A slow extension -- busy applying settings while a
+        // wave is paused -- would otherwise collect a waiting request every
+        // second, each with its task and its message, and the answers would
+        // land in a burst and out of order.
+        // An extension that never answers would stop the screen for good, so
+        // a request older than ten seconds no longer holds the next one back.
+        if let since = pollingSince, Date().timeIntervalSince(since) < 10 { return }
+        let started = Date()
+        pollingSince = started
+        defer { if pollingSince == started { pollingSince = nil } }
         if case .connecting(let address) = login, let url = PendingAuth.url {
             login = .waitingForApproval(address)
             if !presented.contains(url) {
