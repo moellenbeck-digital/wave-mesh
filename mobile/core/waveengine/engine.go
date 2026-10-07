@@ -113,6 +113,9 @@ type wave struct {
 	published string
 	// Why the last netmap from the server was refused, until one is accepted.
 	rejected string
+	// When the netmap in use was issued, so an older one -- replayed, or a
+	// REST answer overtaken by the socket -- is not applied over it.
+	issued time.Time
 }
 
 // key is how a wave is filed everywhere in the core.
@@ -669,6 +672,20 @@ func (e *Engine) hostname() string {
 
 // applyNetmap is where a wave's view of the world becomes the device's.
 func (e *Engine) applyNetmap(entry *wave, netmap waveproto.Netmap) error {
+	// Signed is not the same as current: an older netmap verifies just as
+	// well, and applied over a newer one it brings back a peer that was
+	// removed or a policy that was tightened since. Compared by when the
+	// server issued it, not by version -- a wave made anew starts its
+	// versions again, and every netmap after that would be refused.
+	issued, parsed := time.Parse(time.RFC3339Nano, netmap.IssuedAt)
+	e.mu.Lock()
+	previous := entry.issued
+	e.mu.Unlock()
+	if parsed == nil && !previous.IsZero() && issued.Before(previous) {
+		return fmt.Errorf("ignored a netmap issued %s, older than the one in use (%s)",
+			issued.Format(time.RFC3339), previous.Format(time.RFC3339))
+	}
+
 	if conflict := e.conflictWith(entry, netmap); conflict != nil {
 		// Refused rather than repaired: renumbering a wave is the server's
 		// business, and rotating a key is the other node's. The waves already
@@ -679,6 +696,9 @@ func (e *Engine) applyNetmap(entry *wave, netmap waveproto.Netmap) error {
 	e.mu.Lock()
 	entry.netmap = &netmap
 	entry.rejected = ""
+	if parsed == nil {
+		entry.issued = issued
+	}
 	e.mu.Unlock()
 
 	e.syncRelay(entry, netmap)
