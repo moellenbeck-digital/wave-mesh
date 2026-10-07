@@ -3,7 +3,14 @@ import { dirname, join } from "node:path";
 import { createCsr, der, generateCertificateKey } from "@wave/crypto";
 import type { CertChallengeRecord } from "@wave/proto";
 import { ControlClient, verifyNetmap } from "./api.ts";
-import { type CertRecord, loadProfiles, type Profile, updateProfile } from "./state.ts";
+import {
+  type CertRecord,
+  findProfile,
+  loadProfiles,
+  type Profile,
+  profileKey,
+  updateProfile,
+} from "./state.ts";
 
 /**
  * Certificates on a node (D7).
@@ -104,7 +111,7 @@ export async function issueCertificate(options: IssueOptions): Promise<CertResul
         notAfter: status.notAfter,
         hook: options.hook ?? null,
       };
-      await remember(options.statePath, options.profile.controlUrl, record);
+      await remember(options.statePath, profileKey(options.profile), record);
       log(`${name} is certified until ${status.notAfter}; renewing around ${status.renewAt}`);
       if (record.hook) await runHook(record.hook, paths, log);
       return { issued: { ...record, ...paths } };
@@ -149,11 +156,10 @@ async function writeCertificate(paths: CertPaths, keyPem: string, chainPem: stri
 }
 
 /** Keeps the record with the profile, so a restart still knows when to renew. */
-async function remember(statePath: string, controlUrl: string, record: CertRecord): Promise<void> {
-  const profiles = await loadProfiles(statePath);
-  const current = profiles.find((profile) => profile.controlUrl === controlUrl);
+async function remember(statePath: string, key: string, record: CertRecord): Promise<void> {
+  const current = findProfile(await loadProfiles(statePath), key);
   const certs = [...(current?.certs ?? []).filter((entry) => entry.name !== record.name), record];
-  await updateProfile(statePath, controlUrl, { certs });
+  await updateProfile(statePath, key, { certs });
 }
 
 /**

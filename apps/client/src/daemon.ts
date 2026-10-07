@@ -30,6 +30,7 @@ import {
   matchProfiles,
   normaliseControlUrl,
   type Profile,
+  profileKey,
   removeProfile,
 } from "./state.ts";
 import type { Updater } from "./update.ts";
@@ -123,7 +124,10 @@ export class Daemon {
   };
 
   /** A log that lands on one profile, so its lines stay with its tunnel. */
-  private logFor(name: string) {
+  private logFor(profile: Profile) {
+    // Filed under the key the runtime is kept by; printed under the same, so a
+    // second wave at one server is told apart from the first in the log too.
+    const name = profileKey(profile);
     return (message: string): void => {
       const runtime = this.runtimes.get(name);
       for (const line of message.split("\n")) {
@@ -142,10 +146,10 @@ export class Daemon {
   private async sync(): Promise<Profile[]> {
     const profiles = await loadProfiles(this.options.statePath);
     for (const profile of profiles) {
-      const runtime = this.runtimes.get(profile.controlUrl);
+      const runtime = this.runtimes.get(profileKey(profile));
       if (runtime) runtime.profile = profile;
       else {
-        this.runtimes.set(profile.controlUrl, {
+        this.runtimes.set(profileKey(profile), {
           profile,
           state: "stopped",
           authUrl: null,
@@ -155,7 +159,7 @@ export class Daemon {
       }
     }
     // A profile that was logged out elsewhere should not linger in the view.
-    const known = new Set(profiles.map((profile) => profile.controlUrl));
+    const known = new Set(profiles.map((profile) => profileKey(profile)));
     for (const [name, runtime] of this.runtimes) {
       if (!known.has(name) && !runtime.tunnel) this.runtimes.delete(name);
     }
@@ -168,6 +172,8 @@ export class Daemon {
     for (const runtime of this.runtimes.values()) {
       profiles.push(
         profileStatusFromSnapshot(await runtime.tunnel?.snapshot(), {
+          id: profileKey(runtime.profile),
+          label: runtime.profile.label ?? undefined,
           controlUrl: runtime.profile.controlUrl,
           state: runtime.state,
           authUrl: runtime.authUrl,
@@ -193,11 +199,11 @@ export class Daemon {
   private claims(except: string) {
     const claims = [];
     for (const runtime of this.runtimes.values()) {
-      if (runtime.profile.controlUrl === except) continue;
+      if (profileKey(runtime.profile) === except) continue;
       const netmap = runtime.tunnel?.currentNetmap();
       if (!netmap) continue;
       claims.push({
-        controlUrl: runtime.profile.controlUrl,
+        controlUrl: runtime.profile.label ?? profileKey(runtime.profile),
         cidrs: [...netmap.self.addresses, ...netmap.peers.flatMap((peer) => peer.allowedIps)],
       });
     }
@@ -249,7 +255,7 @@ export class Daemon {
   }
 
   private async upOne(profile: Profile, authKey?: string): Promise<void> {
-    const runtime = this.runtimes.get(profile.controlUrl);
+    const runtime = this.runtimes.get(profileKey(profile));
     if (!runtime || runtime.tunnel) return;
     // Guarding on the finished tunnel alone is not enough: it is only assigned
     // once `bringUp` returns, and between "login" and someone clicking approve
@@ -276,10 +282,11 @@ export class Daemon {
         ...this.options,
         authKey,
         controlUrl: profile.controlUrl,
+        profileKey: profileKey(profile),
         interfaceName: profile.interfaceName,
         listenPort: profile.listenPort,
         socketPath: this.socketFor(profile.interfaceName),
-        log: this.logFor(profile.controlUrl),
+        log: this.logFor(profile),
         // Every server this device is in gets to make an offer; the updater
         // takes the best valid one of them all.
         hello: this.options.updater ? () => (this.options.updater as Updater).hello() : undefined,
@@ -298,10 +305,10 @@ export class Daemon {
       const wanted = netmap
         ? [...netmap.self.addresses, ...netmap.peers.flatMap((peer) => peer.allowedIps)]
         : [];
-      const conflict = findConflict(wanted, this.claims(profile.controlUrl));
+      const conflict = findConflict(wanted, this.claims(profileKey(profile)));
       if (conflict) {
         await this.stopTunnel(tunnel);
-        throw new Error(describeConflict(profile.controlUrl, conflict));
+        throw new Error(describeConflict(profile.label ?? profile.controlUrl, conflict));
       }
 
       runtime.tunnel = tunnel;
@@ -310,7 +317,7 @@ export class Daemon {
     } catch (error) {
       runtime.state = "failed";
       runtime.message = error instanceof Error ? error.message : String(error);
-      this.log(`${profile.controlUrl} could not come up: ${runtime.message}`);
+      this.log(`${profile.label ?? profileKey(profile)} could not come up: ${runtime.message}`);
     }
     void this.publish();
   }
@@ -329,10 +336,10 @@ export class Daemon {
           found.length === 0 ? notice("no-such-wave", { name: wanted }) : ambiguity(wanted, found),
         );
       }
-      matched = new Set(found.map((p) => p.controlUrl));
+      matched = new Set(found.map((p) => profileKey(p)));
     }
     for (const runtime of this.runtimes.values()) {
-      if (matched && !matched.has(runtime.profile.controlUrl)) continue;
+      if (matched && !matched.has(profileKey(runtime.profile))) continue;
       const tunnel = runtime.tunnel;
       runtime.tunnel = undefined;
       runtime.state = "stopped";
@@ -354,14 +361,18 @@ export class Daemon {
     }
 
     const profile = found[0] as Profile;
+    const key = profileKey(profile);
     const url = profile.controlUrl;
-    await this.down(url);
+    const name = profile.label ?? url;
+    await this.down(key);
     // Best effort: the local enrolment goes away either way.
-    await new ControlClient(profile).logout().catch((error) => this.log(`${url} logout: ${error}`));
-    await removeProfile(this.options.statePath, url);
-    this.runtimes.delete(url);
-    this.options.updater?.forget(url);
-    this.log(`left ${url}`);
+    await new ControlClient(profile).logout().catch((error) => this.log(`${name} logout: ${error}`));
+    await removeProfile(this.options.statePath, key);
+    this.runtimes.delete(key);
+    // The server's offers stay while another wave there is still enrolled.
+    const remaining = await loadProfiles(this.options.statePath).catch(() => []);
+    if (!remaining.some((other) => other.controlUrl === url)) this.options.updater?.forget(url);
+    this.log(`left ${name}`);
     await this.publish();
     return null;
   }
@@ -371,11 +382,13 @@ export class Daemon {
    * attempted, so a device that gets interrupted mid-enrolment can simply be
    * told `wave up` again rather than starting over.
    */
-  async login(wanted: string, authKey?: string): Promise<Notice | null> {
+  async login(wanted: string, authKey?: string, newWave = false): Promise<Notice | null> {
     const controlUrl = normaliseControlUrl(wanted);
     if (!controlUrl) return this.refuse(notice("not-a-control-url", { name: wanted }));
 
-    const profile = await ensureProfile(this.options.statePath, controlUrl);
+    // A further wave at a server this device is already in -- another
+    // project's network there -- is a new enrolment; the approval asks which.
+    const profile = await ensureProfile(this.options.statePath, controlUrl, { another: newWave });
     await this.sync();
     await this.upOne(profile, authKey);
     return null;
@@ -412,7 +425,7 @@ export class Daemon {
     }
 
     const profile = found[0] as Profile;
-    const log = this.logFor(profile.controlUrl);
+    const log = this.logFor(profile);
     try {
       const result = await issueCertificate({
         statePath: this.options.statePath,
@@ -468,7 +481,7 @@ export class Daemon {
   async renewDue(now: Date = new Date()): Promise<void> {
     for (const profile of await this.sync()) {
       for (const record of dueCertificates(profile, now)) {
-        const log = this.logFor(profile.controlUrl);
+        const log = this.logFor(profile);
         try {
           const result = await issueCertificate({
             statePath: this.options.statePath,
@@ -598,7 +611,7 @@ export class Daemon {
         return;
       }
       case "login": {
-        const refused = await this.login(parsed.data.controlUrl, parsed.data.authKey);
+        const refused = await this.login(parsed.data.controlUrl, parsed.data.authKey, parsed.data.newWave);
         if (refused) reply(refusal(refused));
         else reply({ type: "status", status: await this.status() });
         return;

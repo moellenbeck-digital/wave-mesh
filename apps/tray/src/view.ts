@@ -1,5 +1,14 @@
 import { intlTag } from "@wave/i18n";
-import { type ProfileStatus, pathWords, readNotice, type Status, tunnelWords, waveLabel } from "@wave/ipc";
+import {
+  type ProfileStatus,
+  pathWords,
+  profileKeyOf,
+  profileName,
+  readNotice,
+  type Status,
+  tunnelWords,
+  waveLabel,
+} from "@wave/ipc";
 import type { IconState } from "./icon.ts";
 import type { MenuEntry } from "./menu.ts";
 import { locale, t } from "./messages.ts";
@@ -58,9 +67,11 @@ export function actionForId(status: Status | null, id: number): Action | null {
     return profile.controlUrl ? { kind: "open", url: profile.controlUrl } : null;
   }
   if (offset !== Offset.toggle) return null;
+  // By its key, not its server: with several waves at one server, the
+  // address would switch the first of them, whichever row was clicked.
   return profile.state === "up"
-    ? { kind: "disconnect", controlUrl: profile.controlUrl }
-    : { kind: "connect", controlUrl: profile.controlUrl };
+    ? { kind: "disconnect", controlUrl: profileKeyOf(profile) }
+    : { kind: "connect", controlUrl: profileKeyOf(profile) };
 }
 
 /** The icon says the best of what is going on: any wave up counts as up. */
@@ -166,7 +177,7 @@ export function menuFor(status: Status | null, options: { unreachable?: Unreacha
     if (named) {
       entries.push({
         id: idFor(index, Offset.heading),
-        label: `${waveLabel(profile.controlUrl)} — ${describeProfile(profile)}`,
+        label: `${profileName(profile)} — ${describeProfile(profile)}`,
         enabled: false,
       });
     }
@@ -182,10 +193,10 @@ export function menuFor(status: Status | null, options: { unreachable?: Unreacha
       label:
         profile.state === "up"
           ? named
-            ? words.disconnectWave(waveLabel(profile.controlUrl))
+            ? words.disconnectWave(profileName(profile))
             : words.disconnect
           : named
-            ? words.connectWave(waveLabel(profile.controlUrl))
+            ? words.connectWave(profileName(profile))
             : words.connect,
     });
     // Naming the host rather than "the control server": with two waves the

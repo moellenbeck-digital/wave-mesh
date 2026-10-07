@@ -11,7 +11,7 @@ import { nameFilePath, pidFilePath, RUN_DIR } from "./link-darwin.ts";
 import { platformLink } from "./link-platform.ts";
 import { pidFilePath as windowsPidFilePath, runDir as windowsRunDir } from "./link-windows.ts";
 import { desiredAddresses, desiredRoutes, planDeviceUpdate } from "./reconcile.ts";
-import { ensureProfile, type Profile, updateProfile } from "./state.ts";
+import { ensureProfile, type Profile, profileKey, updateProfile } from "./state.ts";
 import { defaultSocketPath, uapiReady, WgControl } from "./wgctl.ts";
 import { findWireguardGo, missingMessage } from "./wireguard-go.ts";
 
@@ -25,8 +25,14 @@ const MAX_REBINDS = 3;
 
 export interface EngineOptions {
   statePath: string;
-  /** Which enrolment in the state file -- the server is the identity. */
+  /** The server this wave is on. */
   controlUrl: string;
+  /**
+   * Which enrolment in the state file, by its key, when there may be several
+   * at this server -- one per project or customer. Without it, the first
+   * enrolment there (or a new one).
+   */
+  profileKey?: string;
   socketPath?: string;
   wireguardGoPath?: string;
   mtu?: number;
@@ -894,9 +900,13 @@ export async function enrol(
     );
   }
   const netmapPublicKey = state.netmapPublicKey ?? authorized.netmapPublicKey;
-  const next: Profile = { ...state, nodeId: authorized.nodeId, netmapPublicKey };
-  await updateProfile(statePath, state.controlUrl, { nodeId: next.nodeId, netmapPublicKey });
-  return { state: next, netmap: verifyNetmap(authorized.netmap, netmapPublicKey) };
+  const netmap = verifyNetmap(authorized.netmap, netmapPublicKey);
+  // The wave's own name, kept for when it is not running: with several waves
+  // at one server, the server's address names all of them.
+  const label = netmap.dns.suffix || state.label;
+  const next: Profile = { ...state, nodeId: authorized.nodeId, netmapPublicKey, label };
+  await updateProfile(statePath, profileKey(state), { nodeId: next.nodeId, netmapPublicKey, label });
+  return { state: next, netmap };
 }
 
 /**
@@ -917,6 +927,9 @@ export async function up(options: EngineOptions): Promise<Tunnel> {
   const initial = await ensureProfile(options.statePath, options.controlUrl, {
     interfaceName: options.interfaceName,
     listenPort: options.listenPort,
+    // Exactly this enrolment: with several at one server, the address alone
+    // would bring up the first one's keys.
+    key: options.profileKey,
   });
   const { state, netmap } = await enrol(initial, options.statePath, log, options.onAuthUrl, options.authKey);
 

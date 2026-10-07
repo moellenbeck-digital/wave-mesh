@@ -159,9 +159,15 @@ final class WaveModel: ObservableObject {
         }
     }
 
-    /// Joins again a wave the server ended, with the same address.
+    /// Joins again a wave the server ended: that very enrolment, by its key.
     func loginAgain(_ wave: WaveStatus) {
-        Task { _ = await join(controlURL: wave.controlUrl) }
+        Task { _ = await join(controlURL: wave.id) }
+    }
+
+    /// Joins a further wave at the server this one is on -- another project's
+    /// network there. The server asks, on approval, which wave it goes to.
+    func addWave(at wave: WaveStatus) {
+        Task { _ = await join(controlURL: wave.controlUrl, kind: "add") }
     }
 
     /// Stops the tunnel and keeps it stopped: with on-demand still on, iOS
@@ -173,18 +179,18 @@ final class WaveModel: ObservableObject {
 
     /// Joins a wave: tunnel up, register, wait for approval. Returns whether
     /// the request was taken, so the field keeps what was typed when it was not.
-    func join(controlURL: String) async -> Bool {
+    func join(controlURL: String, kind: String = "login") async -> Bool {
         let address = controlURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !address.isEmpty else { return false }
         if !tunnelUp, await tunnel.anotherVPNIsSelected() {
             // Asked first; the join goes ahead from the dialog.
-            takeover = Takeover { Task { _ = await self.joinNow(address) } }
+            takeover = Takeover { Task { _ = await self.joinNow(address, kind: kind) } }
             return true
         }
-        return await joinNow(address)
+        return await joinNow(address, kind: kind)
     }
 
-    private func joinNow(_ address: String) async -> Bool {
+    private func joinNow(_ address: String, kind: String) async -> Bool {
         failure = nil
         cancelled = nil
         login = .connecting(address)
@@ -199,7 +205,7 @@ final class WaveModel: ObservableObject {
         // Answered only once the device is approved, refused, or the wait
         // timed out -- possibly minutes from now.
         Task {
-            let answer = await ask(["kind": "login", "controlURL": address, "hostname": DeviceName.label(deviceName)])
+            let answer = await ask(["kind": kind, "controlURL": address, "hostname": DeviceName.label(deviceName)])
             login = .idle
             approval = nil
             if cancelled == address {
@@ -238,7 +244,7 @@ final class WaveModel: ObservableObject {
     /// Pauses or resumes one wave; the enrolment stays either way.
     func setEnabled(_ wave: WaveStatus, _ enabled: Bool) {
         Task {
-            if let answer = await ask(["kind": "setEnabled", "controlURL": wave.controlUrl, "enabled": enabled]),
+            if let answer = await ask(["kind": "setEnabled", "controlURL": wave.id, "enabled": enabled]),
                !answer.isEmpty
             {
                 report(answer)

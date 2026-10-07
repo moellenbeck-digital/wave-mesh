@@ -37,11 +37,11 @@ type PollResponse struct {
 
 // ClientMessage is what a node sends on the control socket.
 type ClientMessage struct {
-	Type       string      `json:"type"`
-	MachineKey string      `json:"machineKey,omitempty"`
-	NodeKey    string      `json:"nodeKey,omitempty"`
-	DiscoKey   string      `json:"discoKey,omitempty"`
-	Version    string      `json:"version,omitempty"`
+	Type       string `json:"type"`
+	MachineKey string `json:"machineKey,omitempty"`
+	NodeKey    string `json:"nodeKey,omitempty"`
+	DiscoKey   string `json:"discoKey,omitempty"`
+	Version    string `json:"version,omitempty"`
 	// For "hello": what this device is. Free text on the server, which is why
 	// the phones say "ios" or "android" here while registering as "other".
 	Platform string `json:"platform,omitempty"`

@@ -207,6 +207,21 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 self?.host?.log(failure.map { "login to \(controlURL) failed: \($0)" } ?? "login to \(controlURL) done")
                 completionHandler?(Data((failure ?? "").utf8))
             }
+        case "add":
+            // A further wave at a server this device is already in: a new
+            // enrolment, and the server asks which wave it goes to.
+            let controlURL = request.controlURL ?? ""
+            host?.log("adding a wave at \(controlURL)")
+            PendingAuth.clear()
+            if let name = request.hostname, !name.isEmpty {
+                core?.setHostname(name)
+            }
+            DispatchQueue.global().async { [weak self] in
+                let failure = self?.attempt { try self?.core?.addWave(controlURL, authKey: request.authKey ?? "") }
+                PendingAuth.clear()
+                self?.host?.log(failure.map { "adding a wave at \(controlURL) failed: \($0)" } ?? "added a wave at \(controlURL)")
+                completionHandler?(Data((failure ?? "").utf8))
+            }
         case "logout":
             let controlURL = request.controlURL ?? ""
             DispatchQueue.global().async { [weak self] in

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"syscall"
 	"sync"
+	"syscall"
 )
 
 // Link is the one tunnel the operating system gave us.

@@ -57,3 +57,13 @@ func WaveLabel(controlURL string) string {
 	}
 	return parsed.Host
 }
+
+// labelOf names an enrolment for a person: the wave's DNS suffix once it is
+// known, otherwise the server's host. With several waves at one server, the
+// host alone would name them all the same.
+func labelOf(profile Profile) string {
+	if profile.Label != "" {
+		return profile.Label
+	}
+	return WaveLabel(profile.ControlURL)
+}

@@ -131,6 +131,13 @@ func addWave(t *testing.T, engine *Engine, controlURL string) *wave {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return addProfile(t, engine, profile)
+}
+
+// addProfile runs an enrolment the test made itself, e.g. a further one at a
+// server that already has one.
+func addProfile(t *testing.T, engine *Engine, profile Profile) *wave {
+	t.Helper()
 	profile.NetmapPublicKey = "pinned"
 	entry := &wave{profile: profile, pendingHints: map[string][]waveproto.Candidate{}}
 
@@ -339,7 +346,9 @@ func TestStatusIsJSONThePlatformCanRead(t *testing.T) {
 	if err := json.Unmarshal([]byte(engine.StatusJSON()), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if len(decoded.Waves) != 1 || decoded.Waves[0].Label != "a.example" {
+	// Named by its DNS suffix once the netmap says it: with several waves at
+	// one server, the server's host would name them all alike.
+	if len(decoded.Waves) != 1 || decoded.Waves[0].Label != "a.wave.example.com" || decoded.Waves[0].ID != "https://a.example" {
 		t.Fatalf("got %+v", decoded)
 	}
 	if len(decoded.Waves[0].Peers) != 1 || decoded.Waves[0].Peers[0].Hostname != "laptop" {
@@ -377,9 +386,9 @@ func TestStateRoundTrips(t *testing.T) {
 func TestNormaliseControlURL(t *testing.T) {
 	for input, want := range map[string]string{
 		"wave-mesh-1.robin-lenz.de": "https://wave-mesh-1.robin-lenz.de",
-		"https://a.example/":       "https://a.example",
-		"http://192.168.1.5:8080":  "http://192.168.1.5:8080",
-		"https://a.example:8443/":  "https://a.example:8443",
+		"https://a.example/":        "https://a.example",
+		"http://192.168.1.5:8080":   "http://192.168.1.5:8080",
+		"https://a.example:8443/":   "https://a.example:8443",
 	} {
 		got, ok := NormaliseControlURL(input)
 		if !ok || got != want {

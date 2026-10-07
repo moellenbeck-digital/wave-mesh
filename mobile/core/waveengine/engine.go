@@ -123,7 +123,7 @@ type wave struct {
 // The control URL, not the wave id from the netmap: it is the identity, it is
 // known before the first netmap arrives, and there is no second name to keep in
 // step with it.
-func (w *wave) key() string { return w.profile.ControlURL }
+func (w *wave) key() string { return w.profile.Key() }
 
 // Engine is the core.
 type Engine struct {
@@ -202,7 +202,7 @@ func (e *Engine) Start(link wavetun.Link, mtu int) error {
 	var forgotten []string
 	for _, profile := range e.state.Profiles {
 		if profile.NetmapPublicKey == "" {
-			forgotten = append(forgotten, profile.ControlURL)
+			forgotten = append(forgotten, profile.Key())
 			continue
 		}
 		kept = append(kept, profile)
@@ -247,8 +247,8 @@ func (e *Engine) Start(link wavetun.Link, mtu int) error {
 			continue
 		}
 		if err := e.bringUp(profile); err != nil {
-			e.log("[%s] did not come up: %v", WaveLabel(profile.ControlURL), err)
-			e.noteFailure(profile.ControlURL, err)
+			e.log("[%s] did not come up: %v", labelOf(profile), err)
+			e.noteFailure(profile.Key(), err)
 		}
 	}
 	return nil
@@ -273,6 +273,26 @@ func (e *Engine) ReplaceLink(link wavetun.Link) {
 // that moved is a new enrolment and the old one is left with Logout -- that
 // costs an approval, and it is the price of nothing ever guessing.
 func (e *Engine) Login(ctx context.Context, controlURL, authKey string) error {
+	// A wave's own key logs that very enrolment in again -- the way back for
+	// a further wave at a server after the server removed it. An address
+	// means the first enrolment there, or a new one.
+	e.mu.Lock()
+	var byKey *Profile
+	for _, profile := range e.state.Profiles {
+		if profile.ID != "" && profile.Key() == controlURL {
+			copied := profile
+			byKey = &copied
+		}
+	}
+	e.mu.Unlock()
+	if byKey != nil {
+		profile := *byKey
+		if err := e.enrol(ctx, &profile, authKey); err != nil {
+			return err
+		}
+		return e.bringUp(profile)
+	}
+
 	normalised, ok := NormaliseControlURL(controlURL)
 	if !ok {
 		return fmt.Errorf("%q is not a control server address", controlURL)
@@ -300,19 +320,74 @@ func (e *Engine) Login(ctx context.Context, controlURL, authKey string) error {
 		// One that was approved before keeps its keys: the next try can still
 		// succeed with them.
 		if profile.NetmapPublicKey == "" {
-			e.forget(normalised)
+			e.forget(profile.Key())
 		}
 		return err
 	}
 	return e.bringUp(profile)
 }
 
+// AddWave joins a further wave at a server this device is already enrolled
+// at -- another project's or customer's network on the same server. It is a
+// new enrolment with fresh keys: the server sees a new device, asks whoever
+// approves it which wave it goes to, and the two waves stay as separate as
+// two servers would be. With no enrolment there yet it is a plain Login.
+func (e *Engine) AddWave(ctx context.Context, controlURL, authKey string) error {
+	normalised, ok := NormaliseControlURL(controlURL)
+	if !ok {
+		return fmt.Errorf("%q is not a control server address", controlURL)
+	}
+	e.mu.Lock()
+	_, enrolled := e.state.Find(normalised)
+	e.mu.Unlock()
+	if !enrolled {
+		return e.Login(ctx, normalised, authKey)
+	}
+
+	profile, err := NewAdditionalProfile(normalised)
+	if err != nil {
+		return err
+	}
+	e.mu.Lock()
+	e.state.Profiles = append(e.state.Profiles, profile)
+	e.mu.Unlock()
+	e.saveState()
+
+	if err := e.enrol(ctx, &profile, authKey); err != nil {
+		e.forget(profile.Key())
+		return err
+	}
+	return e.bringUp(profile)
+}
+
+// resolve finds the enrolment a caller means: by its key, or -- what the
+// apps sent before there could be several per server -- by the server's
+// address, which then means the first enrolment there.
+func (e *Engine) resolve(input string) (string, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, profile := range e.state.Profiles {
+		if profile.Key() == input {
+			return input, true
+		}
+	}
+	if normalised, ok := NormaliseControlURL(input); ok {
+		if profile, found := e.state.Find(normalised); found {
+			return profile.Key(), true
+		}
+	}
+	if _, running := e.waves[input]; running {
+		return input, true
+	}
+	return input, false
+}
+
 // forget drops an enrolment from the state without telling any server.
-func (e *Engine) forget(controlURL string) {
+func (e *Engine) forget(key string) {
 	e.mu.Lock()
 	kept := e.state.Profiles[:0]
 	for _, profile := range e.state.Profiles {
-		if profile.ControlURL != controlURL {
+		if profile.Key() != key {
 			kept = append(kept, profile)
 		}
 	}
@@ -357,7 +432,7 @@ func (e *Engine) enrol(ctx context.Context, profile *Profile, authKey string) er
 	profile.Removed = ""
 	profile.AutoStart = true
 	for i, existing := range e.state.Profiles {
-		if existing.ControlURL == profile.ControlURL {
+		if existing.Key() == profile.Key() {
 			e.state.Profiles[i] = *profile
 		}
 	}
@@ -377,7 +452,7 @@ func (e *Engine) bringUp(profile Profile) error {
 	// not reentrant. Asking inside hung every approved wave in build 4.
 	hostname := e.hostname()
 	e.mu.Lock()
-	if _, running := e.waves[profile.ControlURL]; running {
+	if _, running := e.waves[profile.Key()]; running {
 		e.mu.Unlock()
 		return nil
 	}
@@ -387,7 +462,7 @@ func (e *Engine) bringUp(profile Profile) error {
 		client:       wavecontrol.NewClient(identity, e.http),
 		pendingHints: map[string][]waveproto.Candidate{},
 	}
-	e.waves[profile.ControlURL] = entry
+	e.waves[profile.Key()] = entry
 	e.mu.Unlock()
 
 	// One WireGuard device per wave, over a virtual TUN and a view of the one
@@ -398,7 +473,7 @@ func (e *Engine) bringUp(profile Profile) error {
 	bind := e.sock.BindFor(entry.key())
 	e.sock.SetDiscoIdentity(entry.key(), profile.DiscoKey.PublicKey, profile.DiscoKey.PrivateKey)
 
-	logger := device.NewLogger(device.LogLevelError, "["+WaveLabel(profile.ControlURL)+"] ")
+	logger := device.NewLogger(device.LogLevelError, "["+labelOf(profile)+"] ")
 	entry.device = device.NewDevice(virtual, bind, logger)
 
 	privateKey, err := wavecrypto.KeyToHex(profile.NodeKey.PrivateKey)
@@ -415,18 +490,18 @@ func (e *Engine) bringUp(profile Profile) error {
 	entry.socket = wavecontrol.NewSocket(wavecontrol.SocketOptions{
 		Identity:   identity,
 		HTTPClient: e.http,
-		Log:        func(line string) { e.log("[%s] %s", WaveLabel(profile.ControlURL), line) },
+		Log:        func(line string) { e.log("[%s] %s", labelOf(profile), line) },
 		OnNetmap: func(netmap waveproto.Netmap) {
 			if err := e.applyNetmap(entry, netmap); err != nil {
-				e.log("[%s] could not apply netmap v%d: %v", WaveLabel(profile.ControlURL), netmap.Version, err)
+				e.log("[%s] could not apply netmap v%d: %v", labelOf(profile), netmap.Version, err)
 			}
 		},
 		OnDiscoHint: func(nodeID string, candidates []waveproto.Candidate) {
 			e.punch(entry, nodeID, candidates)
 		},
 		OnLogout: func(reason string) {
-			e.log("[%s] the server ended this enrolment: %s", WaveLabel(profile.ControlURL), reason)
-			go e.endedByServer(profile.ControlURL, reason)
+			e.log("[%s] the server ended this enrolment: %s", labelOf(profile), reason)
+			go e.endedByServer(profile.Key(), reason)
 		},
 		OnRejectedNetmap: func(err error) {
 			e.mu.Lock()
@@ -442,15 +517,15 @@ func (e *Engine) bringUp(profile Profile) error {
 	if err == nil {
 		if netmap, err := signed.Verify(profile.NetmapPublicKey); err == nil {
 			if err := e.applyNetmap(entry, netmap); err != nil {
-				e.log("[%s] %v", WaveLabel(profile.ControlURL), err)
+				e.log("[%s] %v", labelOf(profile), err)
 			}
 		} else {
-			e.log("[%s] rejected netmap: %v", WaveLabel(profile.ControlURL), err)
+			e.log("[%s] rejected netmap: %v", labelOf(profile), err)
 		}
 	}
 
 	entry.socket.Connect()
-	e.clearFailure(profile.ControlURL)
+	e.clearFailure(profile.Key())
 	go func() {
 		if err := e.refreshCandidates(); err != nil {
 			e.log("could not publish candidates: %v", err)
@@ -484,12 +559,13 @@ func (e *Engine) refreshRegistration(entry *wave) {
 // removed in the web interface, or the server stopped knowing it. The
 // enrolment stays, marked, so the screen can say what happened instead of
 // "not connected" forever; only a new login brings the wave back.
-func (e *Engine) endedByServer(controlURL, reason string) {
+func (e *Engine) endedByServer(key, reason string) {
+	controlURL := key
 	e.mu.Lock()
-	entry := e.waves[controlURL]
-	delete(e.waves, controlURL)
+	entry := e.waves[key]
+	delete(e.waves, key)
 	for i := range e.state.Profiles {
-		if e.state.Profiles[i].ControlURL == controlURL {
+		if e.state.Profiles[i].Key() == key {
 			e.state.Profiles[i].Removed = reason
 			e.state.Profiles[i].AutoStart = false
 		}
@@ -533,10 +609,7 @@ func (e *Engine) clearFailure(controlURL string) {
 
 // Logout leaves one wave and takes everything of it off the device.
 func (e *Engine) Logout(ctx context.Context, controlURL string) error {
-	normalised, ok := NormaliseControlURL(controlURL)
-	if !ok {
-		normalised = controlURL
-	}
+	normalised, _ := e.resolve(controlURL)
 	hostname := e.hostname()
 
 	e.mu.Lock()
@@ -545,7 +618,7 @@ func (e *Engine) Logout(ctx context.Context, controlURL string) error {
 	kept := e.state.Profiles[:0]
 	var left *Profile
 	for _, profile := range e.state.Profiles {
-		if profile.ControlURL == normalised {
+		if profile.Key() == normalised {
 			copied := profile
 			left = &copied
 			continue
@@ -605,14 +678,11 @@ func (e *Engine) teardown(controlURL string, entry *wave) {
 // its keys stay, and switching it back on needs no approval. The choice is
 // kept across restarts, the same as the switch on each card of the tray.
 func (e *Engine) SetEnabled(controlURL string, enabled bool) error {
-	normalised, ok := NormaliseControlURL(controlURL)
-	if !ok {
-		normalised = controlURL
-	}
+	normalised, _ := e.resolve(controlURL)
 	e.mu.Lock()
 	index := -1
 	for i, profile := range e.state.Profiles {
-		if profile.ControlURL == normalised {
+		if profile.Key() == normalised {
 			index = i
 		}
 	}
@@ -699,7 +769,20 @@ func (e *Engine) applyNetmap(entry *wave, netmap waveproto.Netmap) error {
 	if parsed == nil {
 		entry.issued = issued
 	}
+	relabelled := false
+	if suffix := netmap.DNS.Suffix; suffix != "" {
+		for i := range e.state.Profiles {
+			if e.state.Profiles[i].Key() == entry.key() && e.state.Profiles[i].Label != suffix {
+				e.state.Profiles[i].Label = suffix
+				entry.profile.Label = suffix
+				relabelled = true
+			}
+		}
+	}
 	e.mu.Unlock()
+	if relabelled {
+		e.saveState()
+	}
 
 	e.syncRelay(entry, netmap)
 
@@ -859,8 +942,9 @@ func (e *Engine) reconcile() error {
 		entry.resolver = resolverAddress
 		e.mu.Unlock()
 		if resolverAddress == netmap.Self.IPv4 {
-			e.log("[%s] the resolver answers on %s, which this device also holds: "+
-				"lookups from the device itself will be refused locally. "+
+			e.log("[%s] the resolver answers on %s, which this device also holds, "+
+				"so it is not offered to the system: names in this wave resolve on the "+
+				"device only through another wave's reserved resolver. "+
 				"The wave needs a reserved resolver address from its control server.",
 				WaveLabel(entry.key()), resolverAddress)
 		}
@@ -924,9 +1008,9 @@ func (e *Engine) orderedWaves() []*wave {
 	ordered := make([]*wave, 0, len(e.waves))
 	seen := map[string]bool{}
 	for _, profile := range e.state.Profiles {
-		if entry, running := e.waves[profile.ControlURL]; running {
+		if entry, running := e.waves[profile.Key()]; running {
 			ordered = append(ordered, entry)
-			seen[profile.ControlURL] = true
+			seen[profile.Key()] = true
 		}
 	}
 	rest := []string{}

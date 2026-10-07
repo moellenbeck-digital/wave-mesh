@@ -210,6 +210,8 @@ describe("the loop", () => {
       discoKey: generateKeyPair("x25519"),
       nodeId: "n_1",
       netmapPublicKey: null,
+      id: null,
+      label: null,
       interfaceName: "wave0",
       listenPort: 41641,
       certs: [],

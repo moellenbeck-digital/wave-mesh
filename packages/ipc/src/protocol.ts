@@ -42,7 +42,17 @@ export const Request = z.discriminatedUnion("command", [
    * Enrols with a further server, alongside the ones already there. A pre-auth
    * key stands in for the browser, which a machine in a cluster does not have.
    */
-  z.object({ command: z.literal("login"), controlUrl: z.string(), authKey: z.string().optional() }),
+  z.object({
+    command: z.literal("login"),
+    controlUrl: z.string(),
+    authKey: z.string().optional(),
+    /**
+     * Join a further wave at a server this device is already in -- another
+     * project's network on the same server. A new enrolment with keys of its
+     * own; the server asks on approval which wave it goes to.
+     */
+    newWave: z.boolean().optional(),
+  }),
   /**
    * Gets a certificate for a name in one wave, and renews it from then on.
    * Without a name it is this device's own name in that wave -- the usual case,
@@ -85,6 +95,14 @@ export type TunnelState = z.infer<typeof TunnelState>;
  * Only ever a label -- the identity is the whole URL, and every command takes
  * that. The scheme is noise in a list.
  */
+/** What a wave is called on screen: its DNS suffix, or its server's host. */
+export const profileName = (profile: { label?: string; controlUrl: string }): string =>
+  profile.label || waveLabel(profile.controlUrl);
+
+/** What commands are given to mean exactly this wave. */
+export const profileKeyOf = (profile: { id?: string; controlUrl: string }): string =>
+  profile.id ?? profile.controlUrl;
+
 export function waveLabel(controlUrl: string): string {
   try {
     return new URL(controlUrl).host;
@@ -127,7 +145,17 @@ export const ServiceView = z.object({
 export type ServiceView = z.infer<typeof ServiceView>;
 
 export const ProfileStatus = z.object({
+  /**
+   * The enrolment's key, what commands take to mean exactly this wave: the
+   * server's address for the first enrolment there, an id of its own for every
+   * further one. Optional so a tray and a daemon of different builds still
+   * talk; absent, it is the address.
+   */
+  id: z.string().optional(),
+  /** The server this wave is on. Several waves can share one. */
   controlUrl: z.string(),
+  /** The wave's DNS suffix once known, so two waves at one server have names. */
+  label: z.string().optional(),
   state: TunnelState,
   /** Set while the daemon waits for someone to open the enrolment link. */
   authUrl: z.string().nullable().default(null),
@@ -316,6 +344,8 @@ export interface SnapshotLike {
 export function profileStatusFromSnapshot(
   snapshot: SnapshotLike | undefined,
   extra: {
+    id?: string;
+    label?: string;
     controlUrl: string;
     state: TunnelState;
     authUrl?: string | null;
@@ -324,6 +354,8 @@ export function profileStatusFromSnapshot(
   },
 ): ProfileStatus {
   const base = {
+    id: extra.id ?? extra.controlUrl,
+    label: extra.label,
     controlUrl: extra.controlUrl,
     state: extra.state,
     authUrl: extra.authUrl ?? null,

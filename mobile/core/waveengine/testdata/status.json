@@ -3,8 +3,9 @@
   "running": true,
   "waves": [
     {
+      "id": "https://a.example",
       "controlUrl": "https://a.example",
-      "label": "a.example",
+      "label": "a.wave.example.com",
       "waveId": "w1",
       "suffix": "a.wave.example.com",
       "hostname": "phone",
@@ -39,6 +40,26 @@
       ]
     },
     {
+      "id": "https://a.example#0f0f0f0f",
+      "controlUrl": "https://a.example",
+      "label": "customer.a.wave.example.com",
+      "waveId": "",
+      "suffix": "",
+      "hostname": "",
+      "dnsName": "",
+      "ipv4": "",
+      "ipv6": "",
+      "enabled": false,
+      "problem": "",
+      "detail": "",
+      "connected": false,
+      "relay": "",
+      "resolver": "",
+      "peers": [],
+      "services": []
+    },
+    {
+      "id": "https://b.example",
       "controlUrl": "https://b.example",
       "label": "b.example",
       "waveId": "",
@@ -57,6 +78,7 @@
       "services": []
     },
     {
+      "id": "https://c.example",
       "controlUrl": "https://c.example",
       "label": "c.example",
       "waveId": "",

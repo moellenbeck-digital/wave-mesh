@@ -57,7 +57,8 @@ struct WaveView: View {
                         live: model.tunnelUp,
                         onToggle: { model.setEnabled(wave, $0) },
                         onLeave: { leaving = wave },
-                        onLoginAgain: { model.loginAgain(wave) }
+                        onLoginAgain: { model.loginAgain(wave) },
+                        onAddWave: { model.addWave(at: wave) }
                     )
                 }
 
@@ -170,7 +171,7 @@ struct WaveView: View {
                 titleVisibility: .visible,
                 presenting: leaving
             ) { wave in
-                Button("Leave this wave", role: .destructive) { model.logout(controlURL: wave.controlUrl) }
+                Button("Leave this wave", role: .destructive) { model.logout(controlURL: wave.id) }
                     .accessibilityIdentifier("leave.confirm")
             } message: { _ in
                 Text("This device leaves the wave and forgets its keys. Joining again needs a new approval.")
@@ -195,7 +196,9 @@ struct WaveView: View {
                 .accessibilityIdentifier("login.connecting")
             }
         case .waitingForApproval(let address):
-            Section(address) {
+            // An address, or a wave's key ("https://…#a1b2") when one is
+            // logged in again: the host is what a person recognises.
+            Section(URL(string: address)?.host() ?? address) {
                 HStack(spacing: 12) {
                     ProgressView()
                     Text("Waiting for approval in the browser…")
@@ -225,11 +228,19 @@ private struct WaveSection: View {
     let onToggle: (Bool) -> Void
     let onLeave: () -> Void
     let onLoginAgain: () -> Void
+    let onAddWave: () -> Void
 
     var body: some View {
         Section {
             Toggle(isOn: Binding(get: { wave.enabled }, set: onToggle)) {
-                Text(verbatim: wave.label).font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: wave.label).font(.headline)
+                    // Several waves can share a server; the name above is the
+                    // wave's own, this says where it lives.
+                    if let host = URL(string: wave.controlUrl)?.host(), host != wave.label {
+                        Text(verbatim: host).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             // Petrol, not the system's green: there is no success green
             // (DESIGN.md), and "on" is the one signal.
@@ -273,6 +284,12 @@ private struct WaveSection: View {
                 }
                 .accessibilityIdentifier("wave.web.\(wave.label)")
             }
+
+            // Another project's network on the same server: a new enrolment,
+            // and the approval asks which wave.
+            Button("Add another wave at this server", systemImage: "plus.circle", action: onAddWave)
+                .disabled(!live)
+                .accessibilityIdentifier("wave.add.\(wave.label)")
 
             Button("Leave this wave", role: .destructive, action: onLeave)
                 .disabled(!live)

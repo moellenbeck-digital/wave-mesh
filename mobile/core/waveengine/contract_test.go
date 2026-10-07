@@ -35,6 +35,17 @@ func TestStatusJSONMatchesTheContractFile(t *testing.T) {
 	}
 	paused.NetmapPublicKey = "pinned"
 	paused.AutoStart = false
+	// A second wave at the same server as the first: its own key, its own
+	// name from its own netmap.
+	second, err := NewAdditionalProfile("https://a.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.ID = "https://a.example#0f0f0f0f"
+	second.NetmapPublicKey = "pinned"
+	second.Label = "customer.a.wave.example.com"
+	second.AutoStart = false
+
 	removed, err := NewProfile("https://c.example")
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +54,7 @@ func TestStatusJSONMatchesTheContractFile(t *testing.T) {
 	removed.Removed = "node-removed"
 	removed.AutoStart = false
 	engine.mu.Lock()
-	engine.state.Profiles = append(engine.state.Profiles, entry.profile, paused, removed)
+	engine.state.Profiles = append(engine.state.Profiles, entry.profile, second, paused, removed)
 	engine.mu.Unlock()
 
 	status := engine.Status()
