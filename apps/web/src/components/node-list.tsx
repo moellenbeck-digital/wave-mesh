@@ -88,7 +88,21 @@ function Chevron({ open }: { open: boolean }) {
  * The removal is a plain form post to the control server, like the ones in the
  * member list: same origin for the browser, session cookie along, no JavaScript.
  */
-function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove: boolean }) {
+function NodeRow({
+  node,
+  wave,
+  mayRemove,
+  meId,
+}: {
+  node: Node;
+  wave: Wave;
+  mayRemove: boolean;
+  meId: string;
+}) {
+  // Umbenennen darf, wer verwaltet, und wer das Gerät hinzugefügt hat: ein
+  // Telefon bekommt bei der Anmeldung nur „iPhone", und erst hier wird daraus
+  // ein Name, den man wiedererkennt.
+  const mayRename = mayRemove || node.userId === meId;
   // Die Dienste liegen eingeklappt unter ihrem Gerät. Der Zustand gehört der
   // Zeile, nicht der Liste: ein Push ersetzt die Geräte, und ein aufgeklapptes
   // bleibt über `key={node.id}` genau dort, wo es der Mensch gelassen hat.
@@ -148,7 +162,7 @@ function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove:
           Ein Client von vor den Updates sagt seine Version nie; dann steht
           dort, dass sie unbekannt ist, statt einer geratenen. */}
       <div className="text-caption text-slate">
-        <div>{osName(node.os, locale)}</div>
+        <div>{osName(node.os, locale, node.clientPlatform)}</div>
         <div
           className="font-mono"
           title={node.updateChannel ? t.updateChannel(node.updateChannel) : undefined}
@@ -188,11 +202,51 @@ function NodeRow({ node, wave, mayRemove }: { node: Node; wave: Wave; mayRemove:
       ) : null}
 
       {hasServices && open ? <ServiceList id={listId} services={node.services} /> : null}
+
+      {mayRename ? (
+        <details className="col-span-full">
+          <summary className="cursor-pointer text-caption text-slate">{t.renameDevice}</summary>
+          <form
+            method="post"
+            action={`/waves/${wave.id}/nodes/${node.id}/name`}
+            className="mt-3 flex flex-col gap-3 md:flex-row md:items-end"
+          >
+            <div className="flex-1">
+              <label className="wc-label" htmlFor={`rename-${node.id}`}>
+                {t.newDeviceName}
+              </label>
+              <input
+                className="wc-input"
+                id={`rename-${node.id}`}
+                name="name"
+                defaultValue={node.hostname}
+                autoComplete="off"
+                spellCheck={false}
+                required
+              />
+            </div>
+            <button type="submit" className="wc-btn wc-btn-secondary">
+              {t.apply}
+            </button>
+          </form>
+          <p className="mt-2 text-caption text-slate">{t.renameDeviceHint}</p>
+        </details>
+      ) : null}
     </li>
   );
 }
 
-export function NodeList({ nodes, wave, mayRemove }: { nodes: Node[]; wave: Wave; mayRemove: boolean }) {
+export function NodeList({
+  nodes,
+  wave,
+  mayRemove,
+  meId,
+}: {
+  nodes: Node[];
+  wave: Wave;
+  mayRemove: boolean;
+  meId: string;
+}) {
   const t = appMessages(useLocale());
   if (nodes.length === 0) {
     return (
@@ -212,7 +266,7 @@ export function NodeList({ nodes, wave, mayRemove }: { nodes: Node[]; wave: Wave
     <>
       <ul className="divide-y divide-line">
         {nodes.map((node) => (
-          <NodeRow key={node.id} node={node} wave={wave} mayRemove={mayRemove} />
+          <NodeRow key={node.id} node={node} wave={wave} mayRemove={mayRemove} meId={meId} />
         ))}
       </ul>
 

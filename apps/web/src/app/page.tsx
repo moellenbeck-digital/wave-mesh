@@ -73,6 +73,7 @@ export default async function DashboardPage({
                 wave={wave}
                 nodes={nodes}
                 membership={membership}
+                meId={me.user.id}
                 delay={index * 0.1}
                 locale={locale}
               />

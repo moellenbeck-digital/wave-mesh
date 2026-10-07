@@ -131,13 +131,15 @@ export function LiveNodeList({
   wave,
   initial,
   mayRemove,
+  meId,
 }: {
   wave: Wave;
   initial: Node[];
   mayRemove: boolean;
+  meId: string;
 }) {
   const nodes = useDevices(wave.id, initial);
-  return <NodeList nodes={nodes} wave={wave} mayRemove={mayRemove} />;
+  return <NodeList nodes={nodes} wave={wave} mayRemove={mayRemove} meId={meId} />;
 }
 
 /** "3 of 5 devices connected", the line in the card's header. */

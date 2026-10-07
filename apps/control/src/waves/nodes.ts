@@ -1,6 +1,7 @@
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { nodes, users, waves } from "../db/schema.ts";
+import { nodes, users, waveServices, waves } from "../db/schema.ts";
+import { uniqueHostname } from "../net/addressing.ts";
 
 /** A device as an operator on the shell wants to see it. */
 export interface DeviceRow {
@@ -116,4 +117,63 @@ export async function removeNode(db: Database, waveId: string, nodeId: string): 
     .set({ netmapVersion: sql`${waves.netmapVersion} + 1` })
     .where(eq(waves.id, waveId));
   return node;
+}
+
+/**
+ * Gives a device a new name in its wave, and with it a new DNS name.
+ *
+ * The name a device asked for at enrolment is often not one anybody chose: a
+ * phone is "iPhone", a laptop whatever the installer called it. The same rules
+ * as at enrolment apply -- lower case, letters, digits and hyphens, unique in
+ * the wave among devices *and* services, which share the zone -- so a taken
+ * name gets a suffix rather than a refusal. The netmap version moves so every
+ * device learns the new name with its next push.
+ */
+export async function renameNode(
+  db: Database,
+  waveId: string,
+  nodeId: string,
+  requested: string,
+): Promise<{ hostname: string; previous: string } | null> {
+  return db.transaction(async (tx) => {
+    await tx.select().from(waves).where(eq(waves.id, waveId)).limit(1).for("update");
+    const target = await tx
+      .select({ hostname: nodes.hostname })
+      .from(nodes)
+      .where(and(eq(nodes.waveId, waveId), eq(nodes.id, nodeId)))
+      .limit(1);
+    const current = target[0];
+    if (!current) return null;
+
+    const siblings = await tx
+      .select({ id: nodes.id, hostname: nodes.hostname })
+      .from(nodes)
+      .where(eq(nodes.waveId, waveId));
+    const services = await tx
+      .select({ name: waveServices.name })
+      .from(waveServices)
+      .where(eq(waveServices.waveId, waveId));
+    const hostname = uniqueHostname(requested, [
+      ...siblings.filter((sibling) => sibling.id !== nodeId).map((sibling) => sibling.hostname),
+      ...services.map((service) => service.name),
+    ]);
+    if (hostname !== current.hostname) {
+      await tx.update(nodes).set({ hostname }).where(eq(nodes.id, nodeId));
+      await tx
+        .update(waves)
+        .set({ netmapVersion: sql`${waves.netmapVersion} + 1` })
+        .where(eq(waves.id, waveId));
+    }
+    return { hostname, previous: current.hostname };
+  });
+}
+
+/** Who brought a device in, or null for a device not in this wave. */
+export async function ownerOfNode(db: Database, waveId: string, nodeId: string): Promise<string | null> {
+  const rows = await db
+    .select({ userId: nodes.userId })
+    .from(nodes)
+    .where(and(eq(nodes.waveId, waveId), eq(nodes.id, nodeId)))
+    .limit(1);
+  return rows[0]?.userId ?? null;
 }

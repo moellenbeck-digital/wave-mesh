@@ -26,6 +26,8 @@ export default async function DeviceExpiredPage() {
         >
           wave login &lt;control-server-url&gt;
         </pre>
+
+        <p className="mt-4 text-body-sm text-slate">{t.expiredRetryApp}</p>
       </section>
     </div>
   );

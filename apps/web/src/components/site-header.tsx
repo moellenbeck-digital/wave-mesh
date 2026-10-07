@@ -30,7 +30,10 @@ export function SiteHeader({ me, locale }: { me: Me | null; locale: Locale }) {
               {/* The address is the way to the account page: where the second
                   factor is set up, and whatever else belongs to a person
                   rather than a wave. */}
-              <a href="/account" className="hidden text-caption text-slate hover:text-navy sm:inline">
+              <a
+                href="/account"
+                className="max-w-[10rem] truncate text-caption text-slate hover:text-navy sm:max-w-none"
+              >
                 {me.user.email ?? me.user.name ?? me.user.id}
               </a>
               <form method="post" action="/auth/logout">

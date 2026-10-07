@@ -106,6 +106,10 @@ export interface Node {
   /** The client build it last reported, and its update channel (D13); null if it never said. */
   clientVersion: string | null;
   updateChannel: string | null;
+  /** What it said it is in its hello ("ios", "android"); phones register as "other". */
+  clientPlatform: string | null;
+  /** Who brought it in; they may rename it, besides whoever manages the wave. */
+  userId: string;
   /** What this node answers for besides itself -- a connector's services. */
   services: Service[];
 }
