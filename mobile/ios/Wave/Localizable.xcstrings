@@ -42,6 +42,26 @@
         }
       }
     },
+    "After a restart or a network change the tunnel comes back by itself. iOS runs one VPN at a time: switch this off if you also use another one and want to choose each time.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach einem Neustart oder Netzwechsel kommt der Tunnel von selbst wieder. iOS lässt nur ein VPN gleichzeitig zu: schalte das aus, wenn du auch ein anderes nutzt und jedes Mal selbst wählen willst."
+          }
+        }
+      }
+    },
+    "Another VPN is connected": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein anderes VPN ist verbunden"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "de": {
@@ -68,6 +88,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Verbinden"
+          }
+        }
+      }
+    },
+    "Connect automatically": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch verbinden"
+          }
+        }
+      }
+    },
+    "Connect wave-mesh": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "wave-mesh verbinden"
           }
         }
       }
@@ -172,12 +212,42 @@
         }
       }
     },
+    "iOS did not apply the tunnel settings in time": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS hat die Tunnel-Einstellungen nicht rechtzeitig übernommen"
+          }
+        }
+      }
+    },
+    "iOS runs one VPN at a time. Connecting wave-mesh disconnects the other one, for example Tailscale.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS lässt nur ein VPN gleichzeitig zu. Verbindest du wave-mesh, wird das andere getrennt, zum Beispiel Tailscale."
+          }
+        }
+      }
+    },
     "Join a wave": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Einem Wave beitreten"
+          }
+        }
+      }
+    },
+    "Last handshake %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzter Handshake %@"
           }
         }
       }
@@ -218,6 +288,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Anmelden"
+          }
+        }
+      }
+    },
+    "Log in again": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut anmelden"
           }
         }
       }
@@ -283,6 +363,16 @@
         }
       }
     },
+    "Open the web interface": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weboberfläche öffnen"
+          }
+        }
+      }
+    },
     "Paused. This device stays in the wave and can switch it back on without a new approval.": {
       "localizations": {
         "de": {
@@ -340,6 +430,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Die App sendet keine Daten an Moellenbeck Digital. Sie enthält keine Analyse und keine Werbung, und es werden keine Daten verkauft oder weitergegeben."
+          }
+        }
+      }
+    },
+    "The control server sent a network map that does not carry its signature. Nothing in it was used; the wave keeps the last good one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Control-Server hat eine Netzkarte geschickt, die seine Signatur nicht trägt. Nichts davon wurde übernommen; der Wave behält die letzte gültige."
           }
         }
       }
@@ -462,6 +562,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dieses Gerät verlässt den Wave und vergisst seine Schlüssel. Erneut beitreten braucht eine neue Bestätigung."
+          }
+        }
+      }
+    },
+    "This device was removed from the wave. Log in again to come back; it needs a new approval.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät wurde aus dem Wave entfernt. Melde dich erneut an, um zurückzukommen; das braucht eine neue Bestätigung."
+          }
+        }
+      }
+    },
+    "This wave did not come up: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Wave ist nicht hochgekommen: %@"
           }
         }
       }

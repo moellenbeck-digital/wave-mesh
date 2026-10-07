@@ -8,14 +8,20 @@ final class StatusTests: XCTestCase {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "status", withExtension: "json"))
         let status = try JSONDecoder().decode(Status.self, from: Data(contentsOf: url))
         XCTAssertTrue(status.running)
-        XCTAssertEqual(status.waves.map(\.label), ["a.example", "b.example"])
+        XCTAssertEqual(status.waves.map(\.label), ["a.example", "b.example", "c.example"])
         let live = status.waves[0]
         XCTAssertTrue(live.enabled)
         XCTAssertEqual(live.dnsName, "phone.a.wave.example.com")
         XCTAssertEqual(live.peers.map(\.dnsName), ["laptop.a.wave.example.com"])
+        XCTAssertEqual(live.services.map(\.url), ["https://grafana.a.wave.example.com"])
+        XCTAssertEqual(live.peers.first?.lastHandshakeSeconds, -1)
+        XCTAssertEqual(live.problem, "")
         // A paused wave is listed, switched off, with nothing else filled in.
         XCTAssertFalse(status.waves[1].enabled)
         XCTAssertTrue(status.waves[1].peers.isEmpty)
+        // One the server ended says so.
+        XCTAssertEqual(status.waves[2].problem, "removed")
+        XCTAssertFalse(status.waves[2].enabled)
     }
 
     func testRoundTripsForTheCache() throws {

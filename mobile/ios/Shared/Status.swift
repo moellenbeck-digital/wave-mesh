@@ -22,6 +22,11 @@ struct WaveStatus: Codable, Identifiable, Equatable {
     let ipv4: String
     /// Switched on. A paused wave stays enrolled and carries nothing else.
     let enabled: Bool
+    /// Why it is not working, when it is not: "removed", "netmap-rejected"
+    /// or "failed". Empty when fine.
+    let problem: String
+    /// The core's own words for it, for the log and the curious.
+    let detail: String
     let connected: Bool
     /// One per wave: the relay routes by disco key, and each enrolment has its
     /// own.
@@ -42,6 +47,8 @@ struct PeerStatus: Codable, Identifiable, Equatable {
     let online: Bool
     let via: String
     let rttMs: Int
+    /// Seconds since the last WireGuard handshake, -1 for none yet.
+    let lastHandshakeSeconds: Int
 }
 
 struct ServiceStatus: Codable, Identifiable, Equatable {
@@ -49,4 +56,6 @@ struct ServiceStatus: Codable, Identifiable, Equatable {
     let name: String
     let dnsName: String
     let ipv4: String
+    /// Where it opens, e.g. https://grafana.ops.example.
+    let url: String
 }

@@ -1736,7 +1736,15 @@ ein, damit der Tunnel nach Neustart und Netzwechsel von selbst wiederkommt;
 Trennen schaltet es aus, sonst holte iOS ihn sofort zurück. Ein Wave lässt sich
 pausieren, ohne ihn zu verlassen (`SetEnabled`, gespeichert als `autoStart`),
 und der Status listet Waves in der Reihenfolge, in der sie dazukamen — nicht in
-der zufälligen einer Go-Map. Beide Apps
+der zufälligen einer Go-Map. iOS hat nur einen VPN-Platz: die Konfiguration wird beim ersten Start
+*nicht* aktiviert (sonst nähme schon das Öffnen der App Tailscale den Platz),
+und bevor die App einen fremden VPN verdrängt, fragt sie — erkannt daran, dass
+iOS unsere Konfiguration deaktiviert hat, nachdem sie schon einmal lief. Die
+Proxy-Einstellungen taugen dafür nicht: das System hat auf jedem iPhone eigene
+`utun`-Schnittstellen. Die Freigabeseite öffnet sich in der Anmelde-Sitzung des
+Systems (`ASWebAuthenticationSession`), die Safaris Anmeldung teilt — wer im
+Control-Server angemeldet ist, muss nicht jedes Mal Passwort und zweiten Faktor
+eingeben. Beide Apps
 zeigen vor der ersten Verbindung einmal, was mit Daten geschieht (App-Review
 5.4, Play-Richtlinie zu `VpnService`); ändert sich die Aussage, bekommt der
 Schlüssel `disclosureAccepted.v1` eine neue Nummer.

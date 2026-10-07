@@ -125,6 +125,21 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.wavemesh.app.tunnel-tests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGNING_ALLOWED: NO
+  WaveUITests:
+    # What a person can do in the app, in the simulator, against FakeTunnel
+    # (debug builds only). The tunnel itself is tested on Linux.
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: WaveUITests
+    dependencies:
+      - target: Wave
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.wavemesh.app.ui-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Wave
+        CODE_SIGNING_ALLOWED: NO
 schemes:
   Wave:
     build:
@@ -132,6 +147,9 @@ schemes:
         Wave: all
     archive:
       config: Release
+    test:
+      targets:
+        - WaveUITests
   WaveTunnelTests:
     build:
       targets:

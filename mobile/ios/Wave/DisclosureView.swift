@@ -43,6 +43,7 @@ struct DisclosureView: View {
                 Button(action: onAccept) {
                     Text("Continue").frame(maxWidth: .infinity)
                 }
+                .accessibilityIdentifier("disclosure.continue")
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .padding()

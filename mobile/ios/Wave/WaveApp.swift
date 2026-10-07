@@ -4,9 +4,38 @@ import UIKit
 
 @main
 struct WaveApp: App {
+    init() {
+        #if DEBUG
+            // Before any view reads a stored value: @AppStorage would have
+            // read the disclosure flag by the time the tunnel is made.
+            if ProcessInfo.processInfo.arguments.contains("-UITestReset") {
+                // Key by key: removing the whole persistent domain left the
+                // values in place in the simulator.
+                let keys = ["disclosureAccepted.v1", "lastStatus", "deviceName", "autoConnect", "tunnelHasRun", PendingAuth.key]
+                for defaults in [UserDefaults.standard, UserDefaults(suiteName: WaveIdentifiers.appGroup)] {
+                    keys.forEach { defaults?.removeObject(forKey: $0) }
+                }
+                WaveLog.clear()
+            }
+        #endif
+    }
+
+    /// The system's VPN, or -- in a debug build started by the UI tests -- a
+    /// stand-in that behaves like the core, since the simulator has no packet
+    /// tunnel. Release builds contain only the real one.
+    @MainActor
+    private static func tunnel() -> TunnelControl {
+        #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-UITestFakeTunnel") {
+                return FakeTunnel(arguments: ProcessInfo.processInfo.arguments)
+            }
+        #endif
+        return SystemTunnel()
+    }
+
     var body: some Scene {
         WindowGroup {
-            WaveView(model: WaveModel())
+            WaveView(model: WaveModel(tunnel: Self.tunnel()))
         }
     }
 }
@@ -34,6 +63,23 @@ final class WaveModel: ObservableObject {
     @Published var deviceName: String {
         didSet { DeviceName.store(deviceName) }
     }
+    /// Bring the tunnel back by itself after a restart or a network change.
+    /// On by default; off for somebody who also uses another VPN and wants
+    /// to choose each time, since iOS runs one at a time.
+    @Published var autoConnect: Bool {
+        didSet {
+            UserDefaults(suiteName: WaveIdentifiers.appGroup)?.set(autoConnect, forKey: Self.autoConnectKey)
+            Task { await applyOnDemand() }
+        }
+    }
+    /// Set while the person is asked whether to take over from another VPN;
+    /// the action runs once they agree.
+    @Published var takeover: Takeover?
+
+    struct Takeover: Identifiable {
+        let id = UUID()
+        let proceed: () -> Void
+    }
 
     enum LoginPhase: Equatable {
         case idle
@@ -55,16 +101,19 @@ final class WaveModel: ObservableObject {
         var id: String { url.absoluteString }
     }
 
-    private var manager: NETunnelProviderManager?
+    private let tunnel: TunnelControl
     private var timer: Timer?
     /// Links already shown, so closing the page does not reopen it every second.
     private var presented: Set<URL> = []
     /// Set when the person gave up on a login, so its answer is not an error.
     private var cancelled: String?
     private static let lastStatusKey = "lastStatus"
+    private static let autoConnectKey = "autoConnect"
 
-    init() {
+    init(tunnel: TunnelControl) {
+        self.tunnel = tunnel
         deviceName = DeviceName.stored ?? UIDevice.current.name
+        autoConnect = UserDefaults(suiteName: WaveIdentifiers.appGroup)?.object(forKey: Self.autoConnectKey) as? Bool ?? true
         // The last thing the extension reported: a device whose tunnel is
         // down is still in its waves, and an empty list would say it is in
         // none.
@@ -77,23 +126,8 @@ final class WaveModel: ObservableObject {
 
     func load() async {
         do {
-            let managers = try await NETunnelProviderManager.loadAllFromPreferences()
-            let manager = managers.first ?? NETunnelProviderManager()
-            if managers.isEmpty {
-                let configuration = NETunnelProviderProtocol()
-                configuration.providerBundleIdentifier = WaveIdentifiers.tunnelBundleIdentifier
-                // A packet tunnel needs a server address even when there is no
-                // single server: a device can be in several waves at once, and
-                // each names its own. This is a label in the settings app.
-                configuration.serverAddress = "wave-mesh"
-                manager.protocolConfiguration = configuration
-                manager.localizedDescription = "wave-mesh"
-                manager.isEnabled = true
-                try await manager.saveToPreferences()
-                try await manager.loadFromPreferences()
-            }
-            self.manager = manager
-            tunnelUp = manager.connection.status == .connected
+            try await tunnel.load()
+            tunnelUp = tunnel.isConnected
             startPolling()
         } catch {
             report(error.localizedDescription)
@@ -101,26 +135,40 @@ final class WaveModel: ObservableObject {
     }
 
     func connect() {
-        Task {
-            do {
-                try await ensureRunning()
-            } catch {
-                report(error.localizedDescription)
+        askBeforeTakingOver {
+            Task {
+                do {
+                    try await self.ensureRunning()
+                } catch {
+                    self.report(error.localizedDescription)
+                }
             }
         }
+    }
+
+    /// Runs the action at once, or after the person agreed to disconnect the
+    /// other VPN that is up. Asked every time: which VPN runs is theirs to
+    /// decide, and iOS would switch without a word.
+    private func askBeforeTakingOver(_ action: @escaping () -> Void) {
+        Task {
+            if !tunnelUp, await tunnel.anotherVPNIsSelected() {
+                takeover = Takeover(proceed: action)
+            } else {
+                action()
+            }
+        }
+    }
+
+    /// Joins again a wave the server ended, with the same address.
+    func loginAgain(_ wave: WaveStatus) {
+        Task { _ = await join(controlURL: wave.controlUrl) }
     }
 
     /// Stops the tunnel and keeps it stopped: with on-demand still on, iOS
     /// would bring it straight back.
     func disconnect() {
         WaveLog.write("disconnect", from: .app)
-        Task {
-            if let manager, manager.isOnDemandEnabled {
-                manager.isOnDemandEnabled = false
-                try? await manager.saveToPreferences()
-            }
-            manager?.connection.stopVPNTunnel()
-        }
+        Task { await tunnel.stop() }
     }
 
     /// Joins a wave: tunnel up, register, wait for approval. Returns whether
@@ -128,6 +176,15 @@ final class WaveModel: ObservableObject {
     func join(controlURL: String) async -> Bool {
         let address = controlURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !address.isEmpty else { return false }
+        if !tunnelUp, await tunnel.anotherVPNIsSelected() {
+            // Asked first; the join goes ahead from the dialog.
+            takeover = Takeover { Task { _ = await self.joinNow(address) } }
+            return true
+        }
+        return await joinNow(address)
+    }
+
+    private func joinNow(_ address: String) async -> Bool {
         failure = nil
         cancelled = nil
         login = .connecting(address)
@@ -202,69 +259,21 @@ final class WaveModel: ObservableObject {
 
     /// Starts the tunnel unless it is running, and waits until it is -- the
     /// extension is the only one that can be asked anything. Turns on-demand
-    /// on as well, so the tunnel comes back after a restart or a network
-    /// change without anybody opening the app.
+    /// on as well when the switch says so, so the tunnel comes back after a
+    /// restart or a network change without anybody opening the app.
     private func ensureRunning() async throws {
-        guard let manager else { throw ModelError.notReady }
-        if manager.connection.status == .connected { return }
-        if !manager.isEnabled || !manager.isOnDemandEnabled {
-            // isEnabled: another VPN configuration may have taken over since
-            // this one was saved.
-            manager.isEnabled = true
-            let always = NEOnDemandRuleConnect()
-            always.interfaceTypeMatch = .any
-            manager.onDemandRules = [always]
-            manager.isOnDemandEnabled = true
-            try await manager.saveToPreferences()
-            try await manager.loadFromPreferences()
-        }
-        WaveLog.write("starting the tunnel", from: .app)
-        try manager.connection.startVPNTunnel()
-        try await waitUntilConnected(manager.connection)
+        if tunnel.isConnected { return }
+        try await tunnel.start(autoConnect: autoConnect)
+        tunnelUp = true
     }
 
-    /// Waits for the tunnel the system was just asked to start.
-    ///
-    /// Right after startVPNTunnel the status still reads "disconnected": the
-    /// system takes the request asynchronously. Treating that first reading as
-    /// a failure refused every start in build 4. So "disconnected" only counts
-    /// once the tunnel was seen starting, or after a grace period in which it
-    /// never did.
-    private func waitUntilConnected(_ connection: NEVPNConnection) async throws {
-        let started = Date()
-        var seenStarting = false
-        while Date().timeIntervalSince(started) < 30 {
-            switch connection.status {
-            case .connected:
-                tunnelUp = true
-                return
-            case .connecting, .reasserting:
-                seenStarting = true
-            case .disconnected, .invalid:
-                if seenStarting || Date().timeIntervalSince(started) > 5 {
-                    throw await startFailure(connection)
-                }
-            default:
-                break
-            }
-            try await Task.sleep(nanoseconds: 200_000_000)
-        }
-        throw await startFailure(connection)
-    }
-
-    /// Why the tunnel did not come up, as the system recorded it -- usually
-    /// the error the extension's startTunnel ended with.
-    private func startFailure(_ connection: NEVPNConnection) async -> Error {
-        // The async form throws the recorded error rather than returning it;
-        // returning normally means nothing was recorded.
-        var text: String?
+    /// Brings the configuration in line with the switch.
+    private func applyOnDemand() async {
         do {
-            try await connection.fetchLastDisconnectError()
+            try await tunnel.setOnDemand(autoConnect)
         } catch {
-            text = error.localizedDescription
+            report(error.localizedDescription)
         }
-        WaveLog.write("the tunnel did not start: \(text ?? "no reason recorded")", from: .app)
-        return ModelError.tunnelDidNotStart(text)
     }
 
     private func startPolling() {
@@ -286,7 +295,7 @@ final class WaveModel: ObservableObject {
                 approval = Approval(url: url)
             }
         }
-        let up = manager?.connection.status == .connected
+        let up = tunnel.isConnected
         if tunnelUp != up { tunnelUp = up }
         guard up else {
             if status.running { status = Status(port: status.port, running: false, waves: status.waves) }
@@ -303,20 +312,8 @@ final class WaveModel: ObservableObject {
         }
     }
 
-    /// One question to the extension; nil when it is not there to answer.
     private func ask(_ message: [String: Any]) async -> String? {
-        guard let session = manager?.connection as? NETunnelProviderSession,
-              let payload = try? JSONSerialization.data(withJSONObject: message)
-        else { return nil }
-        return await withCheckedContinuation { continuation in
-            do {
-                try session.sendProviderMessage(payload) { answer in
-                    continuation.resume(returning: answer.map { String(decoding: $0, as: UTF8.self) })
-                }
-            } catch {
-                continuation.resume(returning: nil)
-            }
-        }
+        await tunnel.send(message)
     }
 }
 

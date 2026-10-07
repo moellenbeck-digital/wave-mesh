@@ -12,9 +12,13 @@ enum WaveLog {
     private static let queue = DispatchQueue(label: "org.wavemesh.log")
 
     static var fileURL: URL? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: WaveIdentifiers.appGroup)?
-            .appendingPathComponent("wave.log")
+        // The shared container is what lets the app read what the extension
+        // wrote. A build without the app group entitlement (the simulator's
+        // unsigned test builds) has none; the app's own caches are better
+        // than writing nowhere.
+        let shared = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: WaveIdentifiers.appGroup)
+        let directory = shared ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        return directory?.appendingPathComponent("wave.log")
     }
 
     /// Who wrote a line: the extension runs the core, the app only asks it.

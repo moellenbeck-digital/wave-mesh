@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 /// One card per wave, each with its own switch -- the same shape as the tray on
@@ -5,7 +6,13 @@ import SwiftUI
 /// a single "connect" button would not say which one it meant.
 struct WaveView: View {
     @StateObject var model: WaveModel
+    @Environment(\.webAuthenticationSession) private var webAuthentication
+    /// The approval page currently open, cancelled once the login is over.
+    @State private var approvalTask: Task<Void, Never>?
     @State private var controlURL = ""
+    /// Released after "Log in", so the keyboard does not cover the progress
+    /// and the wave that follow.
+    @FocusState private var addressFocused: Bool
     /// The wave whose "leave" is being confirmed.
     @State private var leaving: WaveStatus?
     /// Versioned, so a changed disclosure is shown again rather than counted as
@@ -27,6 +34,7 @@ struct WaveView: View {
                     Section {
                         Label(failure, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
+                            .accessibilityIdentifier("failure")
                         Button("Dismiss") { model.failure = nil }
                     }
                 }
@@ -36,6 +44,7 @@ struct WaveView: View {
                         // The cards below are what the tunnel last reported;
                         // saying so keeps them from reading as live.
                         Label("The tunnel is off. Nothing in your waves is reachable from this device.", systemImage: "pause.circle")
+                            .accessibilityIdentifier("tunnelOff")
                         Button("Connect") { model.connect() }
                     }
                 }
@@ -47,12 +56,15 @@ struct WaveView: View {
                         wave: wave,
                         live: model.tunnelUp,
                         onToggle: { model.setEnabled(wave, $0) },
-                        onLeave: { leaving = wave }
+                        onLeave: { leaving = wave },
+                        onLoginAgain: { model.loginAgain(wave) }
                     )
                 }
 
                 Section {
                     TextField("Control server, e.g. wave.example.com", text: $controlURL)
+                        .focused($addressFocused)
+                        .accessibilityIdentifier("join.address")
                         .keyboardType(.URL)
                         .textContentType(.URL)
                         .textInputAutocapitalization(.never)
@@ -60,6 +72,7 @@ struct WaveView: View {
                         .submitLabel(.join)
                         .onSubmit(join)
                     Button("Log in", action: join)
+                        .accessibilityIdentifier("join.login")
                         .disabled(controlURL.trimmingCharacters(in: .whitespaces).isEmpty || model.login != .idle)
                 } header: {
                     Text(model.status.waves.isEmpty ? "Join a wave" : "Add another wave")
@@ -75,6 +88,7 @@ struct WaveView: View {
 
                 Section {
                     TextField("Device name", text: $model.deviceName)
+                        .accessibilityIdentifier("device.name")
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
                 } header: {
@@ -82,12 +96,26 @@ struct WaveView: View {
                 } footer: {
                     let label = DeviceName.label(model.deviceName)
                     Text("In the next wave you join, this device is called \(label.isEmpty ? "node" : label). A wave it is already in keeps the name it got there.")
+                        .accessibilityIdentifier("device.preview")
+                }
+
+                Section {
+                    Toggle("Connect automatically", isOn: $model.autoConnect)
+                        .accessibilityIdentifier("autoConnect")
+                        .tint(Color.accentColor)
+                } footer: {
+                    Text("After a restart or a network change the tunnel comes back by itself. iOS runs one VPN at a time: switch this off if you also use another one and want to choose each time.")
                 }
 
                 Section {
                     NavigationLink("Log") { LogView() }
+                        .accessibilityIdentifier("log")
                 }
             }
+            // The keyboard goes as soon as the list moves: left open after
+            // typing an address it covered the end of the list, and with it
+            // "Leave this wave" and the log.
+            .scrollDismissesKeyboard(.immediately)
             // The product name is a name, not a word: it stays as it is in
             // every language, so it does not go through the catalog.
             .navigationTitle(Text(verbatim: "wave-mesh"))
@@ -98,9 +126,43 @@ struct WaveView: View {
                 Button(model.tunnelUp ? LocalizedStringKey("Disconnect") : LocalizedStringKey("Connect")) {
                     model.tunnelUp ? model.disconnect() : model.connect()
                 }
+                .accessibilityIdentifier(model.tunnelUp ? "tunnel.disconnect" : "tunnel.connect")
             }
-            .sheet(item: $model.approval) { approval in
-                SafariView(url: approval.url).ignoresSafeArea()
+            .onChange(of: model.approval) { _, approval in
+                approvalTask?.cancel()
+                approvalTask = nil
+                guard let approval else { return }
+                #if DEBUG
+                    // The UI tests' stand-in link: the system sheet would
+                    // stop them, and there is nothing behind it to approve.
+                    if approval.url.host == "approval.invalid" { return }
+                #endif
+                // The system's sign-in sheet rather than a Safari view of our
+                // own: it shares Safari's cookies, so somebody signed in to
+                // the control server there is not asked again -- with a
+                // password and a second factor -- every time. Nothing calls
+                // back; the core notices the approval, and the sheet is
+                // cancelled when the login is over.
+                approvalTask = Task {
+                    _ = try? await webAuthentication.authenticate(
+                        using: approval.url,
+                        callbackURLScheme: "wavemesh-approval",
+                        preferredBrowserSession: .shared
+                    )
+                    if !Task.isCancelled { model.approval = nil }
+                }
+            }
+            .confirmationDialog(
+                "Another VPN is connected",
+                isPresented: Binding(get: { model.takeover != nil }, set: { if !$0 { model.takeover = nil } }),
+                titleVisibility: .visible,
+                presenting: model.takeover
+            ) { takeover in
+                Button("Connect wave-mesh") { takeover.proceed() }
+                    .accessibilityIdentifier("takeover.confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("iOS runs one VPN at a time. Connecting wave-mesh disconnects the other one, for example Tailscale.")
             }
             .confirmationDialog(
                 Text("Leave \(leaving?.label ?? "")?"),
@@ -109,6 +171,7 @@ struct WaveView: View {
                 presenting: leaving
             ) { wave in
                 Button("Leave this wave", role: .destructive) { model.logout(controlURL: wave.controlUrl) }
+                    .accessibilityIdentifier("leave.confirm")
             } message: { _ in
                 Text("This device leaves the wave and forgets its keys. Joining again needs a new approval.")
             }
@@ -129,6 +192,7 @@ struct WaveView: View {
                     ProgressView()
                     Text("Connecting to \(address)…")
                 }
+                .accessibilityIdentifier("login.connecting")
             }
         case .waitingForApproval(let address):
             Section(address) {
@@ -136,13 +200,16 @@ struct WaveView: View {
                     ProgressView()
                     Text("Waiting for approval in the browser…")
                 }
+                .accessibilityIdentifier("login.waiting")
                 Button("Open the approval page again") { model.reopenApproval() }
                 Button("Cancel", role: .destructive) { model.cancelLogin() }
+                    .accessibilityIdentifier("login.cancel")
             }
         }
     }
 
     private func join() {
+        addressFocused = false
         let address = controlURL
         Task {
             if await model.join(controlURL: address) { controlURL = "" }
@@ -157,6 +224,7 @@ private struct WaveSection: View {
     let live: Bool
     let onToggle: (Bool) -> Void
     let onLeave: () -> Void
+    let onLoginAgain: () -> Void
 
     var body: some View {
         Section {
@@ -166,11 +234,15 @@ private struct WaveSection: View {
             // Petrol, not the system's green: there is no success green
             // (DESIGN.md), and "on" is the one signal.
             .tint(Color.accentColor)
-            .disabled(!live)
+            .accessibilityIdentifier("wave.toggle.\(wave.label)")
+            .disabled(!live || wave.problem == "removed")
+
+            problem
 
             if wave.enabled && live {
                 if !wave.dnsName.isEmpty {
                     CopyableRow(title: wave.dnsName, detail: wave.ipv4)
+                        .accessibilityIdentifier("wave.self.\(wave.label)")
                 }
                 if !wave.connected {
                     // The tunnel keeps carrying traffic without the control
@@ -184,16 +256,79 @@ private struct WaveSection: View {
                     PeerRow(peer: peer)
                 }
                 ForEach(wave.services) { service in
-                    CopyableRow(title: service.dnsName.isEmpty ? service.name : service.dnsName, detail: service.ipv4)
+                    ServiceRow(service: service)
                 }
-            } else if !wave.enabled {
+            } else if !wave.enabled && wave.problem.isEmpty {
                 Text("Paused. This device stays in the wave and can switch it back on without a new approval.")
+                    .accessibilityIdentifier("wave.paused.\(wave.label)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
+            // The tray's "Open <host>": devices, people, access rules and
+            // renaming this device all live in the web interface.
+            if let url = URL(string: wave.controlUrl) {
+                Link(destination: url) {
+                    Label("Open the web interface", systemImage: "safari")
+                }
+                .accessibilityIdentifier("wave.web.\(wave.label)")
+            }
+
             Button("Leave this wave", role: .destructive, action: onLeave)
                 .disabled(!live)
+                .accessibilityIdentifier("wave.leave.\(wave.label)")
+        }
+    }
+
+    /// What is wrong with this wave, said where the wave is.
+    @ViewBuilder
+    private var problem: some View {
+        switch wave.problem {
+        case "removed":
+            Label("This device was removed from the wave. Log in again to come back; it needs a new approval.", systemImage: "person.crop.circle.badge.xmark")
+                .foregroundStyle(.red)
+                .accessibilityIdentifier("wave.removed.\(wave.label)")
+            Button("Log in again", action: onLoginAgain)
+                .accessibilityIdentifier("wave.loginAgain.\(wave.label)")
+        case "netmap-rejected":
+            Label("The control server sent a network map that does not carry its signature. Nothing in it was used; the wave keeps the last good one.", systemImage: "exclamationmark.shield")
+                .foregroundStyle(.red)
+        case "failed":
+            Label("This wave did not come up: \(wave.detail)", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+        default:
+            EmptyView()
+        }
+    }
+}
+
+/// A service: tapped, it opens -- in the browser, like the tray and the web
+/// do; held, its name and address can be copied.
+private struct ServiceRow: View {
+    let service: ServiceStatus
+
+    var body: some View {
+        let title = service.dnsName.isEmpty ? service.name : service.dnsName
+        Group {
+            if let url = URL(string: service.url), !service.url.isEmpty {
+                Link(destination: url) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: title)
+                                .accessibilityIdentifier("service.\(service.name)")
+                            Text(verbatim: service.ipv4).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.forward.square").foregroundStyle(.tint)
+                    }
+                }
+            } else {
+                CopyableRow(title: title, detail: service.ipv4)
+            }
+        }
+        .contextMenu {
+            Button("Copy name", systemImage: "doc.on.doc") { UIPasteboard.general.string = title }
+            Button("Copy address", systemImage: "number") { UIPasteboard.general.string = service.ipv4 }
         }
     }
 }
@@ -222,26 +357,43 @@ private struct PeerRow: View {
     let peer: PeerStatus
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             // State never by colour alone: the dot is decoration, the word
-            // beside the path says it.
+            // beside it says it.
             Circle()
                 .fill(peer.online ? Color.accentColor : Color.secondary.opacity(0.5))
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
+                // One line, shortened in the middle: the end of a name is the
+                // wave's domain, the start is what tells two devices apart.
                 Text(verbatim: peer.dnsName.isEmpty ? peer.hostname : peer.dnsName)
-                Text(verbatim: peer.ipv4).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                // Address and path below the name rather than beside it:
+                // side by side they squeezed the name into broken lines.
+                Text(verbatim: "\(peer.ipv4) · \(peer.online ? path : String(localized: "offline"))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if peer.lastHandshakeSeconds >= 0 {
+                    // Our own view, beside the server's online state: when the
+                    // two last talked through the tunnel.
+                    Text("Last handshake \(Self.ago(peer.lastHandshakeSeconds))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
-            Spacer()
-            Text(peer.online ? path : String(localized: "offline"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .contextMenu {
             Button("Copy name", systemImage: "doc.on.doc") { UIPasteboard.general.string = peer.dnsName }
             Button("Copy address", systemImage: "number") { UIPasteboard.general.string = peer.ipv4 }
         }
+    }
+
+    private static func ago(_ seconds: Int) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(fromTimeInterval: -TimeInterval(seconds))
     }
 
     /// No confirmed path is not the same as a tunnel that is down: without one
