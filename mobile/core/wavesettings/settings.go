@@ -107,6 +107,10 @@ func Union(waves []Wave) Settings {
 	// only thing that tells the kernel which of our addresses to send from.
 	// See prefix.go -- it cost a silent one-way tunnel to find.
 	widened := widenAddresses(waves)
+	var held []string
+	for _, wave := range waves {
+		held = append(held, wave.Addresses...)
+	}
 
 	for index, wave := range waves {
 		addresses.add(widened[index]...)
@@ -131,11 +135,17 @@ func Union(waves []Wave) Settings {
 		// only the waves'. Without a suffix or zones the wave gets no DNS.
 		hasNames := wave.Suffix != "" || len(wave.ReverseZones) > 0 || len(wave.DelegatedSuffixes) > 0
 		if wave.ResolverAddress != "" && hasNames {
-			servers.add(wave.ResolverAddress)
-			// Routed rather than assigned, unless the wave is using one of its
-			// own addresses -- which works where the resolver has a socket, and
-			// not here. See the field's comment.
-			if resolver, ok := hostOf(wave.ResolverAddress); ok && !holds(wave.Addresses, resolver) {
+			// Only a resolver the interface does not hold is offered to the
+			// system. A wave whose server reserved none falls back to one of our
+			// own addresses, and a query to that is delivered locally, where
+			// nothing listens: offered alongside a reserved one, it is the
+			// server the system may ask first, and every name behind it times
+			// out -- the second wave on a phone, while the first resolves. One
+			// resolver answers every wave's zone, whichever address the query
+			// was sent to, so a single reserved address carries them all.
+			if resolver, ok := hostOf(wave.ResolverAddress); ok && !holds(held, resolver) {
+				servers.add(wave.ResolverAddress)
+				// Routed rather than assigned. See the field's comment.
 				cidr := netip.PrefixFrom(resolver, resolver.BitLen()).String()
 				source := sourceV4
 				if !resolver.Is4() {

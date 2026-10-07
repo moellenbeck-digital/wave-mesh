@@ -13,9 +13,10 @@ final class TunnelSettingsTests: XCTestCase {
 
     func testDecodesTheCoreContract() throws {
         let settings = try contract()
-        XCTAssertEqual(settings.routes.map(\.cidr), ["10.77.0.0/16", "10.96.0.0/16"])
+        XCTAssertEqual(settings.routes.map(\.cidr), ["10.77.0.0/16", "10.77.0.53/32", "10.96.0.0/16", "10.96.0.53/32"])
         XCTAssertEqual(settings.mtu, 1200)
-        XCTAssertEqual(settings.dnsServers, ["10.77.0.2", "10.96.0.5"])
+        // The reserved resolvers, never an address the phone holds itself.
+        XCTAssertEqual(settings.dnsServers, ["10.77.0.53", "10.96.0.53"])
         XCTAssertTrue(settings.matchDomains.contains("rl.wave.example.com"))
     }
 
@@ -24,7 +25,7 @@ final class TunnelSettingsTests: XCTestCase {
         let ipv4 = try XCTUnwrap(network.ipv4Settings)
         XCTAssertEqual(ipv4.addresses, ["10.77.0.2", "10.96.0.5"])
         XCTAssertEqual(ipv4.subnetMasks, ["255.255.0.0", "255.255.0.0"])
-        XCTAssertEqual(ipv4.includedRoutes?.map(\.destinationAddress), ["10.77.0.0", "10.96.0.0"])
+        XCTAssertEqual(ipv4.includedRoutes?.map(\.destinationAddress), ["10.77.0.0", "10.77.0.53", "10.96.0.0", "10.96.0.53"])
         XCTAssertEqual(network.ipv6Settings?.addresses, ["fd7a:1::2"])
         // Only the waves' own names go to our resolver; everything else on the
         // phone resolves as before.
