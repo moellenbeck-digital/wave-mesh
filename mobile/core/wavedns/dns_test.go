@@ -231,3 +231,31 @@ func TestDecodeQueryRefusesAResponse(t *testing.T) {
 		t.Fatal("a response must not parse as a query")
 	}
 }
+
+// One wave's zone inside another's, in either order: the closer zone answers.
+// The first match used to, and the outer wave said "no such name" for every
+// device of the inner one.
+func TestTheClosestZoneAnswers(t *testing.T) {
+	outer := wavedns.Zone{
+		ControlURL: "https://a.example",
+		Suffix:     "ops.example.com",
+		Records:    []wavedns.Record{{Name: "argocd.ops.example.com", IPv4: "10.64.0.9"}},
+	}
+	inner := wavedns.Zone{
+		ControlURL: "https://b.example",
+		Suffix:     "team.ops.example.com",
+		Records:    []wavedns.Record{{Name: "nas.team.ops.example.com", IPv4: "10.96.0.4"}},
+	}
+	for _, zones := range [][]wavedns.Zone{{outer, inner}, {inner, outer}} {
+		config := wavedns.Config{Zones: zones}
+		for name, want := range map[string]string{
+			"nas.team.ops.example.com": "10.96.0.4",
+			"argocd.ops.example.com":   "10.64.0.9",
+		} {
+			resolution := wavedns.Resolve(queryFor(name, wavedns.TypeA), config)
+			if resolution.Packet == nil || !bytes.Contains(resolution.Packet, mustIPv4(t, want)) {
+				t.Fatalf("%s did not answer %s with zones %s, %s", name, want, zones[0].Suffix, zones[1].Suffix)
+			}
+		}
+	}
+}

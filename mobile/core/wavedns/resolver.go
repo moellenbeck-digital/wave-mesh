@@ -89,10 +89,21 @@ func Resolve(packet []byte, config Config) Resolution {
 		}
 	}
 
-	for _, zone := range config.Zones {
+	// The closest zone answers, not the first: with one wave's zone inside
+	// another's (ops.example.com and team.ops.example.com), the outer one
+	// would otherwise say "no such name" for every device of the inner.
+	var best *Zone
+	for index := range config.Zones {
+		zone := &config.Zones[index]
 		if zone.Suffix == "" || !IsWithinZone(name, zone.Suffix) {
 			continue
 		}
+		if best == nil || len(NormalizeName(zone.Suffix)) > len(NormalizeName(best.Suffix)) {
+			best = zone
+		}
+	}
+	if best != nil {
+		zone := best
 		record, found := findRecord(zone.Records, name)
 		if !found {
 			return Resolution{Packet: EncodeResponse(query, nil, CodeNameError)}
