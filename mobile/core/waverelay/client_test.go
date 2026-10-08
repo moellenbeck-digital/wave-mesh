@@ -72,7 +72,12 @@ func (l *lines) contain(part string) bool {
 	return false
 }
 
-func startClient(t *testing.T, url string, packets *atomic.Int32, log *lines) {
+func startClient(t *testing.T, url string, packets *atomic.Int32, log *lines) *waverelay.Client {
+	t.Helper()
+	return startClientBeating(t, url, packets, log, 50*time.Millisecond)
+}
+
+func startClientBeating(t *testing.T, url string, packets *atomic.Int32, log *lines, heartbeat time.Duration) *waverelay.Client {
 	t.Helper()
 	keys, err := wavecrypto.GenerateX25519()
 	if err != nil {
@@ -85,10 +90,11 @@ func startClient(t *testing.T, url string, packets *atomic.Int32, log *lines) {
 		OnPacket:        func(string, []byte) { packets.Add(1) },
 		Log:             log.add,
 		MinBackoff:      20 * time.Millisecond,
-		Heartbeat:       50 * time.Millisecond,
+		Heartbeat:       heartbeat,
 	})
 	client.Start()
 	t.Cleanup(client.Close)
+	return client
 }
 
 func eventually(t *testing.T, what string, condition func() bool) {
@@ -129,5 +135,34 @@ func TestAClientStaysWhileTheRelayEchoes(t *testing.T) {
 	// ourselves.
 	if packets.Load() != 0 {
 		t.Fatalf("%d echo(es) reached OnPacket", packets.Load())
+	}
+}
+
+// After a wake-up the relay is asked, not replaced: one that echoes keeps its
+// session. The heartbeat is an hour here, so only Check can decide.
+func TestCheckKeepsARelayThatEchoes(t *testing.T) {
+	url, sessions := fakeRelay(t, true)
+	var packets atomic.Int32
+	var log lines
+	client := startClientBeating(t, url, &packets, &log, time.Hour)
+	eventually(t, "the client to be ready", client.Connected)
+	client.Check(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
+	if sessions.Load() != 1 || log.contain("did not answer") {
+		t.Fatalf("a relay that answers was given up on: %d session(s), log %v", sessions.Load(), log.all)
+	}
+}
+
+// One that stays silent is replaced at once instead of a heartbeat later.
+func TestCheckReplacesARelayThatDoesNotAnswer(t *testing.T) {
+	url, sessions := fakeRelay(t, false)
+	var packets atomic.Int32
+	var log lines
+	client := startClientBeating(t, url, &packets, &log, time.Hour)
+	eventually(t, "the client to be ready", client.Connected)
+	client.Check(100 * time.Millisecond)
+	eventually(t, "a second session", func() bool { return sessions.Load() >= 2 })
+	if !log.contain("did not answer after waking") {
+		t.Fatalf("log %v", log.all)
 	}
 }

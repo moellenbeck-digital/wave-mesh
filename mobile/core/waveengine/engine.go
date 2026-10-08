@@ -26,8 +26,19 @@ import (
 	"github.com/moellenbeck-digital/wave-mesh/mobile/core/wavetun"
 )
 
-// keepaliveSeconds keeps NAT state alive on paths that would otherwise time out.
-const keepaliveSeconds = 25
+// keepaliveSeconds is zero on purpose: a phone sends nothing to a peer it has
+// nothing to say to.
+//
+// It was 25, for every peer in every wave, for as long as the tunnel ran -- a
+// packet somewhere every few seconds on a device with a dozen peers, and on
+// cellular every packet keeps the radio in its high-power state for seconds
+// after it. That is a battery spent on idle peers. The NAT state it guarded is
+// not needed while nothing flows: the first packet to a peer starts a fast
+// probe phase again (see wavemagic's activeTimeout), and a peer that wants to
+// reach us has the relay and its own probes, which we answer. Written out as
+// zero rather than left away, because a set only changes what it names and a
+// running device would otherwise keep the old interval.
+const keepaliveSeconds = 0
 
 // candidateRefresh is how often we ask again where we are. A phone moves, so
 // this matters more here than on a desk.
@@ -1329,6 +1340,44 @@ func (e *Engine) NetworkChanged() {
 		}
 	}
 }
+
+// Woke is the phone coming out of sleep, which is not a network change.
+//
+// It used to be treated as one: a rebind to a fresh port, a reconnect of every
+// control and relay connection, and -- because the port was new -- a publish
+// that made the server push a netmap to the whole wave and every peer punch
+// back. iOS wakes a packet tunnel far more often than anybody changes network,
+// so that was a large part of what the tunnel cost a battery. A real change of
+// network is reported on its own, by the path monitor.
+//
+// What a sleep can do is let NAT mappings and idle connections expire. So:
+// ask STUN where we are, and publish only if that moved; and ask each
+// connection for an answer, reconnecting only the ones that give none.
+func (e *Engine) Woke() {
+	e.mu.Lock()
+	live := e.live && !e.stopping
+	entries := e.orderedWaves()
+	e.mu.Unlock()
+	if !live {
+		return
+	}
+	for _, entry := range entries {
+		if entry.socket != nil {
+			entry.socket.Check(wakeCheck)
+		}
+		if entry.relay != nil {
+			entry.relay.Check(wakeCheck)
+		}
+	}
+	if err := e.refreshCandidates(); err != nil {
+		e.log("could not publish candidates: %v", err)
+	}
+}
+
+// wakeCheck is how long a connection has to answer after a wake-up before it
+// counts as dead. A round trip on a radio that is just waking up can take a
+// second or two; more than this and the heartbeat would have been as quick.
+const wakeCheck = 5 * time.Second
 
 func (e *Engine) candidateLoop() {
 	defer e.done.Done()

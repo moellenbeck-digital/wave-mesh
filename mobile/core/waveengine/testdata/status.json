@@ -26,7 +26,7 @@
           "ipv4": "10.77.0.2",
           "ipv6": "fd7a:1::2",
           "online": true,
-          "via": "",
+          "via": "idle",
           "rttMs": 0,
           "lastHandshakeSeconds": -1
         }

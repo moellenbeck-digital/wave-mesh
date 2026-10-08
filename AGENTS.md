@@ -1619,6 +1619,32 @@ Was daran festliegt:
   Auf dem Desktop greift der Rebind-Timer erst, wenn Peers unerreichbar sind;
   hier wäre das der Unterschied zwischen einer Pause, die niemand bemerkt, und
   zehn Sekunden ohne alles.
+- **Aufwachen ist kein Netzwechsel.** iOS ruft `wake()` weit öfter als jemand
+  das Netz wechselt, und solange es `NetworkChanged` hieß, kostete jedes
+  Aufwachen einen neuen Port, je Wave einen TLS-Aufbau für Control und Relay
+  und — weil der Port neu war — eine Netzkarte an den ganzen Wave, auf die alle
+  zurückpunchten. `Core.Woke()` fragt stattdessen STUN (veröffentlicht nur bei
+  Änderung) und klopft bei jeder Verbindung an (`Check()`: ein Ping bzw. ein
+  Echo, neu verbunden wird nur, was in fünf Sekunden nichts sagt). Einen
+  echten Wechsel meldet der Pfad-Monitor ohnehin selbst.
+- **Gesendet wird nur, wenn jemand etwas zu sagen hat — der Akku.** Auf
+  Mobilfunk hält jedes Paket das Funkmodul noch Sekunden danach im
+  Hochleistungszustand; wer alle drei Sekunden sendet, lässt es nie schlafen.
+  Genau das tat der Kern: jeder Pfad jedes Peers alle 3 s geprobt, ob Verkehr
+  floss oder nicht, dazu WireGuard-Keepalive alle 25 s je Peer. Deshalb zwei
+  Regeln, beide nur im Go-Kern, der Desktop bleibt, wie er ist:
+  - **Geprobt wird nur ein aktiver Peer** — einer, dem WireGuard in den letzten
+    45 s etwas geschickt hat (`activeTimeout` in `wavemagic`). Das erste Paket
+    nach einer Pause startet die Schnellphase wie bei einem neuen Peer, bis
+    dahin geht es an den zuletzt bekannten Pfad oder wird gesprüht. Gezählt
+    wird nur, was *wir* senden: die Keepalives eines Desktops hielten das
+    Telefon sonst für immer wach. Der Status sagt dafür `via: "idle"`, und
+    die Apps zeigen „ruht" statt eines alten Pfads mit alter RTT.
+  - **`persistent_keepalive_interval=0`**, ausdrücklich geschrieben — ein Set
+    ändert nur, was es nennt, ein laufendes Device behielte sonst die 25.
+  Was das Telefon nicht steuern kann, sind die Pakete, die *andere* ihm
+  schicken: ein Desktop probt es weiter alle 3 s und hält Keepalive, und auch
+  ein eingehendes Paket weckt das Funkmodul. Das ist die bekannte Lücke.
 - **Android tauscht bei jedem `establish()` den Deskriptor**, iOS behält seinen
   Packet Flow. `VpnService.Builder` gibt einen neuen zurück und schließt den
   alten — ein Kern, der noch den ersten liest, sieht einen Tunnel, der einfach

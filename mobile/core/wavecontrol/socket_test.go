@@ -26,6 +26,8 @@ type socketServer struct {
 	connections []time.Time
 	first       []waveproto.ClientMessage
 	dropAfter   bool
+	// Answers every ping with a pong, as the real server does.
+	pong bool
 }
 
 func newSocketServer(t *testing.T, dropAfterFirst bool) *socketServer {
@@ -53,13 +55,24 @@ func newSocketServer(t *testing.T, dropAfterFirst bool) *socketServer {
 			return
 		}
 		for {
-			if _, _, err := connection.Read(r.Context()); err != nil {
+			_, data, err := connection.Read(r.Context())
+			if err != nil {
 				return
+			}
+			var message waveproto.ClientMessage
+			if json.Unmarshal(data, &message) == nil && message.Type == "ping" && server.pongs() {
+				_ = connection.Write(r.Context(), websocket.MessageText, []byte(`{"type":"pong"}`))
 			}
 		}
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+func (s *socketServer) pongs() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pong
 }
 
 func (s *socketServer) count() int {
@@ -146,4 +159,28 @@ func TestNoCandidatesIsAnEmptyListNotAMissingOne(t *testing.T) {
 	if string(encoded) != `{"type":"endpoints","candidates":[]}` {
 		t.Fatalf("got %s", encoded)
 	}
+}
+
+// A wake-up asks rather than reconnects: a connection that answers stays, and
+// a TLS handshake per wave per wake-up is what that saves.
+func TestCheckKeepsAConnectionThatAnswers(t *testing.T) {
+	server := newSocketServer(t, false)
+	server.pong = true
+	socket := socketFor(t, server)
+	waitFor(t, "the socket to be up", 5*time.Second, socket.Connected)
+	socket.Check(300 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
+	if server.count() != 1 {
+		t.Fatalf("%d connections: one that answered was replaced", server.count())
+	}
+}
+
+// And one that stays silent -- what a phone finds after sleeping through the
+// server's idle timeout -- is replaced without waiting for the heartbeat.
+func TestCheckReplacesAConnectionThatDoesNotAnswer(t *testing.T) {
+	server := newSocketServer(t, false)
+	socket := socketFor(t, server)
+	waitFor(t, "the socket to be up", 5*time.Second, socket.Connected)
+	socket.Check(200 * time.Millisecond)
+	waitFor(t, "a second connection", 2*time.Second, func() bool { return server.count() == 2 })
 }

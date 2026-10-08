@@ -274,13 +274,16 @@ private fun WaveCard(wave: JSONObject, onLogout: (String) -> Unit) {
 /// wasteful and unmeasured. Saying "connecting" here would claim the tunnel is
 /// down while a ping over it answers in 16 ms.
 ///
-/// Composable only for `stringResource`: the core reports "relay" or the
-/// address of the direct path, and only the word is translated -- an address is
-/// the same in every language.
+/// Composable only for `stringResource`: the core reports "relay", "idle" or
+/// the address of the direct path, and only the words are translated -- an
+/// address is the same in every language.
 @Composable
 private fun pathOf(peer: JSONObject): String {
     val raw = peer.optString("via")
     if (raw.isEmpty()) return stringResource(R.string.path_none)
+    // Nothing sent to it lately, so nothing is measured; the core probes a
+    // peer only while something talks to it.
+    if (raw == "idle") return stringResource(R.string.path_idle)
     val via = if (raw == "relay") stringResource(R.string.path_relay) else raw
     val rtt = peer.optInt("rttMs", 0)
     return if (rtt > 0) stringResource(R.string.path_with_rtt, via, rtt) else via

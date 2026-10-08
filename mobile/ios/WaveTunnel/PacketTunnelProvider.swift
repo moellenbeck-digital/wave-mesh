@@ -163,11 +163,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler()
     }
 
-    /// After sleep the paths the core knew may be gone -- NAT mappings time
-    /// out while the phone is dark -- so waking counts as a network change.
+    /// After sleep NAT mappings and idle connections may have expired, so the
+    /// core asks STUN and each connection whether they still hold. Waking is
+    /// not a network change: treated as one, every wake-up rebound the socket,
+    /// reconnected every wave and made the whole wave re-punch -- and iOS
+    /// wakes a tunnel far more often than anybody changes network. A real
+    /// change arrives through the path monitor above.
     override func wake() {
         host?.log("woke up")
-        core?.networkChanged()
+        core?.woke()
     }
 
     /// Messages from the app: the extension owns the core, so the app asks it.

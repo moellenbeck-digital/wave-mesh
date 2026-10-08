@@ -18,7 +18,8 @@ type PeerView struct {
 	IPv4     string `json:"ipv4"`
 	IPv6     string `json:"ipv6"`
 	Online   bool   `json:"online"`
-	// "relay", an address, or empty while no path is confirmed.
+	// "relay", an address, "idle" while nothing has been sent to the peer for a
+	// while (and so nothing is measured), or empty while no path is confirmed.
 	//
 	// Empty is not the same as down: without a confirmed path every packet is
 	// sprayed at all known candidates, which carries -- it is only wasteful and
@@ -211,12 +212,18 @@ func (e *Engine) Status() Status {
 				}
 				if path, known := paths[entry.key()+"|"+peer.NodeKey]; known {
 					switch {
+					case path.Idle:
+						// Not probed while nothing is sent to it, so what it
+						// had is a memory, not a measurement.
+						peerView.Via = "idle"
 					case path.ViaRelay:
 						peerView.Via = "relay"
 					case path.HasBest:
 						peerView.Via = path.Best.String()
 					}
-					peerView.RTTMs = int(path.RTT / time.Millisecond)
+					if !path.Idle {
+						peerView.RTTMs = int(path.RTT / time.Millisecond)
+					}
 				}
 				view.Peers = append(view.Peers, peerView)
 			}

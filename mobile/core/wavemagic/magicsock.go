@@ -40,6 +40,9 @@ type PeerStatus struct {
 	ViaRelay bool
 	RTT      time.Duration
 	Paths    []Path
+	// Nothing sent to this peer for activeTimeout, so it is not probed and
+	// whatever path it had is the last one known, not a measured one.
+	Idle bool
 }
 
 // Relay is the little this package needs from a relay connection: somewhere to
@@ -66,7 +69,15 @@ type peer struct {
 	paths          map[string]*Path
 	best           string
 	probingSince   time.Time
-	endpoint       *Endpoint
+	// When WireGuard last sent this peer anything; see activeTimeout.
+	lastSend time.Time
+	endpoint *Endpoint
+}
+
+// activeAt reports whether WireGuard sent this peer something recently enough
+// for its paths to be worth probing.
+func (p *peer) activeAt(now time.Time) bool {
+	return !p.lastSend.IsZero() && now.Sub(p.lastSend) < activeTimeout
 }
 
 func (p *peer) pathList() []*Path {
@@ -493,8 +504,12 @@ func (s *Sock) Status() []PeerStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]PeerStatus, 0, len(s.peers))
+	now := s.now()
 	for _, peer := range s.peers {
-		status := PeerStatus{WaveID: peer.config.WaveID, NodeKey: peer.config.NodeKey}
+		status := PeerStatus{
+			WaveID: peer.config.WaveID, NodeKey: peer.config.NodeKey,
+			Idle: !peer.activeAt(now),
+		}
 		if best, ok := peer.paths[peer.best]; ok && peer.best != "" {
 			status.Best = best.Endpoint
 			status.HasBest = best.Endpoint.IsValid()
@@ -775,6 +790,14 @@ func (s *Sock) sendToPeer(waveID, nodeKey string, data []byte) {
 		s.mu.Unlock()
 		return
 	}
+	// The first packet after a quiet spell wakes the peer: its paths are a
+	// guess by now, so it gets the fast phase a new peer gets.
+	now := s.now()
+	resumed := !owner.activeAt(now)
+	owner.lastSend = now
+	if resumed {
+		owner.probingSince = now
+	}
 	snap := snapshotOf(owner)
 	best, hasBest := owner.paths[owner.best]
 	var chosen target
@@ -791,6 +814,9 @@ func (s *Sock) sendToPeer(waveID, nodeKey string, data []byte) {
 		}
 	}
 	s.mu.Unlock()
+	if resumed {
+		s.kickProbing()
+	}
 
 	if hasBest {
 		s.sendVia(snap, chosen, data)
@@ -844,12 +870,13 @@ func (s *Sock) sendDisco(snap snapshot, path target, message wavedisco.Message) 
 
 // --- probing ----------------------------------------------------------------
 
-// probeLoop ticks every probeFast while some peer is in its fast phase, and
-// every probeIdle otherwise. Four wake-ups a second for the life of the
-// tunnel cost a phone battery for nothing: outside a fast phase no path is
-// owed a probe more often than every probeSlow, and a one-second tick meets
-// that within its slack. A fast phase that starts -- a punch hint, a new
-// peer, a rebind -- kicks the loop back to the fast tick at once.
+// probeLoop ticks every probeFast while some active peer is in its fast phase,
+// every probeIdle while some peer is active at all, and every probeDormant
+// when none is. Four wake-ups a second for the life of the tunnel cost a phone
+// battery for nothing: outside a fast phase no path is owed a probe more often
+// than every probeSlow, and a one-second tick meets that within its slack. A
+// fast phase that starts -- a punch hint, a rebind, the first packet to an
+// idle peer -- kicks the loop back to the fast tick at once.
 func (s *Sock) probeLoop() {
 	defer s.done.Done()
 	timer := time.NewTimer(probeFast)
@@ -869,16 +896,56 @@ func (s *Sock) probeLoop() {
 		case <-timer.C:
 			s.probeAll()
 		}
-		interval := probeIdle
-		if s.anyFastPhase() {
-			interval = probeFast
-		}
-		timer.Reset(interval)
+		timer.Reset(s.probeInterval())
 	}
 }
 
 // probeIdle is the loop's tick while no peer is in its fast phase.
 const probeIdle = time.Second
+
+// probeDormant is the loop's tick while no peer is active. Nothing is owed a
+// probe then; the tick only keeps the loop from sleeping for ever if a kick
+// were ever lost.
+const probeDormant = 30 * time.Second
+
+// activeTimeout is how long after WireGuard last sent a peer something that
+// peer is still probed.
+//
+// Probing every path of every peer every few seconds, whether anything flowed
+// or not, was the largest cost of the tunnel on a phone: on cellular each
+// packet keeps the radio in its high-power state for seconds after it, so a
+// probe every three seconds meant a radio that never slept. A path is only
+// worth measuring while something is about to use it. Anything that talks --
+// a ping, a TCP connection, even WireGuard answering a handshake -- sends, and
+// the first packet after a quiet spell starts a fast phase. 45 seconds is what
+// Tailscale settled on for the same trade, and comfortably longer than the
+// ten seconds WireGuard waits before a passive keepalive.
+//
+// Only what we send counts, not what we receive: a peer that keeps its
+// tunnel to us alive with keepalives of its own would otherwise keep us
+// probing for ever.
+const activeTimeout = 45 * time.Second
+
+// probeInterval is how long the probe loop sleeps next.
+func (s *Sock) probeInterval() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.probingEnabled {
+		return probeDormant
+	}
+	now := s.now()
+	interval := probeDormant
+	for _, peer := range s.peers {
+		if !peer.activeAt(now) {
+			continue
+		}
+		if now.Sub(peer.probingSince) < probeFastDuration {
+			return probeFast
+		}
+		interval = probeIdle
+	}
+	return interval
+}
 
 // kickProbing wakes the probe loop for a fast phase that just began.
 func (s *Sock) kickProbing() {
@@ -886,22 +953,6 @@ func (s *Sock) kickProbing() {
 	case s.probeKick <- struct{}{}:
 	default:
 	}
-}
-
-// anyFastPhase reports whether some peer is still in its fast phase.
-func (s *Sock) anyFastPhase() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.probingEnabled {
-		return false
-	}
-	now := s.now()
-	for _, peer := range s.peers {
-		if now.Sub(peer.probingSince) < probeFastDuration {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Sock) probeAll() {
@@ -927,6 +978,13 @@ func (s *Sock) probePeer(subject *peer) {
 		return
 	}
 	now := s.now()
+	if !subject.activeAt(now) {
+		// Left as it was, best path included: the next packet goes there
+		// first, and the fast phase it starts finds out whether it still
+		// works.
+		s.mu.Unlock()
+		return
+	}
 	fast := now.Sub(subject.probingSince) < probeFastDuration
 	relay := s.relays[subject.config.WaveID]
 

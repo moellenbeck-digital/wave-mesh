@@ -113,6 +113,15 @@ else
   ok "the mapping does not change per destination, so punching can work"
 fi
 
+# The core probes a peer only while something is sent to it -- a phone that
+# measured paths to idle peers kept its radio awake for nothing. So the phone
+# talks first, the way an app would, and the paths are found because of it.
+# Nothing has to answer for that: an unanswered ping is still a packet out.
+step "the phone starts talking to the peer"
+ip netns exec nodea ping -i 0.5 -W1 -I wave0 "$B_IP" >/dev/null 2>&1 &
+TALKER=$!
+ok "pinging $B_IP in the background"
+
 if [[ "$MODE" == "relay" ]]; then
   step "the relay carries the connection"
   wait_for_line "$PHONE_LOG" 'path to .* is relay' "the phone to fall back to the relay"
@@ -132,6 +141,8 @@ else
   wait_for_line "$WORK/b.log" 'path to .* is 203\.0\.113\.' "the peer to find a direct path"
   ok "$(grep -o 'path to .* is 203\.0\.113\..*' "$PHONE_LOG" | head -1)"
 fi
+
+kill "$TALKER" 2>/dev/null || true
 
 step "traffic over the path that was chosen"
 ip netns exec nodea ping -c3 -W5 -I wave0 "$B_IP" >/dev/null \
@@ -154,6 +165,7 @@ else
   # beside a relayed one -- the relay costs somebody else's bandwidth.
   VIA=$(phone_field via)
   [[ "$VIA" != "relay" ]] || { dump_logs; fail "the phone settled on the relay despite a direct path"; }
+  [[ "$VIA" != "idle" ]] || { dump_logs; fail "the peer counts as idle although the phone was just sending to it"; }
   ok "the phone is on $VIA"
 
   printf '\n\033[32mPASS: the mobile core punched a direct path through two NATs to an ordinary client\033[0m\n'

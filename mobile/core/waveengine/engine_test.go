@@ -329,8 +329,11 @@ func TestTheUAPIConfigNamesPeersRatherThanAddresses(t *testing.T) {
 			t.Fatalf("%s is missing:\n%s", allowed, config)
 		}
 	}
-	if !strings.Contains(config, "persistent_keepalive_interval=25") {
-		t.Fatalf("keepalive is missing:\n%s", config)
+	// Zero, and said: a phone keeps no idle peer's NAT state alive at the
+	// price of its radio, and a device configured before keeps its old value
+	// unless the set names it.
+	if !strings.Contains(config, "persistent_keepalive_interval=0\n") {
+		t.Fatalf("keepalive is not switched off:\n%s", config)
 	}
 }
 
@@ -354,8 +357,9 @@ func TestStatusIsJSONThePlatformCanRead(t *testing.T) {
 	if len(decoded.Waves[0].Peers) != 1 || decoded.Waves[0].Peers[0].Hostname != "laptop" {
 		t.Fatalf("peers %+v", decoded.Waves[0].Peers)
 	}
-	// No path has been confirmed, and that is not the same as being down.
-	if decoded.Waves[0].Peers[0].Via != "" {
+	// Nothing has been sent to the peer, so it is not probed and nothing is
+	// measured -- which is not the same as being down either.
+	if decoded.Waves[0].Peers[0].Via != "idle" {
 		t.Fatalf("via %q", decoded.Waves[0].Peers[0].Via)
 	}
 }

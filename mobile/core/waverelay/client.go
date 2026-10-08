@@ -36,6 +36,8 @@ type Client struct {
 	mu     sync.Mutex
 	socket *websocket.Conn
 	ready  bool
+	// When any frame last arrived, in Unix nanoseconds; see Check.
+	lastHeard atomic.Int64
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -105,6 +107,38 @@ func (c *Client) Connected() bool {
 }
 
 // Start connects and keeps reconnecting until Close.
+// Check asks the relay for an echo now and drops the connection if no frame
+// arrives within wait. The same as the control socket's: after a wake-up the
+// connection may be dead or fine, and asking costs one frame where
+// reconnecting cost a TLS handshake.
+func (c *Client) Check(wait time.Duration) {
+	c.mu.Lock()
+	socket, ready := c.socket, c.ready
+	c.mu.Unlock()
+	if socket == nil || !ready {
+		return // already between connections; the dial is the check
+	}
+	frame, err := EncodeFrame(c.discoPublicKey, echo)
+	if err != nil {
+		return
+	}
+	asked := time.Now().UnixNano()
+	go func() {
+		write, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = socket.Write(write, websocket.MessageBinary, frame)
+	}()
+	time.AfterFunc(wait, func() {
+		c.mu.Lock()
+		same := c.socket == socket
+		c.mu.Unlock()
+		if same && c.lastHeard.Load() < asked {
+			c.log("relay " + c.url + " did not answer after waking — reconnecting")
+			socket.CloseNow()
+		}
+	})
+}
+
 // Reconnect drops the relay connection and dials again at once: after a
 // network change the old connection is bound to a path that may be gone, and
 // a peer reachable only through the relay would wait for the heartbeat.
@@ -207,6 +241,7 @@ func (c *Client) session(parent context.Context) (reachedReady bool, err error) 
 			// Any frame proves the relay still routes to this socket, not just
 			// the echo: it only delivers to the session registered for our key.
 			heard.Store(true)
+			c.lastHeard.Store(time.Now().UnixNano())
 			if sender == c.discoPublicKey {
 				continue
 			}

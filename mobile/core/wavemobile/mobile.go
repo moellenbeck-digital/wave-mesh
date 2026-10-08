@@ -261,6 +261,12 @@ func (c *Core) Logout(controlURL string) error {
 // between a pause nobody notices and ten seconds of nothing.
 func (c *Core) NetworkChanged() { c.engine.NetworkChanged() }
 
+// Woke is the phone coming out of sleep. Not a network change -- that is
+// NetworkChanged, and the path monitor reports it on its own -- but enough
+// time for NAT mappings and idle connections to have expired, so each is
+// asked rather than replaced.
+func (c *Core) Woke() { c.engine.Woke() }
+
 // Status is the whole device as JSON: the waves, their peers, the path each one
 // is on. What a user interface draws, and the only thing it needs.
 func (c *Core) Status() string { return c.engine.StatusJSON() }

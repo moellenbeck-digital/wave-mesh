@@ -202,6 +202,17 @@
         }
       }
     },
+    "idle": {
+      "comment": "A peer nothing has been sent to lately, so its path is not being measured.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ruht"
+          }
+        }
+      }
+    },
     "In the next step iOS asks whether wave-mesh may add a VPN configuration.": {
       "localizations": {
         "de": {

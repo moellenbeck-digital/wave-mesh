@@ -52,6 +52,8 @@ type Socket struct {
 	lastEndpoints []waveproto.Candidate
 	lastFilter    *waveproto.ClientMessage
 	awaitingPong  bool
+	// When anything last arrived from the server; see Check.
+	lastHeard time.Time
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -116,6 +118,33 @@ func (s *Socket) run(ctx context.Context) {
 			backoff = s.options.MaxBackoff
 		}
 	}
+}
+
+// Check asks the server for a pong now and drops the connection if nothing at
+// all arrives within wait. For a phone that woke up: the connection may have
+// died while it slept, or may be perfectly fine, and only asking tells which.
+// Reconnecting regardless cost a TLS handshake per wave on every wake-up;
+// waiting for the heartbeat leaves a dead one unnoticed for up to a minute.
+func (s *Socket) Check(wait time.Duration) {
+	s.mu.Lock()
+	socket := s.socket
+	s.mu.Unlock()
+	if socket == nil {
+		return // already between connections; the dial is the check
+	}
+	asked := time.Now()
+	// Not on the caller's goroutine: a write to a dead connection can sit out
+	// its whole timeout.
+	go s.send(context.Background(), waveproto.ClientMessage{Type: "ping"})
+	time.AfterFunc(wait, func() {
+		s.mu.Lock()
+		silent := s.socket == socket && s.lastHeard.Before(asked)
+		s.mu.Unlock()
+		if silent {
+			s.log("control connection did not answer after waking -- reconnecting")
+			socket.CloseNow()
+		}
+	})
 }
 
 // Reconnect drops the connection and dials again at once. For a network
@@ -221,6 +250,9 @@ func (s *Socket) heartbeat(ctx context.Context, socket *websocket.Conn) {
 }
 
 func (s *Socket) onMessage(raw []byte) {
+	s.mu.Lock()
+	s.lastHeard = time.Now()
+	s.mu.Unlock()
 	message, err := waveproto.ParseServerMessage(raw)
 	if err != nil {
 		return

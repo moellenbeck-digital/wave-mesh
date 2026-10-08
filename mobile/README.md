@@ -81,6 +81,13 @@ Was daran festliegt:
   sammeln und `publishEndpoints` aus. Auf dem Desktop wartet der Rebind, bis
   Peers unerreichbar sind; hier wäre das der Unterschied zwischen einer Pause,
   die niemand bemerkt, und zehn Sekunden ohne alles.
+- **Aufwachen ist kein Netzwechsel.** `wake()` ruft `Core.Woke()`: STUN neu
+  fragen, Control und Relay anklopfen statt neu verbinden, kein neuer Port.
+- **Kein Paket ohne Grund — der Akku.** Geprobt wird nur ein Peer, dem in den
+  letzten 45 s etwas geschickt wurde, und WireGuard hält kein Keepalive. Jedes
+  Paket hält auf Mobilfunk das Funkmodul Sekunden lang wach; Probes alle 3 s an
+  jeden Peer hießen ein Modem, das nie schläft. Ein ruhender Peer steht im
+  Status als `idle`.
 - **Android bekommt bei jedem `establish()` einen neuen Deskriptor** und
   schließt den alten. Der Kern muss ihn also austauschen können
   (`Core.ReplaceTunnel`); iOS behält seinen Packet Flow und ruft das nie.

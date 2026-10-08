@@ -477,6 +477,9 @@ private struct PeerRow: View {
     /// explicitly -- `Text(path)` would show it verbatim.
     private var path: String {
         if peer.via.isEmpty { return String(localized: "no fixed path") }
+        // Nothing sent to it lately, so nothing is measured: the core probes
+        // a peer only while something talks to it.
+        if peer.via == "idle" { return String(localized: "idle") }
         // The core says "relay" or the address of the direct path; only the
         // word is translated, an address is the same in every language.
         let via = peer.via == "relay" ? String(localized: "relay") : peer.via

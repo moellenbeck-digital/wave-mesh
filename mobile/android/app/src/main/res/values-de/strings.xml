@@ -13,6 +13,7 @@
 
     <string name="path_none">kein fester Pfad</string>
     <string name="path_relay">Relay</string>
+    <string name="path_idle">ruht</string>
     <string name="path_with_rtt">%1$s · %2$d ms</string>
 
     <string name="notification_channel">Tunnelstatus</string>

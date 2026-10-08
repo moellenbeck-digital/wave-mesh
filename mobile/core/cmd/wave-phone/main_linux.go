@@ -24,6 +24,7 @@
 //
 //	hostname <name>                  the name the next enrolment asks for
 //	network                          the platform saw the network change
+//	wake                             the platform woke from sleep
 //
 // Each finished command logs "command <line>: ok" or "command <line>: <error>".
 package main
@@ -166,6 +167,9 @@ func execute(core *wavemobile.Core, words []string) error {
 		return nil
 	case "network":
 		core.NetworkChanged()
+		return nil
+	case "wake":
+		core.Woke()
 		return nil
 	}
 	return fmt.Errorf("unknown command %q", words[0])

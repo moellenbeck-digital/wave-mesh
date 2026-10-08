@@ -58,6 +58,22 @@ func (n *node) knows(t *testing.T, waveID string, other *node) {
 		t.Fatal(err)
 	}
 	n.sock.EnableProbing()
+	n.sends(t, waveID, other)
+}
+
+// sends puts one packet through the wave's bind, as WireGuard would. A peer
+// is only probed while something is sent to it, so without this no path would
+// ever be found.
+func (n *node) sends(t *testing.T, waveID string, other *node) {
+	t.Helper()
+	bind := n.sock.BindFor(waveID)
+	endpoint, err := bind.ParseEndpoint(wavemagic.FormatEndpoint(other.node.PublicKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bind.Send([][]byte{{4, 0, 0, 0}}, endpoint); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func waitForPath(t *testing.T, sock *wavemagic.Sock) wavemagic.PeerStatus {

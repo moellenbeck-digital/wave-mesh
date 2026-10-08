@@ -287,8 +287,14 @@ step "a path was measured, not just assumed"
 # Without a confirmed path every packet is sprayed at all candidates, which
 # carries -- so a ping that works proves less than it looks. This is the part
 # that says discovery actually completed.
+#
+# The core probes a peer only while something is sent to it, and the last
+# ping may be longer ago than that. So a few more first, and a path measured
+# while they ran.
+for _ in 1 2 3 4 5; do ping -c1 -W2 -I wave0 "$B_IP" >/dev/null 2>&1 || true; sleep 0.5; done
 VIA=$(phone_field via "$ONE")
 [[ -n "$VIA" ]] || { dump_logs; fail "no confirmed path to B; the pings went through spraying"; }
+[[ "$VIA" != "idle" ]] || { dump_logs; fail "B counts as idle although the phone was just sending to it"; }
 ok "path to the first wave's peer: $VIA"
 
 printf '\n\033[32mPASS: the mobile core carried two waves over one interface, reached a peer in each and answered both zones\033[0m\n'
