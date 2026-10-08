@@ -1,4 +1,5 @@
 import type { Locale } from "@wave/i18n";
+import { AddPhone } from "@/components/add-phone";
 import { LiveConnectedCount, LiveDeviceCount, LiveNodeList } from "@/components/device-feed";
 import { MemberList } from "@/components/member-list";
 import { appMessages } from "@/i18n/app";
@@ -135,6 +136,9 @@ export function WaveCard({
       {/* Wer Mitglieder verwalten darf, darf auch ein einzelnes Gerät
           entfernen -- das ist der kleinere der beiden Schnitte. */}
       <LiveNodeList wave={wave} initial={nodes} mayRemove={canManage(membership.role)} meId={meId} />
+      {/* Jedes Mitglied darf ein eigenes Telefon hinzufügen; die Freigabe im
+          Browser bleibt, der Code trägt nur die Adresse. */}
+      <AddPhone />
 
       {/* Alle Geräte eines Waves sehen sich gegenseitig -- wer hier steht, ist
           im Netz. Deshalb steht die Liste neben den Geräten, nicht auf einer

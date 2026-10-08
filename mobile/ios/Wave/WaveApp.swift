@@ -23,6 +23,9 @@ struct WaveApp: App {
                 WaveLog.seed(lines.joined(separator: "\n") + "\n")
             }
         #endif
+        // What iOS measured about the app since its last launch, and why a
+        // previous run ended, if it ended badly -- into the shared log.
+        WaveMetrics.start(as: .app)
     }
 
     /// The system's VPN, or -- in a debug build started by the UI tests -- a

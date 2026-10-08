@@ -19,12 +19,32 @@ struct WaveView: View {
     /// already accepted.
     @AppStorage("disclosureAccepted.v1") private var disclosureAccepted = false
 
+    /// A server named by a QR code's link, waiting for the person to say yes.
+    /// Kept across the disclosure: the first launch after installing is the
+    /// very moment somebody scans the code.
+    @State private var invite: String?
+
     var body: some View {
-        if disclosureAccepted {
-            waves
-        } else {
-            DisclosureView { disclosureAccepted = true }
+        Group {
+            if disclosureAccepted {
+                waves
+            } else {
+                DisclosureView { disclosureAccepted = true }
+            }
         }
+        .onOpenURL { url in
+            if let server = WaveInvite.server(from: url) { invite = server }
+        }
+    }
+
+    /// The wave this phone is already in at the invited server, if any.
+    private var invitedWave: WaveStatus? {
+        guard let invite else { return nil }
+        return model.status.waves.first { $0.controlUrl == invite }
+    }
+
+    private var inviteHost: String {
+        invite.flatMap { URL(string: $0)?.host() } ?? ""
     }
 
     private var waves: some View {
@@ -176,6 +196,28 @@ struct WaveView: View {
             } message: { _ in
                 Text("This device leaves the wave and forgets its keys. Joining again needs a new approval.")
             }
+            // From a QR code: fill in nothing silently, join nothing silently.
+            .confirmationDialog(
+                Text("Connect to \(inviteHost)?"),
+                isPresented: Binding(get: { invite != nil }, set: { if !$0 { invite = nil } }),
+                titleVisibility: .visible
+            ) {
+                if invitedWave != nil {
+                    Button("Add another wave at this server", action: acceptInvite)
+                        .accessibilityIdentifier("invite.confirm")
+                } else {
+                    Button("Connect", action: acceptInvite)
+                        .accessibilityIdentifier("invite.confirm")
+                }
+                Button("Cancel", role: .cancel) { invite = nil }
+                    .accessibilityIdentifier("invite.cancel")
+            } message: {
+                if invitedWave != nil {
+                    Text("This phone is already in a wave at \(inviteHost). It can join another one there; you approve it in the browser.")
+                } else {
+                    Text("This phone joins a wave at \(inviteHost) once you approve it in the browser.")
+                }
+            }
         }
         .task { await model.load() }
     }
@@ -208,6 +250,17 @@ struct WaveView: View {
                 Button("Cancel", role: .destructive) { model.cancelLogin() }
                     .accessibilityIdentifier("login.cancel")
             }
+        }
+    }
+
+    private func acceptInvite() {
+        guard let server = invite else { return }
+        invite = nil
+        if let wave = model.status.waves.first(where: { $0.controlUrl == server }) {
+            model.addWave(at: wave)
+        } else {
+            controlURL = server
+            join()
         }
     }
 

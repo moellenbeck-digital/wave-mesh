@@ -41,6 +41,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let host = WaveHost(provider: self)
         self.host = host
         host.log("tunnel starting")
+        // The tunnel is its own process with its own costs; iOS reports them
+        // separately, and they are the ones that matter for the battery.
+        WaveMetrics.start(as: .tunnel)
 
         // Applying settings is what creates the utun, so the descriptor cannot
         // exist before this. The placeholder carries no addresses and no

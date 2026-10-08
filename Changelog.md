@@ -8,6 +8,14 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Neue Funktionen
 
+- **Telefon per QR-Code hinzufügen:** In der Weboberfläche zeigt „Telefon
+  hinzufügen“ bei jedem Wave einen Code. Die iPhone-Kamera öffnet damit die
+  App mit dem Server schon eingetragen; die App fragt, bevor sie verbindet,
+  und freigegeben wird wie immer im Browser.
+- **Die iPhone-App schreibt ins Protokoll, was iOS über sie misst:** einmal
+  am Tag CPU-Zeit, Daten über Mobilfunk und WLAN und die Zeit im Hintergrund,
+  getrennt für App und Tunnel, und warum ein Lauf endete, wenn er abstürzte,
+  hing oder zu viel CPU brauchte.
 - **TestFlight per Knopfdruck:** Der Workflow „TestFlight“ baut die iPhone-App
   aus dem gewählten Stand, signiert sie und lädt sie hoch — gestartet von Hand
   in GitHub, auch aus der GitHub-App auf dem Telefon. Die Build-Nummer ist die

@@ -64,6 +64,12 @@ targets:
         # answer. Declared here so no upload waits on the question again;
         # revisit before distributing in France, which needs its own filing.
         ITSAppUsesNonExemptEncryption: false
+        # wavemesh://join?server=<url>, what the web interface's QR code
+        # carries (Shared/WaveInvite.swift). Opening it only fills in the
+        # address and asks; it never joins anything by itself.
+        CFBundleURLTypes:
+          - CFBundleURLName: org.wavemesh.app.join
+            CFBundleURLSchemes: [wavemesh]
     entitlements:
       path: Wave/Wave.entitlements
       properties:
@@ -115,6 +121,7 @@ targets:
       - path: WaveTunnel/TunnelSettings.swift
       - path: Shared/Status.swift
       - path: Shared/Identifiers.swift
+      - path: Shared/WaveInvite.swift
       - path: Wave/LoginFailure.swift
       - path: ../core/wavesettings/testdata/settings.json
         buildPhase: resources

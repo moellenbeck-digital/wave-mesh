@@ -720,6 +720,39 @@
           }
         }
       }
+    },
+    "Connect to %@?": {
+      "comment": "The question after opening a wave-mesh QR code.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit %@ verbinden?"
+          }
+        }
+      }
+    },
+    "This phone is already in a wave at %@. It can join another one there; you approve it in the browser.": {
+      "comment": "The question after opening a wave-mesh QR code.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Telefon ist schon in einem Wave bei %@. Es kann dort einem weiteren beitreten; freigeben kannst du das im Browser."
+          }
+        }
+      }
+    },
+    "This phone joins a wave at %@ once you approve it in the browser.": {
+      "comment": "The question after opening a wave-mesh QR code.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Telefon tritt einem Wave bei %@ bei, sobald du es im Browser freigibst."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
