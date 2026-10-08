@@ -1,0 +1,110 @@
+# The iPhone app into TestFlight, from a button.
+#
+# Started by hand -- from the Actions tab, or the GitHub app on a phone -- and
+# never by a push: a TestFlight build goes to every internal tester, so it is a
+# decision like a release, not the side effect of a commit. That is the same
+# line release.yml draws, and why this is a workflow of its own rather than a
+# trigger there: an app build has nothing to do with a version tag.
+#
+# What it does is what mobile/ios/upload.sh does on a Mac: build the Go core,
+# generate the project, archive, sign, upload. The signing material comes from
+# the 1Password vault "wave-mesh CI" through the same service account the
+# release job uses, so no Apple secret is stored in GitHub. The build number is
+# the next free one on App Store Connect, whoever uploaded last.
+name: TestFlight
+
+on:
+  # TEMPORARY, removed before merging: a dry run of this branch (no inputs on
+  # a push, so nothing is uploaded).
+  push:
+    branches: [feat/testflight-ci]
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Upload to TestFlight (off: build and sign only)"
+        type: boolean
+        default: true
+
+# One upload at a time: two runs would ask App Store Connect for the same next
+# number, and the second upload would be refused.
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: iOS to TestFlight
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # The SDK has to match what the app is built with on a Mac (Xcode 26).
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mobile/core/go.mod
+          cache-dependency-path: mobile/core/go.sum
+
+      - name: Tools
+        run: brew install xcodegen
+
+      # Always from source: an xcframework left over from somewhere else is a
+      # build with an old core in it, and nothing in the app would say so.
+      - name: Build the Go core
+        run: ./mobile/build.sh ios
+
+      - name: Load the signing material
+        id: secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5
+        with:
+          export-env: false
+          version: 2.39.0
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ASC_KEY_ID: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_key_id
+          ASC_ISSUER_ID: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_issuer_id
+          ASC_KEY_P8_BASE64: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_private_key_p8_base64
+          DIST_P12_BASE64: op://ru5ydmxogt5ckmkebfezdzh5fa/3hwohqqilniqu5o6al5no4mvga/jumy7blvavc6aggdphln767do4
+          DIST_P12_PASSWORD: op://ru5ydmxogt5ckmkebfezdzh5fa/3hwohqqilniqu5o6al5no4mvga/uxrk3qxbh6txzghc6kkakhlxde
+          APP_PROFILE_BASE64: op://ru5ydmxogt5ckmkebfezdzh5fa/3hwohqqilniqu5o6al5no4mvga/fdkocgfeirxykblaapjcecmwdm
+          TUNNEL_PROFILE_BASE64: op://ru5ydmxogt5ckmkebfezdzh5fa/3hwohqqilniqu5o6al5no4mvga/amzfcfjxxyifehfsodmuxpnaxi
+
+      - name: Build, sign and upload
+        id: upload
+        env:
+          ASC_KEY_ID: ${{ steps.secrets.outputs.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ steps.secrets.outputs.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ steps.secrets.outputs.ASC_KEY_P8_BASE64 }}
+          DIST_P12_BASE64: ${{ steps.secrets.outputs.DIST_P12_BASE64 }}
+          DIST_P12_PASSWORD: ${{ steps.secrets.outputs.DIST_P12_PASSWORD }}
+          APP_PROFILE_BASE64: ${{ steps.secrets.outputs.APP_PROFILE_BASE64 }}
+          TUNNEL_PROFILE_BASE64: ${{ steps.secrets.outputs.TUNNEL_PROFILE_BASE64 }}
+          UPLOAD: ${{ inputs.upload && '1' || '0' }}
+        run: |
+          BUILD_NUMBER=$(node mobile/ios/next-build-number.mjs)
+          export BUILD_NUMBER
+          echo "build=$BUILD_NUMBER" >>"$GITHUB_OUTPUT"
+          ./mobile/ios/upload.sh
+
+      - name: Summary
+        env:
+          BUILD: ${{ steps.upload.outputs.build }}
+          UPLOADED: ${{ inputs.upload }}
+        run: |
+          {
+            echo "### wave-mesh iOS build $BUILD"
+            echo
+            echo "From \`${GITHUB_SHA::7}\` on \`${GITHUB_REF_NAME}\`."
+            if [[ "$UPLOADED" == "true" ]]; then
+              echo "Uploaded. App Store Connect processes it for a few minutes; then it is in TestFlight for the internal group."
+            else
+              echo "Built and signed only; nothing was uploaded."
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
