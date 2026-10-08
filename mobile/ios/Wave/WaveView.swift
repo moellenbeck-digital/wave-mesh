@@ -15,6 +15,8 @@ struct WaveView: View {
     @FocusState private var addressFocused: Bool
     /// The wave whose "leave" is being confirmed.
     @State private var leaving: WaveStatus?
+    /// The wave whose "Check connection" page is open.
+    @State private var checkingWave: WaveStatus?
     /// Versioned, so a changed disclosure is shown again rather than counted as
     /// already accepted.
     @AppStorage("disclosureAccepted.v1") private var disclosureAccepted = false
@@ -78,7 +80,8 @@ struct WaveView: View {
                         onToggle: { model.setEnabled(wave, $0) },
                         onLeave: { leaving = wave },
                         onLoginAgain: { model.loginAgain(wave) },
-                        onAddWave: { model.addWave(at: wave) }
+                        onAddWave: { model.addWave(at: wave) },
+                        onCheck: { checkingWave = wave }
                     )
                 }
 
@@ -196,6 +199,9 @@ struct WaveView: View {
             } message: { _ in
                 Text("This device leaves the wave and forgets its keys. Joining again needs a new approval.")
             }
+            .sheet(item: $checkingWave) { wave in
+                CheckView(wave: wave, tunnelUp: model.tunnelUp, probe: checkProbe)
+            }
             // From a QR code: fill in nothing silently, join nothing silently.
             .confirmationDialog(
                 Text("Connect to \(inviteHost)?"),
@@ -282,6 +288,7 @@ private struct WaveSection: View {
     let onLeave: () -> Void
     let onLoginAgain: () -> Void
     let onAddWave: () -> Void
+    let onCheck: () -> Void
 
     var body: some View {
         Section {
@@ -328,6 +335,11 @@ private struct WaveSection: View {
                     .accessibilityIdentifier("wave.paused.\(wave.label)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            }
+
+            if wave.enabled && live && wave.problem.isEmpty {
+                Button("Check connection", systemImage: "stethoscope", action: onCheck)
+                    .accessibilityIdentifier("wave.check.\(wave.label)")
             }
 
             // The tray's "Open <host>": devices, people, access rules and
@@ -494,10 +506,12 @@ private struct PeerRow: View {
                     Text("Last handshake \(Self.ago(peer.lastHandshakeSeconds))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                } else if peer.online {
+                } else if peer.online && peer.via != "idle" {
                     // Online at the server, yet never reached from here: the
                     // case a missing relay produces, and otherwise just a row
-                    // that looks fine and never answers.
+                    // that looks fine and never answers. Not for an idle peer:
+                    // the core leaves those alone on purpose (battery), so no
+                    // handshake is what idle looks like, not a fault.
                     Text("Not reached yet")
                         .font(.caption2)
                         .foregroundStyle(.orange)
@@ -541,3 +555,14 @@ private struct PeerRow: View {
         return via
     }
 }
+
+/// The real connection test, or -- under the UI tests, which have no
+/// tunnel to connect through -- one that answers for every service.
+private let checkProbe: (String, UInt16) async -> Probe = {
+    #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestFakeTunnel") {
+            return { _, _ in .answered(milliseconds: 23) }
+        }
+    #endif
+    return { host, port in await Probe.tcp(host: host, port: port) }
+}()

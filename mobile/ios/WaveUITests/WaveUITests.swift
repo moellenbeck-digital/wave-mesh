@@ -61,6 +61,28 @@ final class WaveUITests: XCTestCase {
         return target
     }
 
+    /// Scrolls back up until the element is there: the list only builds the
+    /// rows on screen, so one scrolled past is not in the tree at all.
+    private func revealAbove(_ identifier: String, swipes: Int = 6) -> Bool {
+        for _ in 0 ..< swipes {
+            if element(identifier).exists { return true }
+            app.swipeDown()
+        }
+        return element(identifier).exists
+    }
+
+    /// Looks above and then below: after a tap the list may sit on either
+    /// side of the row that changed.
+    private func findAnywhere(_ identifier: String) -> Bool {
+        if appear(identifier, timeout: 2) != nil { return true }
+        if revealAbove(identifier, swipes: 4) { return true }
+        for _ in 0 ..< 8 {
+            app.swipeUp()
+            if element(identifier).exists { return true }
+        }
+        return false
+    }
+
     /// Taps the switch itself, not its label: a tap on the row's text does
     /// not toggle it.
     private func tapSwitch(_ identifier: String) {
@@ -272,6 +294,20 @@ final class WaveUITests: XCTestCase {
         snapshot("16 invite")
     }
 
+    /// "Check connection" says in sentences what works -- and opens a real
+    /// connection to every service (here a stand-in that answers).
+    func testCheckingAWaveSaysWhatWorks() {
+        launch()
+        join("wave.example.org")
+        XCTAssertNotNil(appear("wave.self.ops.example.org"))
+        reveal("wave.check.ops.example.org").tap()
+        XCTAssertNotNil(appear("check.control"), "the check page did not open")
+        XCTAssertNotNil(appear("check.relay"))
+        let service = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "23 ms")).firstMatch
+        XCTAssertTrue(service.waitForExistence(timeout: 8), "the service was not checked")
+        snapshot("17 check connection")
+    }
+
     /// Whether a wave has a relay is said per wave: without one, a peer that
     /// can only be reached through it shows "not reached" and nothing else.
     func testEachWaveSaysWhetherItHasARelay() {
@@ -279,7 +315,7 @@ final class WaveUITests: XCTestCase {
         join("wave.example.org")
         XCTAssertNotNil(appear("wave.relay.ops.example.org"), "the first wave does not show its relay")
         reveal("wave.add.ops.example.org").tap()
-        XCTAssertNotNil(appear("wave.self.project-b.example.org"), "the second wave did not appear")
+        XCTAssertTrue(reveal("wave.self.project-b.example.org", timeout: 12).exists, "the second wave did not appear")
         reveal("wave.leave.project-b.example.org")
         XCTAssertTrue(element("wave.noRelay.project-b.example.org").exists, "a wave without a relay does not say so")
         snapshot("15 relay per wave")
@@ -290,11 +326,12 @@ final class WaveUITests: XCTestCase {
         join("wave.example.org")
         XCTAssertNotNil(appear("wave.self.ops.example.org"))
         reveal("wave.add.ops.example.org").tap()
-        XCTAssertNotNil(appear("wave.self.project-b.example.org"), "the second wave did not appear")
-        XCTAssertTrue(element("wave.self.ops.example.org").exists, "the first wave went away")
+        XCTAssertTrue(reveal("wave.self.project-b.example.org", timeout: 12).exists, "the second wave did not appear")
         snapshot("13 two waves at one server")
+        // Paused while it is on screen: the list builds only what is visible,
+        // and a switch scrolled to and back is easy to miss.
         tapSwitch("wave.toggle.project-b.example.org")
-        XCTAssertNotNil(appear("wave.paused.project-b.example.org"))
-        XCTAssertTrue(element("wave.self.ops.example.org").exists, "pausing the second paused the first")
+        XCTAssertTrue(findAnywhere("wave.paused.project-b.example.org"), "the second wave did not pause")
+        XCTAssertTrue(revealAbove("wave.self.ops.example.org"), "pausing the second paused the first")
     }
 }
