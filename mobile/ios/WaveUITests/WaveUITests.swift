@@ -255,6 +255,19 @@ final class WaveUITests: XCTestCase {
 
     /// One server, two projects: the second wave is added at the same server,
     /// listed beside the first under its own name, and paused on its own.
+    /// Whether a wave has a relay is said per wave: without one, a peer that
+    /// can only be reached through it shows "not reached" and nothing else.
+    func testEachWaveSaysWhetherItHasARelay() {
+        launch()
+        join("wave.example.org")
+        XCTAssertNotNil(appear("wave.relay.ops.example.org"), "the first wave does not show its relay")
+        reveal("wave.add.ops.example.org").tap()
+        XCTAssertNotNil(appear("wave.self.project-b.example.org"), "the second wave did not appear")
+        reveal("wave.leave.project-b.example.org")
+        XCTAssertTrue(element("wave.noRelay.project-b.example.org").exists, "a wave without a relay does not say so")
+        snapshot("15 relay per wave")
+    }
+
     func testASecondWaveAtTheSameServerStaysApart() {
         launch()
         join("wave.example.org")

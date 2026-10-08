@@ -35,6 +35,9 @@ struct WaveStatus: Codable, Identifiable, Equatable {
     /// One per wave: the relay routes by disco key, and each enrolment has its
     /// own.
     let relay: String
+    /// Whether the server offers a relay at all. Optional so a status cached
+    /// by an older build still decodes; unknown is not "none".
+    let relayOffered: Bool?
     /// Where this wave's resolver answers.
     let resolver: String
     let peers: [PeerStatus]

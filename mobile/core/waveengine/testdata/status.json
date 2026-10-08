@@ -17,6 +17,7 @@
       "detail": "",
       "connected": false,
       "relay": "",
+      "relayOffered": true,
       "resolver": "10.77.0.1",
       "peers": [
         {
@@ -54,6 +55,7 @@
       "detail": "",
       "connected": false,
       "relay": "",
+      "relayOffered": false,
       "resolver": "",
       "peers": [],
       "services": []
@@ -73,6 +75,7 @@
       "detail": "",
       "connected": false,
       "relay": "",
+      "relayOffered": false,
       "resolver": "",
       "peers": [],
       "services": []
@@ -92,6 +95,7 @@
       "detail": "node-removed",
       "connected": false,
       "relay": "",
+      "relayOffered": false,
       "resolver": "",
       "peers": [],
       "services": []
