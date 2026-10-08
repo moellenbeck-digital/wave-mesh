@@ -8,6 +8,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Neue Funktionen
 
+- **„Verbindung prüfen“ in der iPhone-App:** pro Wave eine Seite, die in
+  Sätzen sagt, was geht und was nicht — Tunnel, Control-Server, Relay,
+  Namensauflösung, jedes Gerät (erreichbar, ruht, offline, nie erreicht) —
+  und zu jedem Dienst eine echte Verbindung durch den Tunnel aufbaut.
 - **Telefon per QR-Code hinzufügen:** In der Weboberfläche zeigt „Telefon
   hinzufügen“ bei jedem Wave einen Code. Die iPhone-Kamera öffnet damit die
   App mit dem Server schon eingetragen; die App fragt, bevor sie verbindet,
@@ -23,6 +27,9 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Fehlerbehebungen
 
+- „Noch nicht erreicht“ stand auch bei Geräten, die nur ruhen: Seit das
+  Telefon ruhige Geräte nicht mehr anpingt, gibt es mit ihnen keinen
+  Handshake, und das ist kein Fehler.
 - **Der Server schickte ständig neue Netzkarten an alle Geräte**, in einem Wave
   mit einem Dutzend Geräten etwa alle acht Sekunden: Jedes Gerät, das seine
   Adressen neu meldete, löste eine aus, auch wenn sich nichts geändert hatte.

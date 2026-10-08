@@ -753,6 +753,292 @@
           }
         }
       }
+    },
+    "Check connection": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindung prüfen"
+          }
+        }
+      }
+    },
+    "Done": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fertig"
+          }
+        }
+      }
+    },
+    "Again": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut"
+          }
+        }
+      }
+    },
+    "Devices": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geräte"
+          }
+        }
+      }
+    },
+    "Services": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dienste"
+          }
+        }
+      }
+    },
+    "Tunnel is running": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Tunnel läuft"
+          }
+        }
+      }
+    },
+    "The tunnel is not running. Connect first.": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Tunnel läuft nicht. Verbinde zuerst."
+          }
+        }
+      }
+    },
+    "Connected to the control server": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit dem Control-Server verbunden"
+          }
+        }
+      }
+    },
+    "No connection to the control server: devices still reach each other, but changes do not arrive.": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Verbindung zum Control-Server: Die Geräte erreichen sich weiter, aber Änderungen kommen nicht an."
+          }
+        }
+      }
+    },
+    "Names in this wave resolve through the tunnel": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Namen in diesem Wave werden über den Tunnel aufgelöst"
+          }
+        }
+      }
+    },
+    "No resolver for this wave: names will not resolve, addresses still work.": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Resolver für diesen Wave: Namen lösen nicht auf, Adressen funktionieren weiter."
+          }
+        }
+      }
+    },
+    "Relay connected: devices behind NAT stay reachable": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay verbunden: Geräte hinter NAT bleiben erreichbar"
+          }
+        }
+      }
+    },
+    "The relay is not connected: devices only reachable through it are cut off for now.": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Relay ist nicht verbunden: Geräte, die nur darüber erreichbar sind, bleiben vorerst weg."
+          }
+        }
+      }
+    },
+    "This server offers no relay: devices the phone cannot reach directly, such as a connector in a cluster, stay unreachable.": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Server bietet kein Relay an: Geräte, die das Telefon nicht direkt erreicht, etwa ein Connector in einem Cluster, bleiben unerreichbar."
+          }
+        }
+      }
+    },
+    "Each service gets a real connection through the tunnel, the way a browser would open it.": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu jedem Dienst wird eine echte Verbindung durch den Tunnel aufgebaut, so wie ein Browser ihn öffnen würde."
+          }
+        }
+      }
+    },
+    "%@: offline at the server": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: beim Server offline"
+          }
+        }
+      }
+    },
+    "%@: resting, wakes with the first packet": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: ruht, wacht mit dem ersten Paket auf"
+          }
+        }
+      }
+    },
+    "through the relay": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "über das Relay"
+          }
+        }
+      }
+    },
+    "directly": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "direkt"
+          }
+        }
+      }
+    },
+    "%@: reachable %@": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@ erreichbar"
+          }
+        }
+      }
+    },
+    "%@: online at the server, but never reached from here. Is it running, and does the server offer a relay?": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: beim Server online, aber von hier nie erreicht. Läuft es, und bietet der Server ein Relay an?"
+          }
+        }
+      }
+    },
+    "%@: no handshake for a while": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: seit einer Weile kein Handshake"
+          }
+        }
+      }
+    },
+    "%@: checking …": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: wird geprüft …"
+          }
+        }
+      }
+    },
+    "%@: answers in %lld ms": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: antwortet in %2$lld ms"
+          }
+        }
+      }
+    },
+    "%@: reached, but nothing listens on that port": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: erreicht, aber auf dem Port lauscht nichts"
+          }
+        }
+      }
+    },
+    "%@: no answer. The device that serves it may be down or unreachable.": {
+      "comment": "Check connection page.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: keine Antwort. Das Gerät dahinter ist vielleicht aus oder nicht erreichbar."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
