@@ -14,10 +14,6 @@
 name: TestFlight
 
 on:
-  # TEMPORARY, removed before merging: a dry run of this branch (no inputs on
-  # a push, so nothing is uploaded).
-  push:
-    branches: [feat/testflight-ci]
   workflow_dispatch:
     inputs:
       upload:
