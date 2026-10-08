@@ -6,6 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+*Noch nichts seit v0.8.0-develop.2.*
+
+---
+
+## 🔬 Development v0.8.0-develop.2 (08.10.2026)
+
 ### Neue Funktionen
 
 - **Die Telefon-Apps sind bereit für App Store und Google Play.** Sie heißen
@@ -56,6 +62,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Fehlerbehebungen
 
+- **Die Telefon-Apps verbrauchen deutlich weniger Akku.** Der Tunnel schickte
+  ständig Pakete, auch wenn gar nichts darüber lief: alle drei Sekunden eine
+  Messung an jedes Gerät im Wave und alle 25 Sekunden ein Keepalive. Damit kam
+  das Mobilfunkmodem nie zur Ruhe. Jetzt misst das Telefon nur noch Geräte,
+  mit denen es gerade spricht; die anderen stehen in der App als „ruht“. Auch
+  das Aufwachen des iPhones baut nicht mehr jedes Mal alle Verbindungen neu
+  auf, sondern fragt nur nach, ob sie noch stehen.
 - **Das Protokoll der iPhone-App war nach längerer Laufzeit schwarz**, und
   Teilen schickte nichts: es wurde als ein einziger Textblock gezeichnet, der
   für iOS zu groß war, und als Text geteilt, den Messenger wie Telegram ab
