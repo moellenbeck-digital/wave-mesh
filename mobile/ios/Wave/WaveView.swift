@@ -269,6 +269,7 @@ private struct WaveSection: View {
                 ForEach(wave.services) { service in
                     ServiceRow(service: service)
                 }
+                relayRow
             } else if !wave.enabled && wave.problem.isEmpty {
                 Text("Paused. This device stays in the wave and can switch it back on without a new approval.")
                     .accessibilityIdentifier("wave.paused.\(wave.label)")
@@ -295,6 +296,48 @@ private struct WaveSection: View {
                 .disabled(!live)
                 .accessibilityIdentifier("wave.leave.\(wave.label)")
         }
+    }
+
+    /// Whether this wave has the relay that reaches what no direct path can:
+    /// a connector behind a cluster's NAT, a phone behind its carrier's. A peer
+    /// with "no fixed path" and no handshake is otherwise a mystery; with this
+    /// line it has an explanation.
+    @ViewBuilder
+    private var relayRow: some View {
+        if !wave.relay.isEmpty {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Relay connected")
+                    Text(verbatim: URL(string: wave.relay)?.host() ?? wave.relay)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+            }
+            .font(.footnote)
+            .accessibilityIdentifier("wave.relay.\(wave.label)")
+        } else if wave.relayOffered == true {
+            warning("Relay not connected: devices only reachable through it are cut off until it is back.")
+                .accessibilityIdentifier("wave.relayDown.\(wave.label)")
+        } else if wave.relayOffered == false {
+            warning("This server offers no relay. Devices the phone cannot reach directly, such as a connector in a cluster, stay unreachable.")
+                .accessibilityIdentifier("wave.noRelay.\(wave.label)")
+        }
+    }
+
+    /// A warning said whole: cut short in a list row, the part that explains
+    /// it was lost.
+    /// Not a Label: in a list row its title stops at three lines.
+    private func warning(_ text: LocalizedStringKey) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+            Text(text)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.footnote)
+        .foregroundStyle(.orange)
+        .accessibilityElement(children: .combine)
     }
 
     /// What is wrong with this wave, said where the wave is.
@@ -398,6 +441,13 @@ private struct PeerRow: View {
                     Text("Last handshake \(Self.ago(peer.lastHandshakeSeconds))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                } else if peer.online {
+                    // Online at the server, yet never reached from here: the
+                    // case a missing relay produces, and otherwise just a row
+                    // that looks fine and never answers.
+                    Text("Not reached yet")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
                 }
             }
         }

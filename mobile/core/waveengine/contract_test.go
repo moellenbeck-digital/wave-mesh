@@ -29,6 +29,10 @@ func TestStatusJSONMatchesTheContractFile(t *testing.T) {
 	if err := engine.applyNetmap(entry, netmap); err != nil {
 		t.Fatal(err)
 	}
+	// The server offers a relay -- set after applying, so the test dials none.
+	engine.mu.Lock()
+	entry.netmap.Relays = []waveproto.Relay{{ID: "nbg1", Region: "eu", URL: "wss://relay.a.example/relay"}}
+	engine.mu.Unlock()
 	paused, err := NewProfile("https://b.example")
 	if err != nil {
 		t.Fatal(err)

@@ -665,6 +665,50 @@
           }
         }
       }
+    },
+    "Relay connected": {
+      "comment": "This wave's relay is up.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay verbunden"
+          }
+        }
+      }
+    },
+    "Relay not connected: devices only reachable through it are cut off until it is back.": {
+      "comment": "The server offers a relay, but the connection to it is down.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay nicht verbunden: Geräte, die nur darüber erreichbar sind, bleiben weg, bis es wieder steht."
+          }
+        }
+      }
+    },
+    "This server offers no relay. Devices the phone cannot reach directly, such as a connector in a cluster, stay unreachable.": {
+      "comment": "The control server lists no relay in its netmap.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Server bietet kein Relay an. Geräte, die das Telefon nicht direkt erreicht, etwa ein Connector in einem Cluster, bleiben unerreichbar."
+          }
+        }
+      }
+    },
+    "Not reached yet": {
+      "comment": "A peer the server calls online, but no handshake with it has ever happened from this phone.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nicht erreicht"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
