@@ -68,6 +68,22 @@ spec:
             - { name: state, mountPath: /var/lib/wave }
             - { name: run, mountPath: /run/wave }
             - { name: tun, mountPath: /dev/net/tun }
+          # Ein Connector kann am Steuerkanal hängen, beim Server „online“
+          # stehen und trotzdem nichts mehr tragen -- so geschehen auf einem
+          # Server, auf dem kein Telefon mehr an einen einzigen Dienst kam.
+          # Kubernetes startet nur neu, was sich beendet; dieser Prozess tat
+          # das nicht. health.ts fragt den Daemon: Tunnel oben, Relay (falls
+          # angeboten) verbunden, und mit mindestens einem Peer ein Handshake
+          # in den letzten zehn Minuten -- die Keepalives halten die bei einem
+          # lebenden Tunnel ohnehin frisch. Fünf Fehlschläge im Minutentakt,
+          # damit ein Relay, das neu verbindet, nichts neu startet.
+          livenessProbe:
+            exec:
+              command: ["bun", "apps/connector/src/health.ts"]
+            initialDelaySeconds: 180
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 5
           # Ohne Anmeldung tut der Daemon nichts; das Beitreten ist ein eigener
           # Aufruf, und mit dem Pre-Auth-Key braucht er keinen Browser. `up`
           # tritt absichtlich nie selbst bei -- ein Gerät, das plötzlich in
