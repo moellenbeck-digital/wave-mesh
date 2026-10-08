@@ -104,4 +104,29 @@ describe("endpoint publication", () => {
     const after = ((await (await request(a, "GET", "/v1/netmap")).json()) as SignedNetmap).netmap.version;
     expect(after).toBeGreaterThan(before);
   });
+
+  // Nodes republish on a timer. The same set, in whatever order, must not push
+  // a netmap to the whole wave: that was one every eight seconds in a wave of a
+  // dozen devices, each waking every phone.
+  test("the same candidates again change nothing", async () => {
+    const jar = await login();
+    const a = makeMachine("a");
+    await enrol(a, jar);
+    const version = async () =>
+      ((await (await request(a, "GET", "/v1/netmap")).json()) as SignedNetmap).netmap.version;
+
+    const set = [
+      { kind: "local", ip: "10.2.0.2", port: 41641 },
+      { kind: "stun", ip: "203.0.113.1", port: 1 },
+    ];
+    await request(a, "POST", "/v1/node/endpoints", { candidates: set });
+    const first = await version();
+    await request(a, "POST", "/v1/node/endpoints", { candidates: [...set].reverse() });
+    expect(await version()).toBe(first);
+
+    await request(a, "POST", "/v1/node/endpoints", {
+      candidates: [...set, { kind: "stun", ip: "203.0.113.2", port: 2 }],
+    });
+    expect(await version()).toBeGreaterThan(first);
+  });
 });

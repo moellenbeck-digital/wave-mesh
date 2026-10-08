@@ -177,6 +177,23 @@ export async function publishEndpoints(
   // The hint goes out bounded as well: it reaches every peer's probe loop
   // exactly like the netmap does.
   const candidates = boundCandidates(published);
+
+  // The same set again is not news. Nodes republish on a timer -- phones
+  // until build 8 every minute, desktops whenever their reflexive address is
+  // refreshed -- and each publication used to bump the version and push a
+  // netmap to every device in the wave: in a wave of a dozen devices one about
+  // every eight seconds, each waking every phone's radio, and on the cores of
+  // the time resetting their WireGuard sessions. Only the time is recorded.
+  const stored = await db
+    .select({ candidates: nodes.candidates })
+    .from(nodes)
+    .where(eq(nodes.id, node.id))
+    .limit(1);
+  if (sameCandidates(stored[0]?.candidates ?? [], candidates)) {
+    await db.update(nodes).set({ lastSeenAt: new Date() }).where(eq(nodes.id, node.id));
+    return;
+  }
+
   await db.update(nodes).set({ candidates, lastSeenAt: new Date() }).where(eq(nodes.id, node.id));
   await db
     .update(waves)
@@ -187,6 +204,16 @@ export async function publishEndpoints(
   // not yet know this node and would drop the hint.
   await hub?.broadcast(node.waveId);
   await hub?.hint(node.waveId, node.id, candidates);
+}
+
+/** Whether two candidate lists name the same addresses, in any order. */
+export function sameCandidates(a: readonly Candidate[], b: readonly Candidate[]): boolean {
+  const key = (list: readonly Candidate[]) =>
+    list
+      .map((candidate) => `${candidate.kind}|${candidate.ip}|${candidate.port}`)
+      .sort()
+      .join(",");
+  return key(a) === key(b);
 }
 
 export interface ControlWsDeps {
