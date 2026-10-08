@@ -129,6 +129,11 @@ const en = {
     "Every device is then called {pattern}. Connected devices pick that up with the next netmap; a certificate is only possible for a domain you own.",
   accessLink: "Access: who reaches whom →",
   devicesTitle: "Devices",
+  addPhone: "Add a phone",
+  addPhoneCode: "QR code that opens the wave-mesh app with this server",
+  addPhoneHint:
+    "Scan it with the iPhone camera: the wave-mesh app opens with this server filled in. Approve the device here afterwards, as always.",
+  addPhoneManual: "Or type this address into the app:",
   peopleTitle: "People",
   deleteWave: "Delete wave",
   leaveWave: "Leave wave",
@@ -284,6 +289,11 @@ const de: typeof en = {
     "Danach heißt jedes Gerät {pattern}. Verbundene Geräte übernehmen das mit der nächsten Netzkarte; ein Zertifikat gibt es nur für eine Domain, die dir gehört.",
   accessLink: "Zugriff: wer wen erreicht →",
   devicesTitle: "Geräte",
+  addPhone: "Telefon hinzufügen",
+  addPhoneCode: "QR-Code, der die wave-mesh-App mit diesem Server öffnet",
+  addPhoneHint:
+    "Mit der iPhone-Kamera scannen: Die wave-mesh-App öffnet sich mit diesem Server. Danach das Gerät wie gewohnt hier freigeben.",
+  addPhoneManual: "Oder diese Adresse in der App eingeben:",
   peopleTitle: "Personen",
   deleteWave: "Wave löschen",
   leaveWave: "Wave verlassen",

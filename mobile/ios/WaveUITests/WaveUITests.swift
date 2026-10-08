@@ -255,6 +255,23 @@ final class WaveUITests: XCTestCase {
 
     /// One server, two projects: the second wave is added at the same server,
     /// listed beside the first under its own name, and paused on its own.
+    /// A QR code from the web interface opens the app with its server -- and
+    /// asks before anything joins. iOS starts the app afresh for the link,
+    /// the way it does right after installing; the question has to survive
+    /// the disclosure that comes first.
+    func testAQRCodeLinkAsksBeforeJoining() {
+        launch()
+        app.open(URL(string: "wavemesh://join?server=https%3A%2F%2Fwave.example.org")!)
+        let disclosure = app.buttons["disclosure.continue"]
+        if disclosure.waitForExistence(timeout: 5) { disclosure.tap() }
+        let confirm = app.buttons["invite.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 8), "the link did not ask")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "wave.example.org")).firstMatch.exists,
+                      "the question does not name the server")
+        XCTAssertNil(appear("wave.self.ops.example.org", timeout: 1), "something joined before the answer")
+        snapshot("16 invite")
+    }
+
     /// Whether a wave has a relay is said per wave: without one, a peer that
     /// can only be reached through it shows "not reached" and nothing else.
     func testEachWaveSaysWhetherItHasARelay() {
