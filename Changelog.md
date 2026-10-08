@@ -6,7 +6,25 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.8.0-develop.2.*
+### Neue Funktionen
+
+- **TestFlight per Knopfdruck:** Der Workflow „TestFlight“ baut die iPhone-App
+  aus dem gewählten Stand, signiert sie und lädt sie hoch — gestartet von Hand
+  in GitHub, auch aus der GitHub-App auf dem Telefon. Die Build-Nummer ist die
+  nächste freie in App Store Connect, die Schlüssel kommen aus 1Password.
+
+### Fehlerbehebungen
+
+- **Der Server schickte ständig neue Netzkarten an alle Geräte**, in einem Wave
+  mit einem Dutzend Geräten etwa alle acht Sekunden: Jedes Gerät, das seine
+  Adressen neu meldete, löste eine aus, auch wenn sich nichts geändert hatte.
+  Das weckte jedes Telefon und kostete Akku. Gleiche Adressen ändern jetzt
+  nichts mehr.
+- **Ein Connector, der nichts mehr trägt, wird neu gestartet.** Er konnte am
+  Steuerkanal hängen, beim Server als online gelten und trotzdem keinen
+  einzigen Dienst mehr erreichbar machen. Eine Liveness-Probe fragt jetzt den
+  Daemon: Tunnel oben, Relay verbunden, und mit mindestens einem Peer ein
+  Handshake in den letzten zehn Minuten.
 
 ---
 

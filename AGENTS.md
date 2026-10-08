@@ -1784,6 +1784,22 @@ und starten im Simulator bzw. Emulator — der Tunnel selbst läuft dort nicht,
 `NEPacketTunnelProvider` gibt es im Simulator gar nicht. Der erste Lauf auf
 echter Hardware ist der über TestFlight und den internen Test in Google Play.
 
+**TestFlight-Builds entstehen per Knopfdruck** (`.github/workflows/testflight.yml`,
+nur `workflow_dispatch`): Go-Kern, `xcodegen`, Archiv, Signatur und Upload
+über dasselbe `mobile/ios/upload.sh` wie am Mac. Drei Dinge daran:
+
+- **Nie durch einen Push.** Ein Build geht an alle internen Tester; das ist
+  eine Entscheidung wie ein Release, keine Nebenwirkung eines Commits.
+  `upload: false` baut und signiert nur.
+- **Die Build-Nummer fragt App Store Connect** (`mobile/ios/next-build-number.mjs`:
+  die höchste vorhandene plus eins). Ein eigener Zähler wie die Run-Nummer
+  kollidierte mit dem ersten Upload von Hand, und App Store Connect lehnt eine
+  Nummer ab, die es für diese Version schon kennt. `concurrency` verhindert
+  zwei Läufe gleichzeitig.
+- **Kein Apple-Geheimnis in GitHub.** Die Schlüssel kommen über das
+  1Password-Dienstkonto des Release-Jobs aus dem Tresor „wave-mesh CI“
+  (Eintrag „Apple Distribution iOS“ und „Apple Notarization“).
+
 **Die Store-Identität steht und ändert sich nie mehr:** Bundle-Id und
 `applicationId` `org.wavemesh.app`, Extension `org.wavemesh.app.tunnel`,
 App-Gruppe `group.org.wavemesh.app`, Team `L6R92A4Y7C` (Moellenbeck-Digital
