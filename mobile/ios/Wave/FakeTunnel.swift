@@ -151,7 +151,12 @@
                     "ipv4": live ? "10.\(third).0.2" : "", "ipv6": "",
                     "enabled": wave.enabled, "problem": wave.problem,
                     "detail": wave.problem.isEmpty ? "" : "node-removed",
-                    "connected": live, "relay": "", "resolver": live ? "10.\(third).0.53" : "",
+                    "connected": live,
+                    // The first wave's server offers a relay and it is up; any
+                    // further one offers none, as a server without WAVE_RELAYS.
+                    "relay": live && index == 0 ? "wss://relay.\(wave.controlUrl.replacingOccurrences(of: "https://", with: ""))/relay" : "",
+                    "relayOffered": live && index == 0,
+                    "resolver": live ? "10.\(third).0.53" : "",
                     "peers": live ? [
                         ["hostname": "laptop", "dnsName": "laptop.\(suffix)", "ipv4": "10.\(third).0.3", "ipv6": "",
                          "online": true, "via": "192.168.1.20:41641", "rttMs": 12, "lastHandshakeSeconds": 8],

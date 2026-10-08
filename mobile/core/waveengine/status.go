@@ -72,6 +72,11 @@ type WaveView struct {
 	// The relay this wave is connected to, or empty. One per wave: the relay
 	// routes by disco key, and each enrolment has its own.
 	Relay string `json:"relay"`
+	// Whether the server offers a relay at all. Without one, a peer that
+	// neither side can reach directly -- a connector behind a cluster's NAT,
+	// a phone behind its carrier's -- stays out of reach, and the app says so
+	// rather than showing a peer that simply never answers.
+	RelayOffered bool `json:"relayOffered"`
 	// Where this wave's resolver answers. The wave's reservation when it has
 	// one, and this node's own address otherwise -- which cannot work for a
 	// lookup from the device itself, and is logged when it happens.
@@ -185,6 +190,7 @@ func (e *Engine) Status() Status {
 			if netmap.DNS.Suffix != "" {
 				view.Label = netmap.DNS.Suffix
 			}
+			view.RelayOffered = len(netmap.Relays) > 0
 			view.WaveID = netmap.WaveID
 			view.Suffix = netmap.DNS.Suffix
 			view.Hostname = netmap.Self.Hostname

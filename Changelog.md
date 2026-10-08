@@ -36,6 +36,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 - In der Weboberfläche: Telefone erscheinen als iOS bzw. Android mit ihrer
   Version, Geräte lassen sich umbenennen, und Mitglieder können einen Wave
   selbst verlassen.
+- **Die iPhone-App sagt pro Wave, ob ein Relay da ist:** „Relay verbunden“,
+  „Relay nicht verbunden“ oder „Dieser Server bietet kein Relay an“ — ohne
+  Relay bleiben Geräte, die das Telefon nicht direkt erreicht, etwa ein
+  Connector in einem Cluster, unerreichbar. Ein Gerät, das der Server online
+  nennt, mit dem aber noch nie ein Handshake zustande kam, steht als „Noch
+  nicht erreicht“ da.
 - **Das Protokoll der Telefon-Apps sagt, was mit DNS los ist:** eine Zeile
   pro Wave mit Zone, eigener Adresse, Resolver und der Zahl der Geräte und
   Dienste, und eine Zeile, wenn ein Name gefragt wurde, den die Netzkarte
