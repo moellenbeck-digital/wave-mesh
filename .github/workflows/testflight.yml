@@ -6,7 +6,9 @@
 # line release.yml draws, and why this is a workflow of its own rather than a
 # trigger there: an app build has nothing to do with a version tag.
 #
-# What it does is what mobile/ios/upload.sh does on a Mac: build the Go core,
+# Before anything is uploaded, three jobs test what the app depends on (see
+# below); a red one stops the build. Then it does what mobile/ios/upload.sh
+# does on a Mac: build the Go core,
 # generate the project, archive, sign, upload. The signing material comes from
 # the 1Password vault "wave-mesh CI" through the same service account the
 # release job uses, so no Apple secret is stored in GitHub. The build number is
@@ -31,8 +33,149 @@ permissions:
   contents: read
 
 jobs:
+  # What the app depends on, held against everything that has broken before.
+  # The upload waits for all three: a build goes to every tester, and the
+  # failures of the last weeks -- a second wave whose names did not resolve, a
+  # connector nobody could reach, sessions reset by every netmap, a log that
+  # drew black -- each has a test below now. A red one stops the build.
+  verify:
+    name: Unit tests and the Go core
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mobile/core/go.mod
+          cache-dependency-path: mobile/core/go.sum
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run typecheck
+      - run: bun test
+      # The phone's core is checked against the TypeScript side's own bytes:
+      # canonical JSON, signatures, disco, DNS. Regenerated, as in release.yml.
+      - name: Regenerate the cross-implementation fixtures
+        run: cd mobile/fixtures && bun run generate
+      - name: Go core (gofmt, vet, go test -race, bindings)
+        run: ./mobile/build.sh check
+
+  e2e:
+    name: End-to-end (the phone's core against real servers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-go@v5
+        with:
+          # go.mod's pin, for the reason release.yml gives: the scripts build
+          # the core in a namespace without DNS, where a missing toolchain
+          # cannot be fetched.
+          go-version-file: mobile/core/go.mod
+          cache-dependency-path: mobile/core/go.sum
+      - name: Build wireguard-go
+        run: |
+          set -euo pipefail
+          version="$(grep -oP '^WIREGUARD_GO_VERSION="\K[^"]+' scripts/build-clients.sh)"
+          go install "golang.zx2c4.com/wireguard@$version"
+      - name: Warm the module cache for the mobile core
+        run: cd mobile/core && go mod download
+      - run: bun install --frozen-lockfile
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Install nftables
+        run: sudo apt-get update && sudo apt-get install -y nftables
+      # Two waves on one interface, one resolver for both zones, a restart
+      # that keeps addresses and port.
+      - name: The core carries two waves over one interface
+        run: ./test/e2e/mobile-core.sh
+      # Every step the app takes, through wavemobile: login, cancel, pause,
+      # leave, rename, a removed device, a restart, a second wave at one server.
+      - name: Every step of the app against real servers
+        run: ./test/e2e/mobile-lifecycle.sh
+      # A connector with the production ruleset: IPv4, IPv6 refused at once,
+      # 40 netmap changes, relay only, an access policy.
+      - name: A cluster's services through a connector
+        run: ./test/e2e/mobile-services.sh
+      - name: The core punches through two NATs
+        run: ./test/e2e/mobile-nat.sh
+      - name: The core falls back to the relay
+        run: ./test/e2e/mobile-nat.sh --symmetric
+      # The other side of every test above is the desktop client and the
+      # server, both changed for the phones as well.
+      - name: One device in two waves at once
+        run: ./test/e2e/two-waves.sh
+      - name: One device in two waves at the same server
+        run: ./test/e2e/same-server.sh
+      - name: Two nodes behind NATs punch a direct path
+        run: ./test/e2e/nat-traversal.sh
+
+  ios-tests:
+    name: iOS unit and UI tests
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mobile/core/go.mod
+          cache-dependency-path: mobile/core/go.sum
+      - name: Tools
+        run: brew install xcodegen
+      - name: Build the Go core
+        run: ./mobile/build.sh ios
+      - name: Pick a simulator
+        id: sim
+        # Whatever iPhone the runner's Xcode ships: a hardcoded name breaks
+        # with the next runner image.
+        run: |
+          id=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          runtimes = sorted((r for r in devices if "iOS" in r), reverse=True)
+          for runtime in runtimes:
+              for device in devices[runtime]:
+                  if device["name"].startswith("iPhone"):
+                      print(device["udid"]); raise SystemExit
+          ')
+          echo "id=$id" >>"$GITHUB_OUTPUT"
+          xcrun simctl list devices | grep "$id"
+      - name: Generate the project
+        run: cd mobile/ios && xcodegen generate --quiet
+      # The Go core's JSON as the app decodes it, the tunnel's safety rules,
+      # the invite parser.
+      - name: Unit tests
+        run: |
+          cd mobile/ios
+          xcodebuild -scheme WaveTunnelTests -destination "id=${{ steps.sim.outputs.id }}" test | tail -40
+          exit "${PIPESTATUS[0]}"
+      # Every screen against a stand-in tunnel: login, pause, leave, removed,
+      # another VPN, services, the log (6000 lines), relay per wave, a second
+      # wave at one server, the QR link, check connection.
+      - name: UI tests
+        run: |
+          cd mobile/ios
+          xcodebuild -scheme Wave -destination "id=${{ steps.sim.outputs.id }}" -resultBundlePath ui-tests.xcresult test | tail -60
+          exit "${PIPESTATUS[0]}"
+      - name: Keep the UI test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-tests
+          path: mobile/ios/ui-tests.xcresult
+          retention-days: 3
+
   ios:
     name: iOS to TestFlight
+    needs: [verify, e2e, ios-tests]
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
