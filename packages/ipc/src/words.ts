@@ -13,6 +13,8 @@ const en = {
   // Sprayed to every candidate rather than down a confirmed path: slower and
   // noisier, but carrying traffic -- see pathKind().
   loose: "no fixed path",
+  // Nothing is being sent, so no path is probed -- the battery's rule.
+  idle: "idle",
   connecting: "connecting…",
   waitingInBrowser: "waiting for approval in the browser",
 } satisfies Messages;
@@ -21,6 +23,7 @@ const de: typeof en = {
   direct: (via) => `direkt ${via}`,
   relay: "über Relay",
   loose: "kein fester Pfad",
+  idle: "ruht",
   connecting: "verbinde…",
   waitingInBrowser: "wartet auf Freigabe im Browser",
 };
@@ -37,10 +40,12 @@ export function pathWords(
   const text =
     kind === "loose"
       ? words.loose
-      : kind === "none"
-        ? words.connecting
-        : kind === "relay"
-          ? words.relay
-          : words.direct(peer.via ?? "");
+      : kind === "idle"
+        ? words.idle
+        : kind === "none"
+          ? words.connecting
+          : kind === "relay"
+            ? words.relay
+            : words.direct(peer.via ?? "");
   return { kind, text };
 }

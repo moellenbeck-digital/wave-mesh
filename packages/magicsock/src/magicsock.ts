@@ -57,6 +57,11 @@ export interface PeerStatus {
   viaRelay: boolean;
   rttMs?: number;
   paths: PathState[];
+  /**
+   * Nothing sent to this peer for ACTIVE_TIMEOUT_MS, so it is not probed and
+   * whatever path it had is the last one known, not a measured one.
+   */
+  idle: boolean;
 }
 
 export interface MagicSockOptions {
@@ -123,6 +128,28 @@ const PATH_TIMEOUT_MS = 15_000;
 const PROBE_FAST_MS = 250;
 const PROBE_SLOW_MS = 3_000;
 const PROBE_FAST_DURATION_MS = 5_000;
+
+/**
+ * How long after WireGuard last sent a peer something that peer is still probed.
+ *
+ * Probing every path of every peer every three seconds, whether anything
+ * flowed or not, is what kept the phones awake: on cellular each packet holds
+ * the radio in its high-power state for seconds after it, and the mobile core
+ * had already stopped probing idle peers itself -- but a desktop pinging the
+ * phone wakes the radio just the same, and so does a 25-second WireGuard
+ * keepalive. A path is only worth measuring while something is about to use
+ * it; the first packet after a quiet spell starts a fast phase like a new peer
+ * gets. 45 seconds is the mobile core's activeTimeout, and comfortably longer
+ * than the ten seconds WireGuard waits before a passive keepalive.
+ *
+ * Only what we send counts, not what we receive: a peer of an older version
+ * that keeps its tunnel to us alive would otherwise keep us probing for ever.
+ */
+export const ACTIVE_TIMEOUT_MS = 45_000;
+
+/** Whether WireGuard sent this peer something recently enough to probe it. */
+export const isActive = (peer: { lastSendAt?: number }, now: number): boolean =>
+  peer.lastSendAt !== undefined && now - peer.lastSendAt < ACTIVE_TIMEOUT_MS;
 
 /**
  * Whether a path is owed a probe.
@@ -277,6 +304,10 @@ interface Peer {
   probingSince: number;
   /** When this peer first appeared; a newcomer is still being punched. */
   joinedAt: number;
+  /** When WireGuard last sent this peer anything; see ACTIVE_TIMEOUT_MS. */
+  lastSendAt?: number;
+  /** When it last went from idle to active -- a newcomer again, for wantsRebind. */
+  wokeAt?: number;
 }
 
 /** How long a new peer may have no path before it says anything about our port. */
@@ -399,10 +430,19 @@ export class MagicSock {
     return this.socket.port;
   }
 
-  /** True while at least one peer has no usable path. */
-  /** See wantsRebind. */
+  /**
+   * See wantsRebind. Only active peers count: an idle one is not probed, so
+   * having no path says nothing about our port -- and moving it publishes new
+   * candidates, which pushes a netmap to the whole wave and wakes every phone
+   * in it. One that just woke up is a newcomer again: its old path has expired
+   * and the punch takes as long as the first one.
+   */
   needsRebind(): boolean {
-    return wantsRebind(this.peers.values(), this.now());
+    const now = this.now();
+    const active = [...this.peers.values()]
+      .filter((peer) => isActive(peer, now))
+      .map((peer) => ({ best: peer.best, joinedAt: Math.max(peer.joinedAt, peer.wokeAt ?? 0) }));
+    return wantsRebind(active, now);
   }
 
   async close(): Promise<void> {
@@ -420,6 +460,7 @@ export class MagicSock {
   }
 
   status(): PeerStatus[] {
+    const now = this.now();
     return [...this.peers.values()].map((peer) => {
       const best = peer.best ? peer.paths.get(peer.best) : undefined;
       return {
@@ -428,6 +469,7 @@ export class MagicSock {
         viaRelay: best?.viaRelay ?? false,
         rttMs: best?.rttMs,
         paths: [...peer.paths.values()],
+        idle: !isActive(peer, now),
       };
     });
   }
@@ -510,7 +552,11 @@ export class MagicSock {
     void this.probe();
   }
 
-  /** Restarts aggressive probing, e.g. after the control server said to punch. */
+  /**
+   * Restarts aggressive probing, e.g. after the control server said to punch.
+   * An idle peer only takes the candidates: the punch happens when something
+   * is sent to it, and probing it now would wake it for nothing.
+   */
   punchNow(nodeKey: string, candidates: Endpoint[] = []): void {
     const peer = this.peers.get(nodeKey);
     if (!peer || !this.probingEnabled) return;
@@ -698,6 +744,19 @@ export class MagicSock {
     const peer = this.peers.get(nodeKey);
     if (!peer) return;
 
+    // The first packet after a quiet spell wakes the peer: its paths are a
+    // guess by now, so it gets the fast phase a new peer gets. The stale best
+    // path is expired first, so this packet is sprayed -- relay included --
+    // instead of going down a path that nobody has measured for a minute.
+    const now = this.now();
+    if (!isActive(peer, now)) {
+      peer.probingSince = now;
+      peer.wokeAt = now;
+      peer.lastSendAt = now;
+      void this.probePeer(peer);
+    }
+    peer.lastSendAt = now;
+
     const best = peer.best ? peer.paths.get(peer.best) : undefined;
     if (best) {
       this.sendVia(peer, best, data);
@@ -719,7 +778,13 @@ export class MagicSock {
   }
 
   private async probePeer(peer: Peer): Promise<void> {
+    // Waking a peer must not punch before our own candidates are published
+    // (see enableProbing); it stays active and the next tick probes it.
+    if (!this.probingEnabled) return;
     const now = this.now();
+    // Left as it was, best path included: nothing is about to use it, and the
+    // first packet that is wakes it up (onWireguardPacket).
+    if (!isActive(peer, now)) return;
     const fast = now - peer.probingSince < PROBE_FAST_DURATION_MS;
 
     for (const path of peer.paths.values()) {

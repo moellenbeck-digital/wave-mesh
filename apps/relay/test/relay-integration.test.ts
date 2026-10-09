@@ -74,6 +74,17 @@ const wireguardPacket = (marker: number): Uint8Array => {
   return packet;
 };
 
+/**
+ * WireGuard on `from` sends `to` something. A peer is only probed while
+ * something is sent to it, so every test that wants a path says so.
+ */
+function talk(from: Awaited<ReturnType<typeof makeNode>>, to: { config: { nodeKey: string } }): void {
+  from.wg.send(
+    wireguardPacket(0),
+    from.sock.endpointForWireguard(to.config.nodeKey) as { ip: string; port: number },
+  );
+}
+
 /** A port nothing listens on, standing in for a candidate that cannot work. */
 const DEAD_CANDIDATE = { ip: "127.0.0.1", port: 9 };
 
@@ -90,6 +101,7 @@ describe("relay fallback", () => {
     await b.sock.setPeers([{ ...a.config, candidates: [DEAD_CANDIDATE] }]);
     a.sock.enableProbing();
     b.sock.enableProbing();
+    talk(a, b);
 
     const status = await waitFor(() =>
       a.sock.status().find((peer) => peer.best !== undefined || peer.viaRelay),
@@ -116,6 +128,7 @@ describe("relay fallback", () => {
     await b.sock.setPeers([{ ...a.config, candidates: [DEAD_CANDIDATE] }]);
     a.sock.enableProbing();
     b.sock.enableProbing();
+    talk(a, b);
     await waitFor(() => a.sock.status().find((peer) => peer.viaRelay));
 
     const before = a.sock.endpointForWireguard(b.config.nodeKey);
@@ -157,6 +170,7 @@ describe("relay fallback", () => {
     await b.sock.setPeers([{ ...a.config, candidates: [{ ip: "127.0.0.1", port: a.sock.port }] }]);
     a.sock.enableProbing();
     b.sock.enableProbing();
+    talk(a, b);
     await waitFor(() => a.sock.status().find((peer) => peer.best && !peer.viaRelay));
 
     server.stop();

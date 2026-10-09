@@ -29,6 +29,7 @@ function describePath(peer: ProfileStatus["peers"][number]): string {
   // Sprayed to every candidate rather than sent down a confirmed one: slower
   // and noisier, but the tunnel is carrying traffic and should not read as down.
   const { kind, text } = pathWords(peer, locale());
+  if (kind === "idle") return dim(text);
   if (kind === "loose" || kind === "none") return yellow(text);
   const label = kind === "relay" ? yellow(text) : green(text);
   return peer.rttMs === null ? label : `${label} ${dim(`${peer.rttMs.toFixed(0)}ms`)}`;

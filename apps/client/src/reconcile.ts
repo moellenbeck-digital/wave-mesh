@@ -1,8 +1,20 @@
 import { type Candidate, formatEndpoint, type Netmap, type Peer } from "@wave/proto";
 import type { DesiredPeer, SetDeviceRequest, WgDeviceState } from "./wgctl.ts";
 
-/** Keeps NAT state alive on paths that would otherwise time out. */
-export const KEEPALIVE_SECONDS = 25;
+/**
+ * No persistent keepalive -- written out as 0, because a set only changes what
+ * it names and a running device would keep its old 25.
+ *
+ * It used to keep NAT state alive on idle paths, and on a phone it did the
+ * opposite of what anyone wanted: a packet every 25 seconds from every desktop
+ * holds the radio in its high-power state, and the phone's WireGuard answering
+ * the handshakes those keepalives drive made the mobile core count the desktop
+ * as active and probe it in turn. A quiet path needs nothing kept alive: the
+ * first packet after a pause is sprayed to every candidate and the relay,
+ * which reaches the peer whatever its NAT has forgotten, and its answer starts
+ * the punch from both sides (see ACTIVE_TIMEOUT_MS in @wave/magicsock).
+ */
+export const KEEPALIVE_SECONDS = 0;
 
 /**
  * M2 uses whatever address a peer published, preferring one learned from STUN

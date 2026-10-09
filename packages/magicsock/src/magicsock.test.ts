@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPair } from "@wave/crypto";
 import { encodeDisco, newTxid, sharedKey } from "@wave/disco";
-import { currentReflexive, MAX_REFLEXIVE, MagicSock, REFLEXIVE_TTL_MS } from "./magicsock.ts";
+import {
+  ACTIVE_TIMEOUT_MS,
+  currentReflexive,
+  MAX_REFLEXIVE,
+  MagicSock,
+  REBIND_GRACE_MS,
+  REFLEXIVE_TTL_MS,
+} from "./magicsock.ts";
 import { buildBindingResponse, isBindingRequest } from "./stun.ts";
 
 const cleanup: Array<() => void | Promise<void>> = [];
@@ -37,7 +44,7 @@ async function fakeWireguard() {
   };
 }
 
-async function makeNode() {
+async function makeNode(now?: () => number) {
   const disco = generateKeyPair("x25519");
   const node = generateKeyPair("x25519");
   const wg = await fakeWireguard();
@@ -46,6 +53,7 @@ async function makeNode() {
     discoPrivateKey: disco.privateKey,
     discoPublicKey: disco.publicKey,
     wireguardPort: wg.port,
+    now,
   });
   await sock.start();
   cleanup.push(() => sock.close());
@@ -59,6 +67,18 @@ const wireguardPacket = (marker: number): Uint8Array => {
   return packet;
 };
 
+type Node = Awaited<ReturnType<typeof makeNode>>;
+
+/**
+ * WireGuard on `from` sends `to` something. Only a peer something is sent to
+ * is probed (ACTIVE_TIMEOUT_MS), so every test that wants a path says so.
+ */
+function talk(from: Node, to: Node, marker = 0): void {
+  from.wg.send(wireguardPacket(marker), from.sock.endpointForWireguard(to.config.nodeKey) as Endpoint);
+}
+
+type Endpoint = { ip: string; port: number };
+
 describe("path discovery", () => {
   test("two nodes that know each other's address find a direct path", async () => {
     const a = await makeNode();
@@ -68,6 +88,7 @@ describe("path discovery", () => {
     await b.sock.setPeers([{ ...a.config, candidates: [{ ip: "127.0.0.1", port: a.sock.port }] }]);
     a.sock.enableProbing();
     b.sock.enableProbing();
+    talk(a, b);
 
     const status = await waitFor(() => a.sock.status().find((peer) => peer.best));
     expect(status.best).toEqual({ ip: "127.0.0.1", port: b.sock.port });
@@ -85,6 +106,7 @@ describe("path discovery", () => {
     await a.sock.setPeers([{ ...b.config, candidates: [{ ip: "127.0.0.1", port: b.sock.port }] }]);
     a.sock.enableProbing();
     b.sock.enableProbing();
+    talk(a, b);
 
     const learned = await waitFor(() => b.sock.status().find((peer) => peer.paths.some((p) => p.learned)));
     expect(learned.paths.some((path) => path.endpoint?.port === a.sock.port)).toBe(true);
@@ -100,6 +122,8 @@ describe("path discovery", () => {
     // mapping the peer needs for its own outbound traffic.
     await a.sock.setPeers([{ ...b.config, candidates: [{ ip: "127.0.0.1", port: b.sock.port }] }]);
     await b.sock.setPeers([{ ...a.config, candidates: [] }]);
+    // Something to say, too: waking a peer must not jump the gate either.
+    talk(a, b);
 
     await Bun.sleep(600);
     expect(b.sock.status()[0]?.paths).toHaveLength(0);
@@ -141,6 +165,7 @@ describe("path discovery", () => {
     await b.sock.setPeers([{ ...a.config, candidates: [{ ip: "127.0.0.1", port: a.sock.port }] }]);
     a.sock.enableProbing();
     b.sock.enableProbing();
+    talk(a, b);
     await waitFor(() => a.sock.status().find((peer) => peer.best));
 
     // The netmap can lag behind the traffic; the path carrying it stays.
@@ -181,6 +206,7 @@ describe("packet forwarding", () => {
     await b.sock.setPeers([{ ...a.config, candidates: [{ ip: "127.0.0.1", port: a.sock.port }] }]);
     a.sock.enableProbing();
     b.sock.enableProbing();
+    talk(a, b);
     await waitFor(() => a.sock.status().find((peer) => peer.best));
 
     const endpoint = a.sock.endpointForWireguard(b.config.nodeKey);
@@ -357,8 +383,98 @@ describe("choosing between paths", () => {
     await b.sock.setPeers([{ ...a.config, candidates: [{ ip: "127.0.0.1", port: a.sock.port }] }]);
     a.sock.enableProbing();
     b.sock.enableProbing();
+    talk(a, b);
 
     const status = await waitFor(() => a.sock.status().find((peer) => peer.best));
     expect(status.viaRelay).toBe(false);
+  });
+});
+
+describe("idle peers", () => {
+  // The phones' battery: a peer nothing is sent to is not probed, and a
+  // desktop pinging a phone every three seconds keeps its radio awake.
+
+  async function pair(now?: () => number) {
+    const a = await makeNode(now);
+    const b = await makeNode(now);
+    await a.sock.setPeers([{ ...b.config, candidates: [{ ip: "127.0.0.1", port: b.sock.port }] }]);
+    await b.sock.setPeers([{ ...a.config, candidates: [{ ip: "127.0.0.1", port: a.sock.port }] }]);
+    a.sock.enableProbing();
+    b.sock.enableProbing();
+    return { a, b };
+  }
+
+  test("a peer nothing was sent to is never pinged", async () => {
+    const { a, b } = await pair();
+    await Bun.sleep(600);
+    expect(a.sock.status()[0]?.idle).toBe(true);
+    expect(a.sock.status()[0]?.paths.every((path) => path.lastPingAt === undefined)).toBe(true);
+    // Nor did B learn anything about A, which a single ping would have taught it.
+    expect(b.sock.status()[0]?.paths.some((path) => path.learned)).toBe(false);
+  });
+
+  test("answering pings does not make a peer active", async () => {
+    const { a, b } = await pair();
+    talk(a, b);
+    await waitFor(() => a.sock.status().find((peer) => peer.best));
+    // B answered every ping with a pong, and still has nothing to say.
+    expect(b.sock.status()[0]?.idle).toBe(true);
+    expect(b.sock.status()[0]?.paths.every((path) => path.lastPingAt === undefined)).toBe(true);
+  });
+
+  test("goes quiet once nothing has been sent for a while, and wakes on the next packet", async () => {
+    let clock = 1_000_000;
+    const { a, b } = await pair(() => clock);
+    talk(a, b);
+    await waitFor(() => a.sock.status().find((peer) => peer.best));
+    expect(a.sock.status()[0]?.idle).toBe(false);
+
+    clock += ACTIVE_TIMEOUT_MS;
+    const before = a.sock.status()[0]?.paths.map((path) => path.lastPingAt);
+    await Bun.sleep(600);
+    expect(a.sock.status()[0]?.idle).toBe(true);
+    expect(a.sock.status()[0]?.paths.map((path) => path.lastPingAt)).toEqual(before);
+
+    // The next packet starts a fast phase: pinged at once, measured again.
+    talk(a, b, 5);
+    await waitFor(() => a.sock.status()[0]?.idle === false);
+    await waitFor(() => a.sock.status()[0]?.paths.some((path) => path.lastPingAt === clock));
+    await waitFor(() => b.wg.received.find((packet) => packet[63] === 5));
+  });
+
+  test("an idle peer without a path does not move our port", async () => {
+    let clock = 1_000_000;
+    const a = await makeNode(() => clock);
+    // Nobody at these addresses: a peer that would never answer.
+    await a.sock.setPeers([
+      {
+        nodeKey: generateKeyPair("x25519").publicKey,
+        discoKey: generateKeyPair("x25519").publicKey,
+        candidates: [],
+      },
+    ]);
+    a.sock.enableProbing();
+    clock += REBIND_GRACE_MS * 2;
+    expect(a.sock.needsRebind()).toBe(false);
+
+    // Something sent and still no path once the grace is over: that is the
+    // case a fresh port is for.
+    const silent = a.sock.status()[0]?.nodeKey as string;
+    a.wg.send(wireguardPacket(0), a.sock.endpointForWireguard(silent) as Endpoint);
+    await Bun.sleep(50);
+    expect(a.sock.needsRebind()).toBe(false);
+    clock += REBIND_GRACE_MS;
+    a.wg.send(wireguardPacket(0), a.sock.endpointForWireguard(silent) as Endpoint);
+    await Bun.sleep(50);
+    expect(a.sock.needsRebind()).toBe(true);
+  });
+
+  test("a punch hint for an idle peer takes the candidates and pings nothing", async () => {
+    const { a, b } = await pair();
+    a.sock.punchNow(b.config.nodeKey, [{ ip: "127.0.0.1", port: 9 }]);
+    await Bun.sleep(300);
+    const paths = a.sock.status()[0]?.paths ?? [];
+    expect(paths.some((path) => path.endpoint?.port === 9)).toBe(true);
+    expect(paths.every((path) => path.lastPingAt === undefined)).toBe(true);
   });
 });

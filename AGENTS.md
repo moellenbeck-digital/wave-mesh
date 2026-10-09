@@ -1632,19 +1632,36 @@ Was daran festliegt:
   Hochleistungszustand; wer alle drei Sekunden sendet, lässt es nie schlafen.
   Genau das tat der Kern: jeder Pfad jedes Peers alle 3 s geprobt, ob Verkehr
   floss oder nicht, dazu WireGuard-Keepalive alle 25 s je Peer. Deshalb zwei
-  Regeln, beide nur im Go-Kern, der Desktop bleibt, wie er ist:
+  Regeln, zuerst im Go-Kern, seit dem 09.10.2026 auch auf dem Desktop
+  (`ACTIVE_TIMEOUT_MS` in `@wave/magicsock`, `KEEPALIVE_SECONDS` in
+  `reconcile.ts`):
   - **Geprobt wird nur ein aktiver Peer** — einer, dem WireGuard in den letzten
     45 s etwas geschickt hat (`activeTimeout` in `wavemagic`). Das erste Paket
     nach einer Pause startet die Schnellphase wie bei einem neuen Peer, bis
-    dahin geht es an den zuletzt bekannten Pfad oder wird gesprüht. Gezählt
-    wird nur, was *wir* senden: die Keepalives eines Desktops hielten das
-    Telefon sonst für immer wach. Der Status sagt dafür `via: "idle"`, und
-    die Apps zeigen „ruht" statt eines alten Pfads mit alter RTT.
+    dahin geht es an den zuletzt bekannten Pfad oder wird gesprüht — der
+    Desktop verwirft den alten Pfad dabei sofort und sprüht, Relay
+    eingeschlossen. Gezählt wird nur, was *wir* senden: Pongs auf fremde Pings
+    und die Keepalives eines älteren Clients hielten das Gerät sonst für immer
+    wach. Ein Punch-Hinweis für einen ruhenden Peer nimmt nur die Kandidaten
+    mit. Der Status sagt dafür `via: "idle"`, Apps, CLI und Tray zeigen
+    „ruht"/„idle" statt eines alten Pfads mit alter RTT.
   - **`persistent_keepalive_interval=0`**, ausdrücklich geschrieben — ein Set
     ändert nur, was es nennt, ein laufendes Device behielte sonst die 25.
-  Was das Telefon nicht steuern kann, sind die Pakete, die *andere* ihm
-  schicken: ein Desktop probt es weiter alle 3 s und hält Keepalive, und auch
-  ein eingehendes Paket weckt das Funkmodul. Das ist die bekannte Lücke.
+  Auf dem Desktop musste dazu der Port-Wechsel lernen, ruhende Peers nicht
+  mitzuzählen (`needsRebind()`): einer, den niemand probt, hat nie einen Pfad,
+  und ein Rebind veröffentlicht neue Kandidaten, schiebt dem ganzen Wave eine
+  Netzkarte und weckt damit jedes Telefon darin. Ein gerade aufgewachter Peer
+  ist für die Gnadenfrist wieder ein Neuling.
+  Ohne Keepalive hält niemand mehr NAT-Zustand auf ruhenden Pfaden — das ist
+  Absicht: das erste Paket erreicht die Gegenseite notfalls über das Relay,
+  ihre Antwort macht sie aktiv, und dann punchen beide Seiten. **Das Relay ist
+  damit auch der Weckruf**: ohne Relay in der Netzkarte erreicht das erste
+  Paket einen ruhenden Peer hinter NAT nie, und zwei solche Geräte finden keinen
+  direkten Pfad — `nat-traversal.sh` läuft deshalb mit Relays und prüft, dass
+  am Ende der direkte Pfad gewinnt. Ein Wave ohne `WAVE_RELAYS` ist damit nur
+  noch im LAN brauchbar. Was bleibt, sind
+  ältere Clients, bis sie aktualisiert sind, und der Herzschlag zum Relay
+  (15 s, je Gerät an das Relay, nicht an Peers).
 - **Android tauscht bei jedem `establish()` den Deskriptor**, iOS behält seinen
   Packet Flow. `VpnService.Builder` gibt einen neuen zurück und schließt den
   alten — ein Kern, der noch den ersten liest, sieht einen Tunnel, der einfach

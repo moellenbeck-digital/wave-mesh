@@ -54,6 +54,11 @@ wait_for_line "$WORK/b.log" 'NAT mapping address-dependent' "B's NAT classificat
 ok "both NATs are symmetric, so punching cannot succeed"
 
 step "the relay carries the connection"
+# Only a peer something is sent to is probed, so somebody has to talk first.
+A_IP=$(tunnel_ip nodea wave0)
+B_IP=$(tunnel_ip nodeb wave1)
+ip netns exec nodea ping -i 0.5 -W1 -I wave0 "$B_IP" >/dev/null 2>&1 &
+TALKER=$!
 wait_for_line "$WORK/a.log" 'path to .* is relay' "A to fall back to the relay"
 wait_for_line "$WORK/b.log" 'path to .* is relay' "B to fall back to the relay"
 ok "$(grep -o 'path to .* is relay .*' "$WORK/a.log" | head -1)"
@@ -62,10 +67,9 @@ if grep -qE 'path to .* is 203\.0\.113\.' "$WORK/a.log"; then
   fail "a direct path was selected, so this run did not test the relay"
 fi
 ok "no direct path was ever selected"
+kill "$TALKER" 2>/dev/null || true
 
 step "ping over the relay"
-A_IP=$(tunnel_ip nodea wave0)
-B_IP=$(tunnel_ip nodeb wave1)
 ip netns exec nodea ping -c3 -W5 -I wave0 "$B_IP" >/dev/null || fail "A could not reach B through the relay"
 ok "A ($A_IP) -> B ($B_IP)"
 ip netns exec nodeb ping -c3 -W5 -I wave1 "$A_IP" >/dev/null || fail "B could not reach A through the relay"

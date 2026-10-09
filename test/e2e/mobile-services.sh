@@ -271,8 +271,11 @@ table inet block-direct {
 NFT
 # The connector's path, from the phone's own status -- not a log line, which
 # an earlier moment of the run could have written.
+# Something has to be sent meanwhile: a peer nothing goes to is not probed,
+# and its path would stay the last one known instead of falling over.
 VIA=""
 for _ in $(seq 1 120); do
+  ping -c1 -W1 "$G_V4" >/dev/null 2>&1 || true
   VIA=$(bun "$REPO/test/e2e/mobile-status.ts" "$STATUS" via "$TWO" 2>/dev/null || true)
   [[ "$VIA" == relay* ]] && break
   sleep 0.5

@@ -107,6 +107,16 @@ describe("status view", () => {
     expect(out).not.toContain("connecting…");
   });
 
+  test("a peer nothing is being sent to is idle -- not direct, and not connecting", () => {
+    // Its path is the last one known; nobody has measured it, and nobody needs
+    // to until something is sent (ACTIVE_TIMEOUT_MS in @wave/magicsock).
+    const out = plain(renderStatus(snapshot({ peers: [peer({ via: "idle", rttMs: 12 })] })));
+    expect(out).toContain("idle");
+    expect(out).not.toContain("direct");
+    expect(out).not.toContain("connecting");
+    expect(out).not.toContain("12ms");
+  });
+
   test("but a handshake old enough to prove nothing is connecting again", () => {
     const out = plain(
       renderStatus(snapshot({ peers: [peer({ via: undefined, lastHandshakeSecondsAgo: 600 })] })),

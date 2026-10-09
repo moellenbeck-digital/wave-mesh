@@ -121,13 +121,17 @@ export function waveLabel(controlUrl: string): string {
  * Calling that "connecting" says the tunnel is down while it carries data,
  * which is what it did while a ping through it answered in 16 ms.
  */
-export type PathKind = "direct" | "relay" | "loose" | "none";
+export type PathKind = "direct" | "relay" | "loose" | "idle" | "none";
 
 /** WireGuard rekeys every two minutes under traffic; beyond that we know nothing. */
 const HANDSHAKE_FRESH_SECONDS = 180;
 
 export function pathKind(peer: { via: string | null; lastHandshakeSecondsAgo: number | null }): PathKind {
   if (peer.via === "relay") return "relay";
+  // Nothing sent to it for a while, so nothing probes it: no path is measured,
+  // and none is needed until something is sent. Not "connecting" -- that would
+  // call every quiet peer broken.
+  if (peer.via === "idle") return "idle";
   if (peer.via) return "direct";
   const shook = peer.lastHandshakeSecondsAgo;
   return shook !== null && shook < HANDSHAKE_FRESH_SECONDS ? "loose" : "none";

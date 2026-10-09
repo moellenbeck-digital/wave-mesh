@@ -111,7 +111,7 @@ export const labelsOf = (view: WindowView): WindowLabels => view.labels ?? t().w
 /** The words for the path, and the RTT behind them only where there is a path to time. */
 const describePath = (peer: ProfileStatus["peers"][number]): string => {
   const { kind, text } = pathWords(peer, locale());
-  if (kind === "loose" || kind === "none") return text;
+  if (kind === "loose" || kind === "idle" || kind === "none") return text;
   return peer.rttMs === null ? text : `${text} · ${Math.round(peer.rttMs)} ms`;
 };
 

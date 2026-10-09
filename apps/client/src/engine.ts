@@ -760,7 +760,15 @@ export class Tunnel {
           dnsName: peer.dnsName,
           ipv4: peer.ipv4,
           ipv6: peer.ipv6,
-          via: path?.viaRelay ? "relay" : path?.best ? formatEndpoint(path.best) : undefined,
+          // "idle" before anything else: an idle peer's path is the last one
+          // known, not one measured -- the same word the mobile core uses.
+          via: path?.idle
+            ? "idle"
+            : path?.viaRelay
+              ? "relay"
+              : path?.best
+                ? formatEndpoint(path.best)
+                : undefined,
           rttMs: path?.rttMs,
           lastHandshakeSecondsAgo: handshake
             ? Math.max(0, Math.round(Date.now() / 1000 - handshake))
