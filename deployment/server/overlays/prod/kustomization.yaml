@@ -10,7 +10,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: wave-mesh
+# wave-net, nicht wave-mesh: unter diesem Namen läuft der Wave dort seit
+# seinem ersten Deployment, mit seiner Datenbank und seinen Zertifikaten. Ein
+# anderer Namespace hier hieße nicht "umziehen", sondern einen zweiten, leeren
+# Stapel daneben bauen. Ein Umzug ist ein eigener Schritt: Postgres sichern und
+# zurückspielen, die Zertifikate neu ausstellen, den alten abbauen.
+namespace: wave-net
 
 resources:
   - ../../base
@@ -21,11 +26,11 @@ images:
   # und nicht die Nebenwirkung eines Neustarts. Die mitlaufenden Tags (X.Y, X,
   # latest, insiders, develop) gibt es dafür trotzdem -- siehe CLAUDE.md.
   - name: ghcr.io/moellenbeck-digital/wave-mesh/control
-    newTag: "0.1.0-insiders.9"
+    newTag: "0.7.0-develop.2"
   - name: ghcr.io/moellenbeck-digital/wave-mesh/web
-    newTag: "0.1.0-insiders.9"
+    newTag: "0.7.0-develop.2"
   - name: ghcr.io/moellenbeck-digital/wave-mesh/relay
-    newTag: "0.1.0-insiders.9"
+    newTag: "0.7.0"
 
 configMapGenerator:
   - name: wave-control-config
@@ -55,7 +60,7 @@ configMapGenerator:
       # erste ist die Vorgabe. Ein Gerät darf sich mit `wave update --channel`
       # einen anderen aus der Liste wünschen, keinen darüber hinaus. Ohne
       # WAVE_GITHUB_TOKEN in secret.env wird gar nichts angeboten.
-      - WAVE_UPDATE_CHANNELS=stable,insiders
+      - WAVE_UPDATE_CHANNELS=stable,insiders,develop
 
 secretGenerator:
   - name: wave-secrets
@@ -101,7 +106,7 @@ patches:
         template:
           spec:
             nodeSelector:
-              kubernetes.io/hostname: <relay-knoten>  # Name des Knotens mit der IP aus WAVE_RELAYS
+              kubernetes.io/hostname: processcube-cloud-worker-2  # der Knoten mit der IP aus WAVE_RELAYS
             containers:
               - name: relay
                 ports:
