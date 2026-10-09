@@ -1788,6 +1788,11 @@ echter Hardware ist der über TestFlight und den internen Test in Google Play.
 nur `workflow_dispatch`): Go-Kern, `xcodegen`, Archiv, Signatur und Upload
 über dasselbe `mobile/ios/upload.sh` wie am Mac. Drei Dinge daran:
 
+- **Erst nach allen Tests.** Drei Jobs halten den Upload auf: Unit-Tests
+  und Go-Kern, die End-to-End-Tests des Telefon-Kerns (darunter
+  `mobile-lifecycle.sh`, das im Release-Job nicht läuft) und die iOS-Tests im
+  Simulator. Genau dort fiel auf, dass ein beitretendes Gerät die Desktops
+  ihren Port wechseln ließ.
 - **Nie durch einen Push.** Ein Build geht an alle internen Tester; das ist
   eine Entscheidung wie ein Release, keine Nebenwirkung eines Commits.
   `upload: false` baut und signiert nur.

@@ -20,6 +20,9 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   am Tag CPU-Zeit, Daten über Mobilfunk und WLAN und die Zeit im Hintergrund,
   getrennt für App und Tunnel, und warum ein Lauf endete, wenn er abstürzte,
   hing oder zu viel CPU brauchte.
+- **TestFlight per Knopfdruck, erst nach allen Tests:** Vor dem Upload laufen
+  Unit-Tests, Go-Kern, die End-to-End-Tests des Telefon-Kerns gegen echte
+  Server und die iOS-Tests im Simulator; ein roter hält den Build auf.
 - **TestFlight per Knopfdruck:** Der Workflow „TestFlight“ baut die iPhone-App
   aus dem gewählten Stand, signiert sie und lädt sie hoch — gestartet von Hand
   in GitHub, auch aus der GitHub-App auf dem Telefon. Die Build-Nummer ist die
@@ -27,6 +30,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Fehlerbehebungen
 
+- **Ein neues Gerät im Wave riss bestehende Verbindungen ab.** Der
+  Desktop-Client wechselte seinen UDP-Port, sobald irgendein Peer noch keinen
+  Weg hatte — und das hat jedes Gerät, das gerade beitritt. Telefone, die
+  ruhige Geräte seit dem Akku-Fix nicht mehr ständig anpingen, brauchten dann
+  über zehn Sekunden, um den neuen Port zu finden. Gewechselt wird jetzt nur
+  noch, wenn gar kein Peer mehr erreichbar ist.
 - „Noch nicht erreicht“ stand auch bei Geräten, die nur ruhen: Seit das
   Telefon ruhige Geräte nicht mehr anpingt, gibt es mit ihnen keinen
   Handshake, und das ist kein Fehler.
