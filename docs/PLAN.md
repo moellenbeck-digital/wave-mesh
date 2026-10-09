@@ -1129,6 +1129,172 @@ schon in D11. Und ob ein Egress-Ziel im Wave sichtbar sein soll: heute weiß
 nur der Cluster, dass `ollama.ai` auf die Workstation zeigt; der Server und
 das Audit-Log erfahren es nicht.
 
+### D15 — Die Zwischenablage folgt ihrem Menschen
+
+**Problem:** Wer auf dem iPhone etwas kopiert, will es auf dem Notebook
+einfügen — und umgekehrt. Apple macht das mit Universal Clipboard, aber nur
+zwischen eigenen Geräten und nie mit Linux oder Windows. Ein Wave verbindet
+genau die Geräte, die dafür fehlen, und bringt mit, was so ein Abgleich
+braucht: einen verschlüsselten Weg von Gerät zu Gerät und eine Antwort darauf,
+wer am anderen Ende sitzt.
+
+**Entscheidung:** Ein Text, der in die Zwischenablage kommt, geht **direkt
+durch den Tunnel** an die anderen Geräte **desselben Menschen**, die ihn
+empfangen wollen. Den Inhalt sieht der Control-Server dabei nie. Er sagt
+in der Netzkarte nur, welche Peers dazugehören. Auf den Desktops gleicht sich
+die Zwischenablage von selbst ab, auf Telefonen gibt es dafür je Richtung einen
+Handgriff, weil die Plattform es anders nicht zulässt.
+
+```mermaid
+graph LR
+  subgraph NB["Notebook (Omarchy)"]
+    WL["wl-paste --watch<br/>wl-copy"] <-->|"IPC"| TR["Tray"]
+    TR <-->|"IPC"| DA["Daemon<br/>TCP auf der Wave-Adresse"]
+  end
+  subgraph PH["iPhone"]
+    SH["Teilen → wave<br/>Kurzbefehl, Control"] -->|"App-Gruppe"| EX["Tunnel-Extension<br/>(Go-Kern)"]
+    EX -->|"Benachrichtigung"| APP["App<br/>schreibt UIPasteboard"]
+  end
+  DA <==>|"WireGuard, nur Peers<br/>mit clipboard: true"| EX
+  CS["Control-Server"] -.->|"Netzkarte: wer gehört dazu"| DA
+  CS -.->|"Netzkarte"| EX
+```
+
+**Warum ohne eigene Authentifizierung.** Was über WireGuard ankommt, trägt eine
+Quelladresse, die an den Schlüssel des Peers gebunden ist (Cryptokey-Routing):
+eine Adresse aus fremden `allowedIps` kann niemand senden. Der Empfänger
+prüft also die Quelle gegen die aktuelle Netzkarte, und mehr ist nicht zu tun —
+kein Pairing, kein Token, kein TLS darüber. Dieselbe Eigenschaft trägt den
+Connector in D11.
+
+Was daran festliegt:
+
+- **Die Netzkarte sagt, wer dazugehört, und nur sie.** Heute steht in ihr kein
+  Besitzer, aus gutem Grund: wem ein Gerät gehört, geht die anderen Mitglieder
+  nichts an. Dazu kommt deshalb **ein Feld je Peer, das nur der Besitzer
+  sieht**: `clipboard: true` steht ausschließlich in der Netzkarte eines
+  anderen Geräts *desselben* Menschen und nur, wenn der Peer das Empfangen
+  eingeschaltet hat. Ein anderes Mitglied erfährt weder davon noch davon, wem
+  das Gerät gehört. Wie alles unterhalb von `Netmap` ist das Feld optional
+  und hat **kein `.default()`**; ein älterer Server lässt es weg, und dann
+  gibt es eben keinen Abgleich.
+- **Getaggte Geräte bekommen es nie.** Ein Tag ersetzt den Besitzer (siehe
+  ACLs), und der Connector, der mit dem Pre-Auth-Key des Eigentümers
+  angemeldet ist, ist ein Cluster und kein Laptop. Ihm die Zwischenablage zu
+  schicken hieße, Passwörter in einen Pod zu legen.
+- **Die Einstellung gehört dem Gerät, der Server erfährt sie.** Je Gerät zwei
+  Schalter, „senden“ und „empfangen“, beide aus, bis jemand sie einschaltet.
+  Gespeichert werden sie im State wie der Update-Kanal (D13), über
+  `/v1/control` meldet das Gerät nur „empfangen: ja/nein“
+  (`{ type: "clipboard", receive }`), gespeichert als `nodes.clipboard_receive`.
+  Aus genau dieser Meldung entsteht das Feld in den Netzkarten der anderen.
+  Das hat einen Grund, und der ist der Akku: ein Sender, der nicht weiß, wer
+  empfangen will, schickte jedem Telefon jede Kopie und weckte jedes Mal das
+  Funkmodul (D10).
+- **Ein fester TCP-Port auf der eigenen Wave-Adresse**, und sonst nirgends.
+  Gebunden wird nie an `0.0.0.0`: der Port ist nur für Peers da. Eine Kopie
+  ist eine Verbindung mit einer Nachricht — Länge, Typ, UTF-8 —, ohne
+  Antwort außer dem Schließen. TCP, weil 64 KiB Text in kein UDP-Datagramm
+  unter einer MTU von 1280 passen und Fragmentierung über das Relay genau das
+  ist, was in den Risiken steht.
+- **Mit Policy öffnet der Server den Port selbst.** Gibt es eine ACL, steht im
+  `packetFilter` sonst nichts, was den Port freigibt. Der Server fügt deshalb
+  für jeden Peer mit `clipboard: true` eine Freigabe dieses einen Ports hinzu,
+  aber nur zwischen Geräten, die sich laut Policy ohnehin sehen. Die
+  Sichtbarkeit selbst bleibt Sache der Policy: eine Regel, die zwei Geräte
+  desselben Menschen trennt, trennt auch ihre Zwischenablage.
+- **Auf dem Desktop nimmt der Daemon an, das Tray fasst die Zwischenablage
+  an.** Die Zwischenablage gehört zur Sitzung, der Daemon hat keine (er läuft
+  als root bzw. LocalSystem). Er kennt aber die Netzkarte und die Adressen.
+  Deshalb lauscht er, prüft die Quelle und reicht den Text über den
+  Steuersocket an das Tray weiter. Läuft kein Tray, wird die Kopie verworfen,
+  nicht gemerkt. In die andere Richtung sagt das Tray dem Daemon „das wurde
+  kopiert“, und der Daemon verteilt es. Neue Plattformweiche:
+  `apps/tray/src/clipboard.ts`.
+  - **Linux:** `wl-paste --watch` und `wl-copy` auf Wayland-Compositors mit
+    Data-Control-Protokoll (Hyprland, Sway, KDE). Wo es fehlt, sagt die Weiche
+    das ausdrücklich, wie `UnsupportedPlatform` beim Tray, statt still nichts zu
+    tun. Ob GNOME es inzwischen anbietet, ist beim Bau nachzusehen. X11 geht
+    über `xclip`, falls jemand danach fragt.
+  - **macOS:** `changeCount` von `NSPasteboard` im Takt der ohnehin gepumpten
+    Ereignisschleife, über die vorhandene Objective-C-Bindung. Eine
+    Benachrichtigung bei Änderungen gibt es dort nicht.
+  - **Windows:** `AddClipboardFormatListener` am vorhandenen unsichtbaren
+    Fenster, `WM_CLIPBOARDUPDATE` kommt über dieselbe Nachrichtenschleife wie
+    das Icon.
+- **Ein Eintrag darf nicht im Kreis laufen.** Was das Tray selbst in die
+  Zwischenablage geschrieben hat, meldet sein eigener Watcher sofort als neue
+  Kopie. Gemerkt wird deshalb der Hash des zuletzt empfangenen Texts, und der
+  wird nicht wieder gesendet. Ohne das schöben sich zwei Notebooks denselben
+  Text für immer zu.
+
+**Vertrauliches wird nie gesendet.** Passwort-Manager markieren, was sie
+kopieren: unter macOS mit `org.nspasteboard.ConcealedType` (auch
+`TransientType`), unter Wayland/KDE mit `x-kde-passwordManagerHint: secret`,
+unter Windows mit `ExcludeClipboardContentFromMonitorProcessing`. Steht eine
+Markierung da, wird der Eintrag weder gesendet noch geloggt. Was eine App nicht
+markiert, kann wave nicht erkennen. Deshalb beginnt das Feature mit beiden
+Schaltern aus.
+
+**Weitere Grenzen, die aus demselben Grund gezogen sind:**
+
+- **Nur Text, höchstens 64 KiB.** Bilder und Dateien sind ein anderes Feature
+  („AirDrop im Wave“), mit eigener Frage nach Größe und Speicher.
+- **Nichts auf der Platte, kein Verlauf, keine Logzeile mit Inhalt.** Geloggt
+  wird höchstens „clipboard from <hostname>, <n> bytes“, auf Englisch wie
+  jedes Log.
+- **Ein schlafendes Gerät wird nicht nachbeliefert.** Ist ein Peer nicht
+  erreichbar, wird die Kopie für ihn verworfen und nicht in eine
+  Warteschlange gelegt. Eine Zwischenablage, die eine Stunde später ankommt,
+  überschreibt etwas, das der Mensch inzwischen selbst kopiert hat.
+- **Das Audit-Log bekommt nur die Schalter.** Welches Gerät empfangen will,
+  ist eine Änderung am Wave. Was kopiert wurde, ist keine.
+
+**Telefone: je Richtung ein Handgriff.** iOS lässt eine App die
+Zwischenablage nur im Vordergrund lesen, seit iOS 16 mit einer Nachfrage, die
+nur die Einstellung „Einsetzen aus anderen Apps: Erlauben“ abschaltet. Einen
+Watcher im Hintergrund gibt es nicht, auch nicht in der Tunnel-Extension.
+Android lässt seit Version 10 ebenfalls nur die App im Vordergrund lesen. Ein
+Telefon nimmt deshalb nie von selbst teil:
+
+- **Telefon → Desktop:** Senden wird ausdrücklich angestoßen. Unter iOS über
+  eine Share Extension („Teilen → wave“), einen App Intent (Kurzbefehl,
+  Action-Taste) oder ein Control Widget ab iOS 18, unter Android über ein
+  Share-Target. Alle reichen den Text über die App-Gruppe bzw.
+  `sendProviderMessage` an die Extension, und der Go-Kern sendet ihn. Er hat
+  die Netzkarte und den Socket.
+- **Desktop → Telefon:** Der Go-Kern nimmt den Text auf der Wave-Adresse an.
+  Ein Listener im Extension-Prozess bekommt ihn vom Kernel wie jedes andere
+  Paket an diese Adresse. Der Kern legt ihn in die App-Gruppe und meldet über
+  einen neuen Callback, dass etwas da ist. Die Extension zeigt dann eine
+  Benachrichtigung („Zwischenablage vom Notebook“). Ein Tippen öffnet die
+  App, die schreibt den Text in `UIPasteboard` (schreiben geht im
+  Vordergrund ohne Nachfrage) und löscht ihn aus der App-Gruppe. Liegt er
+  nach zehn Minuten noch dort, wird er ebenfalls gelöscht.
+  **Zu prüfen:** ob eine `NEPacketTunnelProvider`-Extension lokale
+  Benachrichtigungen zeigen darf. Unter Android zeigt der `VpnService` eine
+  Benachrichtigung mit der Aktion „Kopieren“. Ob `setPrimaryClip` aus dem
+  Hintergrund dort durchgeht, ist ebenfalls nachzusehen.
+- **Ein Telefon empfängt nur, solange sein Tunnel läuft.** Mit On-Demand ist
+  das fast immer der Fall. Ein Desktop probt ein ruhendes Telefon ohnehin
+  weiter (bekannte Lücke aus D10), eine Kopie macht das nicht schlechter. Sie
+  ist aber genau ein Paketzug, wenn jemand kopiert, und kein Takt.
+
+**Der kleinste erste Schritt** ist Desktop ↔ Desktop unter Linux: das
+Netzkarten-Feld, die Meldung, der Listener im Daemon, die IPC-Nachrichten und
+`wl-paste`/`wl-copy` im Tray. Testbar ist das in `test/e2e` mit zwei Geräten
+desselben Benutzers und einem dritten eines anderen Mitglieds, das nichts
+bekommen darf, ohne echte Zwischenablage: der Tray-Teil steht hinter einer
+Weiche, die im Test eine Datei ist. Danach macOS und Windows, zuletzt die
+Telefone, weil dort zwei Dinge erst auf echter Hardware zu klären sind.
+
+**Offen:** ob eine Policy den Abgleich ausdrücklich verbieten können soll,
+etwa `"clipboard": false` für einen Wave, in dem Firmengeräte und private
+Telefone desselben Menschen stehen. Ob Geräte desselben Menschen *über Waves
+hinweg* abgleichen sollen: ein Notebook in zwei Waves ist für den Server zwei
+Knoten bei zwei Konten. Was beide verbindet, weiß nur das Gerät selbst. Bis das
+jemand braucht, bleibt der Abgleich innerhalb eines Waves.
+
 ## 4. Repo-Struktur
 
 ```
@@ -1287,6 +1453,7 @@ Damit ist ein Neustart oder ein verpasstes Delta unkritisch.
 | **M12** | Pier | `apps/pier` (Knoten im Wave, SNI-Router auf 443), `wave_piers` + `Netmap.piers`, öffentliche A/AAAA-Records aus dem Control-Server, `wave pier` und die Freigabe durch den Betreiber (D12) | ein Dienst auf einem Knoten hinter CGNAT ist aus dem offenen Netz per HTTPS erreichbar, mit dem Zertifikat des Knotens, und der Pier sieht keinen Klartext |
 | **M13** | Selbstaktualisierung | Version im Binary (`wave version`, im Status und am Server), Ed25519-signiertes Manifest (Version, Kanal, Hashes) im Release-Workflow, Control-Server löst die Kanäle aus `WAVE_UPDATE_CHANNELS` auf (erster Eintrag als Vorgabe) und reicht Archive von GitHub durch, Angebot über `/v1/control`, `wave update`, GitHub-Token nur auf dem Server, Wunschkanal und Schalter im State, Austausch mit Rollback je Plattform, Tray-Neustart (D13) | ein Gerät in einem Wave mit `WAVE_UPDATE_CHANNELS=insiders,stable` steht einen Tag nach dem Release ohne Zutun auf der neuen Version, ein absichtlich kaputtes Release rollt sich von selbst zurück, ein unsigniertes wird verweigert, und ein Build aus einem Kanal, den der Server nicht führt, ebenso |
 | **M14** | Geräte im Cluster | Egress-Kette im Connector (DNAT von Pod-Netz auf Wave-Adressen, masquerade auf `wave0`), Ziele per Gerätename aus der Netzkarte, `ExternalName`-Services mit `wave.dev/egress`, Portvergabe und ConfigMap durch den Operator, NetworkPolicy für die Egress-Ports (D14) | ein Pod erreicht `http://ollama.ai:11434` auf einer Workstation im Wave, nur aus freigegebenen Namespaces und nur, solange die Policy es erlaubt |
+| **M15** | Zwischenablage | `Peer.clipboard` nur in Netzkarten desselben Menschen, Meldung `{ type: "clipboard", receive }` und `nodes.clipboard_receive`, Freigabe des Ports im `packetFilter`, Listener auf der Wave-Adresse im Daemon und im Go-Kern, IPC zum Tray, Plattformweiche `clipboard.ts` (Wayland, NSPasteboard, Win32), Share Extension/App Intent und Benachrichtigung auf den Telefonen (D15) | Text, der auf dem Notebook kopiert wird, lässt sich auf einem zweiten Notebook desselben Menschen sofort einfügen, auf dessen iPhone nach einem Tippen auf die Benachrichtigung, und in die Gegenrichtung über „Teilen → wave“ — ein Gerät eines anderen Mitglieds bekommt nichts, und was ein Passwort-Manager als vertraulich markiert, verlässt das Gerät nicht |
 
 **Erledigt: M0, M1, M2, M3, M4, M5, M6, M11; M10 bis auf den Lauf auf echter Hardware; M13 bis auf den ersten echten Release.** M5 ist mit M6 zusammen fertig
 geworden, weil beide dieselbe Arbeit brauchten: Der Server schreibt jetzt über

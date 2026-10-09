@@ -1,7 +1,7 @@
 # wave-mesh
 
 Selbst hostbares Mesh-VPN auf WireGuard-Basis. Architektur und Meilensteine
-stehen in [`docs/PLAN.md`](docs/PLAN.md) (Entscheidungen D1–D14, Roadmap M0–M14).
+stehen in [`docs/PLAN.md`](docs/PLAN.md) (Entscheidungen D1–D15, Roadmap M0–M15).
 Erledigt: M0–M6 sowie M11, M10 (bis auf den Lauf auf echter Hardware, siehe
 „Telefone") und M13 (bis auf den ersten echten Release, siehe
 „Selbstaktualisierung"). M5 und M6 sind zusammen fertig geworden, weil beide dieselbe
