@@ -28,7 +28,9 @@
           "online": true,
           "via": "idle",
           "rttMs": 0,
-          "lastHandshakeSeconds": -1
+          "lastHandshakeSeconds": -1,
+          "txBytes": 0,
+          "rxBytes": 0
         }
       ],
       "services": [
