@@ -6,7 +6,58 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.8.0-develop.3.*
+*Noch nichts seit v0.8.0.*
+
+---
+
+## ✅ Stable v0.8.0 (09.10.2026)
+
+*Enthält alles aus v0.8.0-insiders.1 und v0.8.0-develop.1 bis v0.8.0-develop.3.*
+
+### Neue Funktionen (gegenüber v0.7.0)
+
+- **Die Telefon-Apps für iPhone, iPad und Android.** Ein Telefon ist in
+  mehreren Waves zugleich, mit direktem Weg und Relay als Rückfall; jeder Wave
+  hat seinen eigenen Schalter, verbindet sich nach Neustart und Netzwechsel von
+  selbst wieder und sagt, was mit ihm nicht stimmt, statt nur „nicht
+  verbunden“. Dazu ein eigener Gerätename, ein teilbares Protokoll, „Verbindung
+  prüfen“ je Wave und Dienste, die sich mit einem Tippen öffnen. Die App nimmt
+  keinem anderen VPN ungefragt den Platz weg. *(seit develop.2)*
+- **Telefon per QR-Code hinzufügen:** „Telefon hinzufügen“ in der
+  Weboberfläche zeigt einen Code, die Kamera öffnet die App mit dem Server
+  schon eingetragen. *(seit develop.3)*
+- **Mehrere Waves am selben Server**, etwa für getrennte Projekte: auf dem
+  Desktop mit `wave login <url> --new-wave`, in der App mit „Weiteren Wave an
+  diesem Server hinzufügen“. *(seit develop.2)*
+- **In der Weboberfläche** erscheinen Telefone als iOS bzw. Android mit ihrer
+  Version, Geräte lassen sich umbenennen, und Mitglieder können einen Wave
+  selbst verlassen. *(seit develop.2)*
+- **`svc:*` in den Zugriffsregeln** gibt alle Dienste im Wave frei, auch
+  künftige, aber kein Gerät. *(seit develop.1)*
+- **Apple-signierte und notarisierte macOS-Clients** für Intel und Apple
+  Silicon. *(seit insiders.1)*
+
+### Fehlerbehebungen (gegenüber v0.7.0)
+
+- **Weniger Akkuverbrauch auf dem Telefon.** Weder das Telefon noch die
+  Desktops im Wave messen ruhende Geräte ständig neu oder schicken Keepalives;
+  ruhende Geräte stehen überall als „ruht“. Der Server schickt keine neue
+  Netzkarte mehr, wenn sich nichts geändert hat. Beim ersten Paket nach einer
+  Pause geht die Verbindung kurz über das Relay, bis der direkte Weg wieder
+  steht — ein Server ohne Relay findet zwischen zwei Geräten hinter NAT keinen
+  direkten Weg mehr. *(seit develop.2 und develop.3)*
+- **Ein neues Gerät im Wave riss bestehende Verbindungen nicht mehr ab**: Der
+  Desktop-Client wechselt seinen Port nur noch, wenn gar kein Peer erreichbar
+  ist. *(seit develop.3)*
+- **Ein Connector, der nichts mehr trägt, wird neu gestartet**, statt online
+  auszusehen und keinen Dienst mehr erreichbar zu machen. *(seit develop.3)*
+- Der Connector meldet seine echte Version statt `v0.0.0-dev`.
+  *(seit develop.1)*
+
+> Geräte auf `develop`, die zwischendurch v0.8.0-insiders.1 installiert hatten,
+> bekamen keine Develop-Builds mehr angeboten: `0.8.0-develop.N` gilt nach
+> Semver als älter als `0.8.0-insiders.1`. Mit v0.8.0 sind alle Kanäle wieder
+> auf demselben Stand.
 
 ---
 
@@ -54,7 +105,6 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   ersten Wave antwortete, im zweiten nichts, bis der erste pausiert wurde. iOS
   schickte alles mit der Adresse des ersten Waves los. Der Tunnel setzt jetzt
   selbst die richtige Absenderadresse je Wave.
-
 - **Ein neues Gerät im Wave riss bestehende Verbindungen ab.** Der
   Desktop-Client wechselte seinen UDP-Port, sobald irgendein Peer noch keinen
   Weg hatte — und das hat jedes Gerät, das gerade beitritt. Telefone, die
