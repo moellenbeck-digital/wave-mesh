@@ -94,6 +94,11 @@ approve_newest() {
   approve_device "$jar" "$url"
 }
 
+# "Still reachable" waits a few seconds, never one ping: since the core
+# stopped sending keepalives to quiet peers (battery), a session left alone for
+# a few minutes has expired, and the first packet after it waits for a fresh
+# WireGuard handshake -- tens of milliseconds on a network, seconds on a loaded
+# runner. "No longer reachable" stays one ping: it has to fail at once.
 ping_ok() { ping -c1 -W2 -I wave0 "$1" >/dev/null 2>&1; }
 ping_until() {
   local deadline=$((SECONDS + ${3:-30}))
@@ -185,7 +190,26 @@ done
 [[ "$AGE" -ge 8 ]] || fail "no settled handshake with B (age $AGE)"
 JAR="$WORK/cookies-one.txt" start_node c nodec wave3 "$ONE"
 wait_status '[.waves[0].peers[]] | length == 2' "the phone to see C"
-ping_ok "$B_IP" || fail "B became unreachable when C joined"
+# A few seconds, not one ping: on a loaded CI runner a single two-second
+# ping missed while the netmap was being applied. What this step is about is
+# the next check -- the session with B is the same one as before.
+reaches_within() { # <ip> <seconds>
+  local deadline=$((SECONDS + $2))
+  while (( SECONDS < deadline )); do ping_ok "$1" && return 0; sleep 1; done
+  return 1
+}
+if ! reaches_within "$B_IP" 10; then
+  # Everything that says where the packets went: the phone's view of B, B's
+  # own log, and the kernel's route.
+  echo "--- phone's view of B, then 3 s later ---"; jq -c ".waves[0].peers[] | select(.ipv4 == \"$B_IP\")" "$STATUS"
+  ping -c3 -i1 -W1 -I wave0 "$B_IP" >/dev/null 2>&1 || true
+  echo "--- B's sockets ---"; ip netns exec nodeb ss -uanp 2>/dev/null | head -10
+  jq -c ".waves[0].peers[] | select(.ipv4 == \"$B_IP\")" "$STATUS"
+  echo "--- route ---"; ip route get "$B_IP"
+  echo "--- b.log ---"; tail -40 "$WORK/b.log"
+  echo "--- phone ---"; tail -40 "$PHONE_LOG"
+  fail "B became unreachable when C joined"
+fi
 AFTER=$(status ".waves[0].peers[] | select(.ipv4 == \"$B_IP\") | .lastHandshakeSeconds")
 [[ "$AFTER" -ge "$AGE" ]] || fail "the session with B was rebuilt when C joined (handshake age $AGE -> $AFTER)"
 ok "B's handshake is $AFTER s old after C joined: the session was kept"
@@ -351,14 +375,14 @@ ANSWER=$(dig +short +time=2 +tries=2 @"$FIRST_RESOLVER" "$D_NAME" A | head -1)
 [[ "$ANSWER" == "$D_IP" ]] || fail "$D_NAME did not resolve to $D_IP through $FIRST_RESOLVER (got '$ANSWER')"
 ok "$D_NAME -> $D_IP, through the first wave's resolver: one resolver, both waves' names"
 ping_until "$D_IP" "D is unreachable in the second wave"
-ping_ok "$B_IP" || fail "B became unreachable when the second wave came up"
+ping_until "$B_IP" "B became unreachable when the second wave came up" 10
 ok "D reachable in the second wave, B still in the first"
 
 say "pause $SECOND_ID"
 [[ "$(result_of "pause $SECOND_ID")" == "ok" ]] || fail "pausing the second wave failed"
 wait_status "[.waves[] | select(.id == \"$SECOND_ID\") | .enabled] == [false]" "the second wave paused"
 [[ "$(status "[.waves[] | select(.id == \"$ONE\") | .enabled] == [true]")" == "true" ]] || fail "pausing the second paused the first"
-ping_ok "$B_IP" || fail "B is unreachable after pausing the other wave"
+ping_until "$B_IP" "B is unreachable after pausing the other wave" 10
 say "logout $SECOND_ID"
 [[ "$(result_of "logout $SECOND_ID")" == "ok" ]] || fail "leaving the second wave failed"
 IN_B=$(devices "$WORK/cookies-one.txt" "$ONE" "$B_WAVE" | jq '[.nodes[] | select(.hostname | startswith("test-phone") or startswith("max-iphone"))] | length')

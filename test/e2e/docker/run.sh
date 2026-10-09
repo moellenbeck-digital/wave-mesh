@@ -24,7 +24,9 @@ for dir in "$repo"/apps/* "$repo"/packages/*; do
 done
 
 docker build -q -t wave-e2e "$here" >/dev/null
-docker run --rm --privileged \
+# WAVE_E2E_CPUS=1 runs on one core, the way a busy CI runner feels: timing
+# that only holds on a fast machine shows up here instead of in a release.
+docker run --rm --privileged ${WAVE_E2E_CPUS:+--cpus "$WAVE_E2E_CPUS"} \
   -v "$repo":/repo \
   "${volumes[@]}" \
   -v wave-e2e-go-cache:/root/go/pkg/mod \
