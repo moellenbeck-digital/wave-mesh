@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { choosePath, IgnoredErrors, type PathState, probeDue, smoothRtt } from "./magicsock.ts";
+import {
+  choosePath,
+  IgnoredErrors,
+  type PathState,
+  probeDue,
+  REBIND_GRACE_MS,
+  smoothRtt,
+  wantsRebind,
+} from "./magicsock.ts";
 
 const NOW = 100_000;
 
@@ -209,5 +217,34 @@ describe("when a path is probed", () => {
       }
     }
     expect(pings).toBe(20);
+  });
+});
+
+describe("when to move to a fresh port", () => {
+  const now = 1_000_000;
+  const old = now - REBIND_GRACE_MS - 1;
+
+  // The case that broke sessions: a third device joins, has no path yet, and
+  // the node moved its port under the peers that were working fine.
+  test("a newcomer without a path does not move a port others reach", () => {
+    expect(wantsRebind([{ best: "10.99.0.1:41641", joinedAt: old }, { joinedAt: now - 1000 }], now)).toBe(
+      false,
+    );
+  });
+
+  test("an old peer without a path does not either, while another is reachable", () => {
+    expect(wantsRebind([{ best: "10.99.0.1:41641", joinedAt: old }, { joinedAt: old }], now)).toBe(false);
+  });
+
+  test("nobody reachable, and somebody past the grace period: move", () => {
+    expect(wantsRebind([{ joinedAt: old }, { joinedAt: now - 1000 }], now)).toBe(true);
+  });
+
+  test("nobody reachable but everybody new: wait for the punch", () => {
+    expect(wantsRebind([{ joinedAt: now - 1000 }], now)).toBe(false);
+  });
+
+  test("no peers at all: nothing to fix", () => {
+    expect(wantsRebind([], now)).toBe(false);
   });
 });

@@ -275,6 +275,36 @@ interface Peer {
   paths: Map<string, PathState>;
   best?: string;
   probingSince: number;
+  /** When this peer first appeared; a newcomer is still being punched. */
+  joinedAt: number;
+}
+
+/** How long a new peer may have no path before it says anything about our port. */
+export const REBIND_GRACE_MS = 30_000;
+
+/**
+ * Whether moving to a fresh UDP port could help.
+ *
+ * A port collision at a NAT cannot be seen, only inferred: nobody answers. So
+ * the rule is about nobody -- not about somebody. As long as one peer is
+ * reachable on this port, the port works, and moving away from it breaks every
+ * session that uses it while helping nobody: the peers that still have no
+ * path are offline, or still being punched. It used to be "some peer has no
+ * path", which a device joining the wave satisfied every time -- and the
+ * other nodes changed ports under the phones, which have to learn the new
+ * one before anything flows again. Seen as a session that carried nothing
+ * for ten seconds after a third device joined.
+ *
+ * A peer younger than REBIND_GRACE_MS does not count either way: being
+ * unreachable is what a newcomer is until the punch completes.
+ */
+export function wantsRebind(peers: Iterable<{ best?: string; joinedAt: number }>, now: number): boolean {
+  let settled = false;
+  for (const peer of peers) {
+    if (peer.best) return false;
+    if (now - peer.joinedAt >= REBIND_GRACE_MS) settled = true;
+  }
+  return settled;
 }
 
 export class MagicSock {
@@ -370,8 +400,9 @@ export class MagicSock {
   }
 
   /** True while at least one peer has no usable path. */
-  hasUnreachablePeers(): boolean {
-    return [...this.peers.values()].some((peer) => !peer.best);
+  /** See wantsRebind. */
+  needsRebind(): boolean {
+    return wantsRebind(this.peers.values(), this.now());
   }
 
   async close(): Promise<void> {
@@ -453,6 +484,7 @@ export class MagicSock {
         loopback: await this.bindLoopback(config.nodeKey),
         paths: new Map(),
         probingSince: this.now(),
+        joinedAt: this.now(),
       };
       this.peers.set(config.nodeKey, peer);
       this.mergeCandidates(peer, config.candidates, false);

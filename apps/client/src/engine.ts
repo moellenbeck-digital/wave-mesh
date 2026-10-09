@@ -817,14 +817,14 @@ export class Tunnel {
   }
 
   /**
-   * Watches for peers that stay unreachable and moves to a fresh port when
-   * they do. A NAT port collision cannot be detected directly -- it looks
+   * Watches for a port nobody can reach any more and moves to a fresh one
+   * when that happens (see wantsRebind: nobody, not somebody). A NAT port collision cannot be detected directly -- it looks
    * exactly like a peer being offline -- so the recovery is simply tried a few
    * times before giving up and waiting for a relay (M4).
    */
   startConnectivityWatch(intervalMs = REBIND_INTERVAL_MS, maxAttempts = MAX_REBINDS): void {
     this.rebindTimer = setInterval(() => {
-      if (!this.magic.hasUnreachablePeers() || this.rebinds >= maxAttempts) return;
+      if (!this.magic.needsRebind() || this.rebinds >= maxAttempts) return;
       this.rebinds++;
       void this.magic
         .rebind()
