@@ -410,9 +410,14 @@ jobs:
           fi
           # --generate-notes appends the commit summary GitHub builds to ours,
           # so the download table stays at the top where it is looked for.
+          #
+          # ${flags[@]+...} and not "${flags[@]}": this job runs on macOS, whose
+          # bash 3.2 calls an empty array unbound under `set -u`. A prerelease
+          # always has a flag, so the first stable after the move -- v0.8.0 --
+          # was what failed.
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --notes-file notes.md \
             --generate-notes \
-            "${flags[@]}" \
+            ${flags[@]+"${flags[@]}"} \
             dist/*.tar.gz dist/*.zip dist/SHA256SUMS dist/manifest.json dist/macos-signing-evidence.json
