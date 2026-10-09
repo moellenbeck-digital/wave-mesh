@@ -30,6 +30,10 @@ type PeerView struct {
 	// Seconds since the last WireGuard handshake with this peer, or -1 for
 	// none yet. Online in the netmap is the server's view; this is ours.
 	LastHandshakeSeconds int `json:"lastHandshakeSeconds"`
+	// What WireGuard sent to and got from this peer: the one place that
+	// tells "nothing left this phone" from "nothing came back".
+	TxBytes int64 `json:"txBytes"`
+	RxBytes int64 `json:"rxBytes"`
 }
 
 // ServiceView is a name in the wave that is not a device (D11).
@@ -198,7 +202,7 @@ func (e *Engine) Status() Status {
 			view.DNSName = netmap.Self.DNSName
 			view.IPv4 = netmap.Self.IPv4
 			view.IPv6 = netmap.Self.IPv6
-			handshakes := handshakeAges(entry)
+			devicePeers := wireguardPeers(entry)
 			for _, peer := range netmap.Peers {
 				peerView := PeerView{
 					Hostname: peer.Hostname, DNSName: peer.DNSName,
@@ -206,8 +210,9 @@ func (e *Engine) Status() Status {
 					LastHandshakeSeconds: -1,
 				}
 				if hexKey, err := wavecrypto.KeyToHex(peer.NodeKey); err == nil {
-					if age, known := handshakes[hexKey]; known {
-						peerView.LastHandshakeSeconds = age
+					if device, known := devicePeers[hexKey]; known {
+						peerView.LastHandshakeSeconds = device.handshakeAge
+						peerView.TxBytes, peerView.RxBytes = device.txBytes, device.rxBytes
 					}
 				}
 				if path, known := paths[entry.key()+"|"+peer.NodeKey]; known {
@@ -253,30 +258,47 @@ func (e *Engine) StatusJSON() string {
 	return string(encoded)
 }
 
-// handshakeAges reads, per peer public key in hex, the seconds since the last
-// handshake from the wave's WireGuard device. A peer that never shook hands is
-// absent.
-func handshakeAges(entry *wave) map[string]int {
-	ages := map[string]int{}
+// wireguardPeer is what the wave's WireGuard device says about one peer,
+// keyed by its public key in hex.
+type wireguardPeer struct {
+	handshakeAge int // seconds, -1 for none yet
+	txBytes      int64
+	rxBytes      int64
+}
+
+func wireguardPeers(entry *wave) map[string]wireguardPeer {
+	peers := map[string]wireguardPeer{}
 	if entry.device == nil {
-		return ages
+		return peers
 	}
 	state, err := entry.device.IpcGet()
 	if err != nil {
-		return ages
+		return peers
 	}
 	now := time.Now().Unix()
 	current := ""
 	for _, line := range strings.Split(state, "\n") {
 		if key, found := strings.CutPrefix(line, "public_key="); found {
 			current = key
+			peers[current] = wireguardPeer{handshakeAge: -1}
 			continue
 		}
-		if seconds, found := strings.CutPrefix(line, "last_handshake_time_sec="); found && current != "" {
+		if current == "" {
+			continue
+		}
+		view := peers[current]
+		if seconds, found := strings.CutPrefix(line, "last_handshake_time_sec="); found {
 			if value, err := strconv.ParseInt(seconds, 10, 64); err == nil && value > 0 {
-				ages[current] = int(max(0, now-value))
+				view.handshakeAge = int(max(0, now-value))
 			}
 		}
+		if bytes, found := strings.CutPrefix(line, "tx_bytes="); found {
+			view.txBytes, _ = strconv.ParseInt(bytes, 10, 64)
+		}
+		if bytes, found := strings.CutPrefix(line, "rx_bytes="); found {
+			view.rxBytes, _ = strconv.ParseInt(bytes, 10, 64)
+		}
+		peers[current] = view
 	}
-	return ages
+	return peers
 }
