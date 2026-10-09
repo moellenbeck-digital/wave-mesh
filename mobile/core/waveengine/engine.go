@@ -909,6 +909,7 @@ func (e *Engine) reconcile() error {
 
 	var (
 		routes       []wavetun.Route
+		own          = map[string][]netip.Addr{}
 		zones        []wavedns.Zone
 		unionInput   []wavesettings.Wave
 		resolverAddr []netip.Addr
@@ -919,6 +920,11 @@ func (e *Engine) reconcile() error {
 	)
 	for _, entry := range entries {
 		netmap := *entry.netmap
+		for _, raw := range []string{netmap.Self.IPv4, netmap.Self.IPv6} {
+			if address, err := netip.ParseAddr(raw); err == nil {
+				own[entry.key()] = append(own[entry.key()], address)
+			}
+		}
 		for _, cidr := range routableCIDRs(netmap) {
 			if prefix, err := netip.ParsePrefix(cidr); err == nil {
 				routes = append(routes, wavetun.Route{Prefix: prefix.Masked(), WaveID: entry.key()})
@@ -991,6 +997,7 @@ func (e *Engine) reconcile() error {
 	}
 
 	e.mux.SetRoutes(routes)
+	e.mux.SetOwnAddresses(own)
 	e.resolver.update(wavedns.Config{
 		Zones:      zones,
 		Upstreams:  e.options.Upstreams,

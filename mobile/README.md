@@ -102,7 +102,9 @@ Was daran festliegt:
   der Gegenseite verworfen. Deshalb bekommen die eigenen Adressen den Präfix,
   der ihre Wave abdeckt (`wavesettings/prefix.go`, abgeleitet aus der Netmap),
   und jede Route trägt zusätzlich ihre Quelladresse — das Erste ist alles, was
-  iOS und Android können, das Zweite nutzt Linux.
+  iOS und Android können, das Zweite nutzt Linux. iOS wählt trotzdem die erste
+  Adresse für alles; deshalb schreibt der Kern eine fremde Quelladresse auf die
+  des Ziel-Waves um und bildet die Antwort zurück ab (`wavetun/source.go`).
 - **Ein Neustart wechselt den UDP-Port nicht.** Er ist das, wohin die Peers
   senden gelernt haben, und auf einem frischen Port senden sie 15 Sekunden
   weiter an den alten. `DefaultListenPort` ist deshalb dieselbe 41641 wie auf

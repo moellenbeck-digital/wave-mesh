@@ -42,6 +42,8 @@ type Multiplexer struct {
 	resolverAddrs map[netip.Addr]struct{}
 	// One per wave with a policy; a wave without one is not filtered at all.
 	filters map[string]*Filter
+	// Puts each packet into a wave with that wave's address; see sources.
+	sources *sources
 	closed  bool
 
 	stop chan struct{}
@@ -60,8 +62,15 @@ func New(link Link, mtu int, log func(string)) *Multiplexer {
 		waves:         map[string]*Virtual{},
 		resolverAddrs: map[netip.Addr]struct{}{},
 		filters:       map[string]*Filter{},
+		sources:       newSources(log),
 		stop:          make(chan struct{}),
 	}
+}
+
+// SetOwnAddresses says which addresses this device holds in each wave. A
+// packet into a wave from another wave's address leaves with this wave's.
+func (m *Multiplexer) SetOwnAddresses(own map[string][]netip.Addr) {
+	m.sources.set(own)
 }
 
 // Start begins moving packets.
@@ -312,6 +321,9 @@ func (m *Multiplexer) handle(packet []byte) {
 	if device == nil {
 		return
 	}
+	// Before the filter notes the flow: its replies come back to the address
+	// the packet leaves with, not the one the system chose.
+	m.sources.outbound(waveID, packet)
 	if filter != nil {
 		filter.Outbound(packet)
 	}
@@ -384,6 +396,8 @@ func (v *Virtual) Write(bufs [][]byte, offset int) (int, error) {
 			written++
 			continue
 		}
+		// After the filter, which knows the flow by the address it left with.
+		v.mux.sources.inbound(v.name, buf[offset:])
 		if err := v.mux.write(buf[offset:]); err != nil {
 			return written, err
 		}

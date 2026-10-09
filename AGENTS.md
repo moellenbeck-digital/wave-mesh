@@ -1696,6 +1696,26 @@ Was daran festliegt:
   je Route —, das Zweite nutzt Linux. Gemessen mit
   `test/e2e/mobile-core.sh`: ohne beides erreichte das Gerät die erste Wave und
   die zweite nicht.
+  **Auf iOS reicht der Präfix nicht.** Am 09.10.2026 auf einem iPhone mit zwei
+  Waves: jeder Dienst im ersten Wave ging, `whoami` im zweiten nicht — bis der
+  erste pausiert wurde. iOS nimmt für alles, was den Tunnel verlässt, die
+  *erste* Adresse des Interfaces, und die Adressen kommen sortiert an
+  (`10.160.…` vor `10.64.…`); nach dem Präfix wählt es nicht. Ein Ping von
+  außen aufs Telefon ging die ganze Zeit, weil eine Antwort von der
+  angepingten Adresse kommt — das Fehlerbild sah nach allem aus außer nach der
+  Adresse. Deshalb setzt der Kern sie selbst (`wavetun/source.go`): ein Paket
+  in einen Wave, dessen Quelle die Adresse eines *anderen* Waves ist, verlässt
+  den Multiplexer mit der eigenen, der Fluss wird gemerkt (Protokoll, Ports
+  bzw. Echo-Kennung; 30 Minuten ohne Paket, höchstens 4096), und die Antwort
+  bekommt ihr ursprüngliches Ziel zurück. Prüfsummen werden inkrementell
+  nachgerechnet (RFC 1624), auch die Pseudo-Header von TCP, UDP und ICMPv6.
+  Wer die richtige Adresse schon trägt — unter Linux jedes Paket —, wird nicht
+  angefasst; spätere Fragmente und Pakete hinter IPv6-Erweiterungsheadern
+  auch nicht, die scheitern so wie vorher. Umgeschrieben wird *vor* dem
+  Portfilter, damit der den Fluss unter der Adresse kennt, an die die Antwort
+  kommt. `mobile-core.sh` erzwingt den iOS-Fall mit `ping -I` und
+  `curl --interface` auf die Adresse des ersten Waves; ohne die Umsetzung
+  scheitert genau dieser Schritt.
 - **Ein Neustart darf den UDP-Port nicht wechseln.** Er ist das, wohin die Peers
   senden gelernt haben; auf einem frischen Port senden sie 15 Sekunden weiter
   an den alten, bis ihr Pfad verfällt (`PATH_TIMEOUT_MS`) — ein Tunnel, der

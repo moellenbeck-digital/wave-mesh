@@ -208,6 +208,26 @@ ok "phone -> B ($B_IP), first wave"
 ping_until "$C_IP" "the phone could not reach C"
 ok "phone -> C ($C_IP), second wave — same interface, sorted by prefix"
 
+step "the second wave, from the first wave's address — what iOS does"
+# Linux picks the source by route, so everything above leaves with the right
+# address. iOS does not: it sends everything with the first address of the
+# interface, and a peer in the second wave drops what it cannot attribute. The
+# core rewrites such a source to the wave's own address and maps the reply
+# back; forcing the wrong source here is the iPhone's case on this machine.
+ping -c2 -W3 -I "$PHONE_ONE" "$C_IP" >/dev/null \
+  || { dump_logs; fail "C does not answer a ping sent from the first wave's address"; }
+ok "ping from $PHONE_ONE reaches C ($C_IP) in the second wave"
+ip netns exec nodec python3 -m http.server 8099 --bind "$C_IP" >/dev/null 2>&1 &
+HTTP_PID=$!
+for _ in $(seq 20); do
+  ip netns exec nodec python3 -c "import socket; socket.create_connection(('$C_IP', 8099), 1)" 2>/dev/null && break
+  sleep 0.2
+done
+curl -s -m 8 -o /dev/null --interface "$PHONE_ONE" "http://$C_IP:8099/" \
+  || { kill "$HTTP_PID" 2>/dev/null; dump_logs; fail "no TCP connection into the second wave from the first wave's address"; }
+kill "$HTTP_PID" 2>/dev/null || true
+ok "TCP as well: checksums survive the rewrite, the reply finds its way back"
+
 step "the resolver answers on the tunnel, without a socket of its own"
 # The one genuinely new piece of D10. There is no listener: the query leaves the
 # device towards an address that is *routed* into the tunnel and assigned to
