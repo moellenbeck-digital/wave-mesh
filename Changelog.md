@@ -6,6 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+*Noch nichts seit v0.8.0-develop.3.*
+
+---
+
+## 🔬 Development v0.8.0-develop.3 (09.10.2026)
+
 ### Neue Funktionen
 
 - **„Verbindung prüfen“ in der iPhone-App:** pro Wave eine Seite, die in
@@ -27,8 +33,27 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   aus dem gewählten Stand, signiert sie und lädt sie hoch — gestartet von Hand
   in GitHub, auch aus der GitHub-App auf dem Telefon. Die Build-Nummer ist die
   nächste freie in App Store Connect, die Schlüssel kommen aus 1Password.
+- **Der Status des Telefons kennt je Gerät die Byte-Zähler von WireGuard
+  selbst** — damit lässt sich sehen, ob über eine Verbindung wirklich etwas
+  läuft, statt es aus dem Pfad zu schließen.
 
 ### Fehlerbehebungen
+
+- **Die Telefone kommen endlich zur Ruhe.** Das Telefon selbst sendete schon
+  nichts mehr an ruhige Geräte, aber jeder Laptop und jeder Server im Wave
+  maß alle drei Sekunden jeden Weg zum Telefon und schickte alle 25 Sekunden
+  ein Keepalive — und weckte damit das Mobilfunkmodem immer wieder. Jetzt
+  verhalten sich auch die Desktop-Clients so wie das Telefon: Gemessen wird nur
+  ein Gerät, mit dem gerade gesprochen wird, Keepalives gibt es nicht mehr, und
+  `wave status` sowie das Tray zeigen ruhende Geräte als „ruht“. Wirksam wird
+  das, sobald die Desktops diese Version haben. Beim ersten Paket nach einer
+  Pause geht die Verbindung kurz über das Relay, bis der direkte Weg wieder
+  steht — ein Server ohne Relay findet zwischen zwei Geräten hinter NAT keinen
+  direkten Weg mehr.
+- **Mit zwei Waves auf dem iPhone ging der zweite nicht:** Jeder Dienst im
+  ersten Wave antwortete, im zweiten nichts, bis der erste pausiert wurde. iOS
+  schickte alles mit der Adresse des ersten Waves los. Der Tunnel setzt jetzt
+  selbst die richtige Absenderadresse je Wave.
 
 - **Ein neues Gerät im Wave riss bestehende Verbindungen ab.** Der
   Desktop-Client wechselte seinen UDP-Port, sobald irgendein Peer noch keinen
