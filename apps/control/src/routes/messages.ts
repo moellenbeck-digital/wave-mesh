@@ -86,6 +86,19 @@ const en = {
   renameOwnOnly: "Only whoever brought a device in, or a manager of the wave, can rename it.",
   ownerCannotLeave: "The owner cannot leave the wave. Hand ownership over, or delete the wave.",
 
+  // --- billing ----------------------------------------------------------------
+  waveSuspended: "This wave is paused",
+  waveSuspendedBody: (wave: string) =>
+    `${wave} is paused because its subscription is not active. No device can be added until it is again.`,
+  noSeatLeft: "No seat left",
+  noSeatLeftBody: (seats: number) =>
+    `This wave is booked for ${seats} people, open invitations included. Book more, or withdraw an invitation.`,
+  setPasswordTitle: "Set your password",
+  setPasswordFor: (email: string) => `For ${email}. From now on you sign in with this address and password.`,
+  savePassword: "Save password",
+  setupGone: "This link is gone",
+  setupGoneBody: "It was used, replaced by a newer one, or has expired.",
+
   // --- invitations ----------------------------------------------------------
   invited: (email: string, wave: string) => `${email} is invited to ${wave}`,
   sendLink: (until: string) => `Send them this link. It works once and expires ${until}.`,
@@ -187,6 +200,19 @@ const de: typeof en = {
   renameOwnOnly: "Umbenennen kann ein Gerät nur, wer es hinzugefügt hat, oder wer den Wave verwaltet.",
   ownerCannotLeave:
     "Der Eigentümer kann den Wave nicht verlassen. Übergib die Eigentümerschaft oder lösche den Wave.",
+
+  waveSuspended: "Dieser Wave ist pausiert",
+  waveSuspendedBody: (wave) =>
+    `${wave} ist pausiert, weil sein Abo nicht aktiv ist. Bis es das wieder ist, kommt kein Gerät hinzu.`,
+  noSeatLeft: "Kein Platz mehr frei",
+  noSeatLeftBody: (seats) =>
+    `Dieser Wave ist für ${seats} Personen gebucht, offene Einladungen mitgezählt. Buch mehr dazu oder zieh eine Einladung zurück.`,
+  setPasswordTitle: "Lege dein Passwort fest",
+  setPasswordFor: (email) =>
+    `Für ${email}. Ab jetzt meldest du dich mit dieser Adresse und diesem Passwort an.`,
+  savePassword: "Passwort speichern",
+  setupGone: "Diesen Link gibt es nicht mehr",
+  setupGoneBody: "Er wurde schon benutzt, durch einen neueren ersetzt oder ist abgelaufen.",
 
   invited: (email, wave) => `${email} ist in ${wave} eingeladen`,
   sendLink: (until) => `Schick diesen Link weiter. Er funktioniert einmal und gilt bis ${until}.`,

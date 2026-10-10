@@ -11,6 +11,7 @@ import { audit, listAudit, userActor } from "../audit.ts";
 import { setPassword } from "../auth/password.ts";
 import type { SessionUser } from "../auth/session.ts";
 import { createSession, setSessionCookie } from "../auth/session.ts";
+import { SeatLimitError } from "../billing/seats.ts";
 import type { Database } from "../db/client.ts";
 import { users, waves } from "../db/schema.ts";
 import type { Config } from "../env.ts";
@@ -273,14 +274,22 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
 
     const rows = await db.select({ name: waves.name }).from(waves).where(eq(waves.id, waveId)).limit(1);
     const waveName = rows[0]?.name ?? waveId;
-    const invite = await createInvite(db, {
-      waveId,
-      waveName,
-      email,
-      role,
-      invitedByUserId: auth.user.id,
-      baseUrl: config.baseUrl,
-    });
+    let invite: Awaited<ReturnType<typeof createInvite>>;
+    try {
+      invite = await createInvite(db, {
+        waveId,
+        waveName,
+        email,
+        role,
+        invitedByUserId: auth.user.id,
+        baseUrl: config.baseUrl,
+      });
+    } catch (error) {
+      if (error instanceof SeatLimitError) {
+        return page(c, (m) => [m.noSeatLeft, m.noSeatLeftBody(error.seats)], 409);
+      }
+      throw error;
+    }
     await audit(db, waveId, userActor(auth.user), {
       action: "invite.create",
       target: email,

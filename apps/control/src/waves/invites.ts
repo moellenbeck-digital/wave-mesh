@@ -1,4 +1,5 @@
 import { and, asc, eq, gt, isNull } from "drizzle-orm";
+import { ensureSeatFor } from "../billing/seats.ts";
 import type { Database } from "../db/client.ts";
 import { users, waveInvites, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
@@ -59,6 +60,10 @@ export async function createInvite(
 ): Promise<CreatedInvite> {
   const email = normaliseEmail(input.email);
   if (!looksLikeEmail(email)) throw new Error(`not an email address: ${input.email}`);
+  // Here rather than in each caller: the next one to create an invitation
+  // would be the one that forgets, and a booked limit nobody enforces is not
+  // a limit. Throws SeatLimitError.
+  await ensureSeatFor(db, input.waveId, email);
 
   const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
   const id = newId("wi");

@@ -20,6 +20,7 @@ import { adminMessages } from "./admin-messages.ts";
 import { audit, listAudit, shellActor } from "./audit.ts";
 import { setPassword } from "./auth/password.ts";
 import { disableTwoFactor, hasTwoFactor } from "./auth/two-factor.ts";
+import { SeatLimitError } from "./billing/seats.ts";
 import { createDb } from "./db/client.ts";
 import { certificateOrders, nodes, users } from "./db/schema.ts";
 import {
@@ -719,14 +720,22 @@ async function main(): Promise<never> {
     const owner = target.ownerEmail ? await account(target.ownerEmail) : null;
     if (!owner) return done(1, m.noOwnerToInviteFor(target.name));
 
-    const invite = await createInvite(db, {
-      waveId: target.id,
-      waveName: target.name,
-      email,
-      role: asRole(role),
-      invitedByUserId: owner.id,
-      baseUrl: config.baseUrl,
-    });
+    let invite: Awaited<ReturnType<typeof createInvite>>;
+    try {
+      invite = await createInvite(db, {
+        waveId: target.id,
+        waveName: target.name,
+        email,
+        role: asRole(role),
+        invitedByUserId: owner.id,
+        baseUrl: config.baseUrl,
+      });
+    } catch (error) {
+      // The operator is held to the booking like everyone else: more seats
+      // are bought on the site, not granted on the shell.
+      if (error instanceof SeatLimitError) return done(1, m.noSeatLeft(target.name, error.seats));
+      throw error;
+    }
     console.log(m.sendLink(invite.email, invite.expiresAt.toISOString()));
     return done(0, invite.url);
   }

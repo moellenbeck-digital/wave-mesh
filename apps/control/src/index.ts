@@ -15,6 +15,16 @@ if (providers.size === 0) {
 
 const app = createApp({ db, config, providers, signingKey });
 app.releases.start();
+
+// Only a server that sells waves has ended ones to clear away. Hourly is far
+// finer than a retention counted in days, and once at start catches up on
+// whatever came due while the server was down.
+if (config.billing) {
+  const sweep = () =>
+    app.sweepBilling().catch((error) => console.error(`billing: sweep failed: ${(error as Error).message}`));
+  void sweep();
+  setInterval(sweep, 60 * 60 * 1000);
+}
 const server = Bun.serve({
   port: config.port,
   hostname: process.env.WAVE_HOST ?? "0.0.0.0",

@@ -4,6 +4,7 @@ import { and, asc, eq, ne } from "drizzle-orm";
 import { visibleTo } from "../acl/evaluate.ts";
 import { inboundFilter } from "../acl/filter.ts";
 import { compiledPolicyFor } from "../acl/store.ts";
+import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { nodes, waveServices, waves } from "../db/schema.ts";
 import { resolverAddressFor } from "../net/addressing.ts";
@@ -89,10 +90,17 @@ export async function buildNetmap(
   // behind a connector this node may otherwise reach.
   const policy = await compiledPolicyFor(db, self.wave.id);
   const visible = policy ? visibleTo(policy.compiled, self.node.id, policy.services) : null;
-  const peerRows = visible ? allPeerRows.filter((peer) => visible.peers.has(peer.id)) : allPeerRows;
-  const services = visible
-    ? allServices.filter((service) => visible.services.has(service.name))
-    : allServices;
+  const reachable = visible ? allPeerRows.filter((peer) => visible.peers.has(peer.id)) : allPeerRows;
+  const offered = visible ? allServices.filter((service) => visible.services.has(service.name)) : allServices;
+
+  // A wave paused for billing keeps everything -- devices, addresses, members,
+  // policy -- and stops the mesh by having nobody in it. A device stays
+  // enrolled and connected, so taking the pause back is one netmap and not a
+  // round of re-approving every machine; a device with no peers simply has
+  // nobody to talk to. Deleting the wave is the sweep's job, after retention.
+  const suspended = await isSuspended(db, self.wave.id);
+  const peerRows = suspended ? [] : reachable;
+  const services = suspended ? [] : offered;
 
   return {
     version: self.wave.netmapVersion,

@@ -77,6 +77,14 @@ const EnvSchema = z.object({
    * once at start and is otherwise fine with.
    */
   WAVE_GITHUB_TOKEN: z.string().optional(),
+  /**
+   * The bearer token wave-mesh.org calls the billing routes with. Unset, those
+   * routes do not exist (404): a self-hosted server sells nothing, and a route
+   * that answers 401 is one somebody starts guessing at.
+   */
+  WAVE_BILLING_TOKEN: z.string().optional(),
+  /** Days an ended subscription's wave is kept before it is deleted. */
+  WAVE_BILLING_RETENTION_DAYS: z.coerce.number().int().min(0).default(30),
   /** Password-free login for local development. Refused in production. */
   WAVE_DEV_AUTH: z
     .string()
@@ -142,6 +150,8 @@ export type Config = {
   devAuth: boolean;
   devAuthFrom: string[];
   secureCookies: boolean;
+  /** Absent when WAVE_BILLING_TOKEN is unset: no billing routes at all. */
+  billing?: { token: string; retentionDays: number };
   updates: {
     /** At least one; the first is the default. */
     channels: UpdateChannel[];
@@ -218,10 +228,24 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     acmeContact: raw.WAVE_ACME_CONTACT ? [`mailto:${raw.WAVE_ACME_CONTACT.replace(/^mailto:/, "")}`] : [],
     dnsSecret,
     secureCookies: raw.WAVE_BASE_URL.startsWith("https://"),
+    billing: billingConfig(raw.WAVE_BILLING_TOKEN, raw.WAVE_BILLING_RETENTION_DAYS),
     updates: {
       channels: parseUpdateChannels(raw.WAVE_UPDATE_CHANNELS),
       repo: raw.WAVE_UPDATE_REPO,
       githubToken: raw.WAVE_GITHUB_TOKEN?.trim() || undefined,
     },
   };
+}
+
+/**
+ * Refused at start when too short to be a secret: this token is what turns a
+ * paid subscription into a wave, and a short one is a guessable one.
+ */
+function billingConfig(token: string | undefined, retentionDays: number): Config["billing"] {
+  const trimmed = token?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length < 32) {
+    throw new Error("WAVE_BILLING_TOKEN must be at least 32 characters (openssl rand -base64 32)");
+  }
+  return { token: trimmed, retentionDays };
 }

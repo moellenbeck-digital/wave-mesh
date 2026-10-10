@@ -6,7 +6,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.8.0.*
+### Neue Funktionen
+
+- **Waves verkaufen, Teil Control-Server:** Eine Verwaltungs-API unter
+  `/api/billing/*`, über die wave-mesh.org nach einer Zahlung mit Stripe einen
+  Wave anlegt, ihn bei ausbleibender Zahlung pausiert und nach einer Kündigung
+  nach einer Frist löscht. Ein pausierter Wave behält alle Daten, nur sehen
+  sich seine Geräte nicht mehr. Ein bezahlter Wave nimmt höchstens so viele
+  Personen auf, wie gebucht sind. Der neue Eigentümer legt sein Passwort über
+  einen Link fest, den die Seite ihm schickt. Ohne `WAVE_BILLING_TOKEN` gibt es
+  nichts davon; selbst betriebene Server ändern sich nicht.
 
 ---
 

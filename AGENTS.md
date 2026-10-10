@@ -1185,6 +1185,77 @@ Was daran nicht verhandelbar ist:
   Konto gibt**. Sonst könnte jeder, der einladen darf, ein fremdes Konto
   übernehmen, indem er dessen Adresse einlädt.
 
+## Abrechnung (Stripe)
+
+**Ein Wave auf unserem Server kann gekauft werden**, auf wave-mesh.org mit
+Stripe. Die Seite (Repo `wave-mesh-site`) nimmt die Zahlung und die
+Ereignisse von Stripe entgegen; dieser Server legt daraufhin den Wave an,
+pausiert ihn oder löscht ihn. Die Schnittstelle dazwischen ist eine kleine
+Verwaltungs-API (`apps/control/src/routes/billing.ts`, `src/billing/`):
+
+```bash
+WAVE_BILLING_TOKEN=…              # ≥ 32 Zeichen; ohne ihn gibt es /api/billing/* nicht (404)
+WAVE_BILLING_RETENTION_DAYS=30    # so lange bleibt ein gekündigter Wave stehen
+```
+
+| Aufruf | Wirkung |
+|---|---|
+| `PUT /api/billing/subscriptions/:id` `{ email?, name?, seats, state }` | Wave des Abos so stellen, wie gesagt (`active`, `suspended`, `ended`) |
+| `POST /api/billing/subscriptions/:id/owner-link` | Link, mit dem der Eigentümer sein erstes Passwort setzt (oder `url: null`) |
+| `GET/POST /account/setup/:token` | die Seite dazu |
+
+Was daran festliegt:
+
+- **Gesagt wird der Zustand, nicht die Änderung.** Stripe wiederholt
+  Zustellungen und hält keine Reihenfolge ein. Jeder Aufruf nennt deshalb das
+  Abo und den Zustand, den der Wave haben soll, und geschrieben wird nur, was
+  abweicht: zweimal dasselbe ist einmal, und ein verspätetes Ereignis ist nicht
+  schlimmer als ein wiederholtes. Ein Abo, das es noch nicht gibt, entsteht nur
+  mit Adresse und Namen — die bringt allein `checkout.session.completed` mit;
+  alles davor bekommt 404, und die Seite wartet auf die Kasse. Zwei
+  gleichzeitige Zustellungen klärt der Unique-Index auf der Abo-ID: Wave und
+  Abrechnungszeile entstehen in einer Transaktion, der Verlierer rollt zurück
+  und liest den Gewinner.
+- **Die Adresse aus Stripe ist nicht bestätigt.** Stripe nimmt jede getippte
+  Adresse und prüft das Postfach nie. Das Konto entsteht deshalb ohne Passwort
+  und mit `emailVerified = false`. Hieße es bestätigt, hängte sich ein späterer
+  Google-Login mit dieser Adresse an ein Konto, dessen Passwort der Zahlende
+  gewählt hat — bei einer fremden Adresse eine Kontoübernahme. Bestätigt wird
+  die Adresse erst, wenn der Setup-Link befolgt wird, den die Seite an genau
+  diese Adresse schickt. Gibt es zur Adresse schon ein Konto, wird es
+  Eigentümer; einen Link gibt es dann nicht, und kein Link setzt je das
+  Passwort eines Kontos, das schon einen Zugang hat (Passwort oder Anbieter).
+  Ein neuer Link zieht den alten zurück, jeder gilt einmal und sieben Tage.
+- **Pausieren heißt: leere Netzkarte, alles bleibt.** `suspended` und `ended`
+  lassen Geräte, Adressen, Mitglieder und Policy stehen; `buildNetmap()` gibt
+  jedem Gerät nur keine Peers und keine Dienste mehr, und es gibt keine
+  Punch-Hinweise. Die Geräte bleiben angemeldet und verbunden, Wiederaufnehmen
+  ist eine Netzkarte statt einer Runde Neufreigaben. Neue Geräte kommen in
+  dieser Zeit nicht hinein, weder über den Browser noch über einen
+  Pre-Auth-Key — und ein Einmalschlüssel wird dabei nicht verbraucht.
+  `netmapVersion` zählt nur hoch, wenn das Mesh startet oder stoppt.
+- **Gekündigt wird mit Frist gelöscht.** `ended` setzt `delete_after` auf jetzt
+  plus `WAVE_BILLING_RETENTION_DAYS`, ein wiederholtes `ended` schiebt das
+  nicht hinaus, `active` nimmt es zurück. Gelöscht wird im Control-Prozess
+  selbst (stündlich und einmal beim Start), über `deleteWave()` und mit
+  getrennten Verbindungen wie beim Löschknopf des Eigentümers: „dreißig Tage
+  sind um“ ist kein Ereignis, das Stripe der Seite schicken würde. Was
+  gelöscht wurde, steht auf stdout — das Audit-Log des Waves geht mit ihm.
+- **Plätze sind Mitglieder plus offene Einladungen.** Geprüft wird in
+  `createInvite()` selbst (`SeatLimitError`), damit kein Aufrufer es vergisst,
+  und auch `wave-admin invite` hält sich daran — mehr Plätze gibt es über das
+  Abo, nicht über die Shell. Eine neue Einladung für dieselbe Adresse ersetzt
+  die alte und kostet keinen Platz.
+- **Ein selbst betriebener Wave hat keine Abrechnungszeile**, und für ihn gilt
+  nichts davon: keine Grenze, keine Pause, kein Löschen.
+- **Der Token wird als Hash verglichen**, damit der Vergleich für jede Länge
+  gleich lange dauert, und unter 32 Zeichen startet der Server nicht.
+
+Offen und nicht Teil davon: ein **eigener Control-Server je Geschäftskunde**
+(ein Eintrag in einer ArgoCD-ApplicationSet, daraus Namespace, Overlay,
+Datenbank, Signaturschlüssel und ein eigener `WAVE_IPV4_CONTAINER`). Heute
+legt die API Waves auf dem Server an, der sie bekommt.
+
 ## Wer wen erreicht (ACLs, M7)
 
 **Ohne Policy sieht jedes Gerät jedes andere** — der volle Mesh aus D9, und

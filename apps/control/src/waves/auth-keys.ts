@@ -62,6 +62,20 @@ export interface UsableAuthKey {
 }
 
 /**
+ * Which wave a key would put a device into, without spending a use of it.
+ * Asked before claiming, so a key for a paused wave is refused whole rather
+ * than used up on a device that is then turned away.
+ */
+export async function authKeyWave(db: Database, token: string): Promise<string | null> {
+  const rows = await db
+    .select({ waveId: waveAuthKeys.waveId })
+    .from(waveAuthKeys)
+    .where(eq(waveAuthKeys.tokenHash, hashKey(token)))
+    .limit(1);
+  return rows[0]?.waveId ?? null;
+}
+
+/**
  * Claims one use of a key, or says why not.
  *
  * The count is raised in the same statement that checks it, so two devices
