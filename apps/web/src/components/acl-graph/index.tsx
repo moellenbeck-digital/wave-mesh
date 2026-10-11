@@ -16,8 +16,8 @@ import {
   edgeId,
   isDirty,
   kindOf,
-  layout,
   nodesOf,
+  place,
   policyOf,
   viewHeight,
 } from "./model";
@@ -102,7 +102,7 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
   }, [view]);
 
   const nodes = useMemo(() => nodesOf(draft, view), [draft, view]);
-  const positions = useMemo(() => ({ ...layout(nodes), ...moved }), [nodes, moved]);
+  const positions = useMemo(() => place(nodes, moved), [nodes, moved]);
   const height = viewHeight(Object.fromEntries(nodes.map((n) => [n.id, positions[n.id] ?? { x: 0, y: 0 }])));
   const dirty = isDirty(draft, view);
 
@@ -432,8 +432,11 @@ export function AclGraph({ waveId, view }: { waveId: string; view: AclView }) {
               pending={ui.pending}
               onMove={(id, to) => setMoved((m) => ({ ...m, [id]: to }))}
               onMoved={() => {
+                // Only the cards that were dragged. Saving every position
+                // pinned the computed ones too, and a card added later found
+                // its place taken (see place()).
                 try {
-                  localStorage.setItem(layoutKey, JSON.stringify(positions));
+                  localStorage.setItem(layoutKey, JSON.stringify(moved));
                 } catch {}
               }}
               onConnect={connect}

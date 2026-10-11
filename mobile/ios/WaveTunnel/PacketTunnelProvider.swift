@@ -172,8 +172,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// reconnected every wave and made the whole wave re-punch -- and iOS
     /// wakes a tunnel far more often than anybody changes network. A real
     /// change arrives through the path monitor above.
+    ///
+    /// Not logged here: iOS calls this every few seconds, and the core writes
+    /// a line when a wake-up leads to a check, with the count of those it let
+    /// pass in between.
     override func wake() {
-        host?.log("woke up")
         core?.woke()
     }
 

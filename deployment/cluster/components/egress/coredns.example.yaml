@@ -1,4 +1,7 @@
-# Die Namen des Waves im Cluster auflösen -- auf den Service wave-egress.
+# Die Namen des Waves im Cluster auflösen: CoreDNS reicht die Zone an den
+# Resolver des Connectors weiter. Der kennt die Netzkarte, antwortet für jeden
+# Namen darin mit der Adresse von wave-egress und für jeden anderen mit
+# NXDOMAIN -- ein Dienst, der im Wave dazukommt, ist ohne Zutun auflösbar.
 #
 # Nicht Teil der Komponente, und mit Absicht: CoreDNS gehört dem Cluster, und
 # unter k3s ist `coredns-custom` *eine* ConfigMap für alle Ergänzungen. Ein
@@ -7,18 +10,19 @@
 #
 #   kubectl -n kube-system get configmap coredns-custom -o yaml
 #
-# Gibt es sie noch nicht, die Domain unten durch die des Waves ersetzen (an
-# allen drei Stellen, mit maskierten Punkten in der Regex) und einspielen:
+# Gibt es sie noch nicht, die Domain unten durch die des Waves und die Adresse
+# durch die ClusterIP aus service.yaml ersetzen und einspielen:
 #
 #   kubectl apply -f coredns.example.yaml
+#
+# Der Eintrag ist danach statisch: er ändert sich nur, wenn der Wave die
+# Domain wechselt oder wave-egress eine andere Adresse bekommt.
 #
 # k3s liest *.server-Schlüssel als eigene Server-Blöcke ein. Außerhalb von k3s
 # gehört derselbe Block in das Corefile des Clusters.
 #
-# `answer auto` (CoreDNS ≥ 1.10) schreibt die Antwort auf den gefragten Namen
-# zurück, sonst verwürfe der Resolver des Pods sie als Antwort auf etwas
-# anderes. Ungeprüft in einem echten Cluster -- getestet ist der Connector, nicht
-# diese Datei.
+# Ungeprüft in einem echten Cluster -- getestet sind Resolver und
+# Weiterleitung des Connectors, nicht diese Datei.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -28,10 +32,8 @@ data:
   wave.server: |
     wave.example.com:53 {
       errors
-      rewrite stop name regex (.+)\.wave\.example\.com\.$ wave-egress.wave.svc.cluster.local. answer auto
-      kubernetes cluster.local in-addr.arpa ip6.arpa {
-        pods insecure
-        fallthrough in-addr.arpa ip6.arpa
+      forward . 10.43.0.53 {
+        prefer_udp
       }
       cache 30
     }

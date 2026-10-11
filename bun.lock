@@ -35,6 +35,7 @@
         "wave-connector": "./src/main.ts",
       },
       "dependencies": {
+        "@wave/dns": "workspace:*",
         "@wave/ipc": "workspace:*",
       },
     },

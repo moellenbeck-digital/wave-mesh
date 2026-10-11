@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { connect as tlsConnect } from "node:tls";
+import { RecordType, resolve } from "@wave/dns";
 import type { ProfileStatus } from "@wave/ipc";
-import { type Egress, egressTable, hostFromHttp, sniFromClientHello, startEgress } from "../src/egress.ts";
+import {
+  type Egress,
+  egressResolver,
+  egressTable,
+  egressZone,
+  hostFromHttp,
+  sniFromClientHello,
+  startEgress,
+} from "../src/egress.ts";
 import { egressFromEnv } from "../src/main.ts";
 
 /**
@@ -92,6 +101,52 @@ describe("which names there are", () => {
     expect(table.get("cluster-a.wave.example.com")).toEqual({ ipv4: "10.64.0.5", local: false });
     expect(table.get("git.wave.example.com")).toEqual({ ipv4: "10.64.1.9", local: true });
     expect(table.has("example.com")).toBe(false);
+  });
+});
+
+describe("answering for the names", () => {
+  /** A wire-format question, as CoreDNS forwards it. */
+  function query(name: string, type: number): Uint8Array {
+    const body: number[] = [];
+    for (const label of name.split(".")) body.push(label.length, ...new TextEncoder().encode(label));
+    body.push(0, type >> 8, type & 0xff, 0, 1);
+    return Uint8Array.from([0x12, 0x34, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0, ...body]);
+  }
+  /** Response code and answer count, read straight from the header. */
+  function answer(name: string, type: number = RecordType.A) {
+    const table = new Map([[NAME, { ipv4: "10.64.1.4", local: false }]]);
+    const decision = resolve(query(name, type), egressResolver(table, "wave.example.com", "10.43.0.53"));
+    if (decision.kind !== "answer") return decision.kind;
+    const packet = decision.packet;
+    return {
+      code: (packet[3] ?? 0) & 0x0f,
+      answers: ((packet[6] ?? 0) << 8) | (packet[7] ?? 0),
+      last: [...packet.subarray(-4)].join("."),
+    };
+  }
+
+  test("a name in the netmap is the Service's address, never the wave's", () => {
+    expect(answer(NAME)).toEqual({ code: 0, answers: 1, last: "10.43.0.53" });
+  });
+
+  test("a name the wave does not have is NXDOMAIN, not a connection refused later", () => {
+    expect(answer("nothere.wave.example.com")).toMatchObject({ code: 3, answers: 0 });
+  });
+
+  test("AAAA for a known name is empty, so a client falls back to A at once", () => {
+    expect(answer(NAME, RecordType.AAAA)).toMatchObject({ code: 0, answers: 0 });
+  });
+
+  test("outside the zone it is not ours to answer", () => {
+    expect(answer("example.com")).toBe("drop");
+  });
+
+  test("the zone is our own name without our hostname", () => {
+    const status = (state: string, hostname: string, dnsName: string) =>
+      [{ controlUrl: "https://c", state, self: { hostname, dnsName } }] as unknown as ProfileStatus[];
+    expect(egressZone(status("up", "k3s", "k3s.wave.example.com."))).toBe("wave.example.com");
+    expect(egressZone(status("up", "k3s", "other.wave.example.com"))).toBeUndefined();
+    expect(egressZone([])).toBeUndefined();
   });
 });
 
@@ -194,10 +249,11 @@ describe("switching it on", () => {
     expect(egressFromEnv({})).toBeUndefined();
     expect(() => egressFromEnv({ WAVE_EGRESS: "1" })).toThrow(/WAVE_POD_IP/);
     expect(() => egressFromEnv({ WAVE_EGRESS: "1", WAVE_POD_IP: "0.0.0.0" })).toThrow(/never 0.0.0.0/);
-    expect(egressFromEnv({ WAVE_EGRESS: "1", WAVE_POD_IP: "10.42.0.7" })).toEqual({
-      host: "10.42.0.7",
-      tlsPort: 8443,
-      httpPort: 8080,
-    });
+    expect(() => egressFromEnv({ WAVE_EGRESS: "1", WAVE_POD_IP: "10.42.0.7" })).toThrow(
+      /WAVE_EGRESS_ADDRESS/,
+    );
+    expect(
+      egressFromEnv({ WAVE_EGRESS: "1", WAVE_POD_IP: "10.42.0.7", WAVE_EGRESS_ADDRESS: "10.43.0.53" }),
+    ).toEqual({ host: "10.42.0.7", address: "10.43.0.53", tlsPort: 8443, httpPort: 8080, dnsPort: 8053 });
   });
 });

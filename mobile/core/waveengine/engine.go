@@ -165,6 +165,13 @@ type Engine struct {
 	// overtaking a newer one would leave stale routes on the platform.
 	reconcileMu sync.Mutex
 
+	// When a wake-up last asked the connections, and how many wake-ups since
+	// were let pass; see Woke.
+	wakeChecked time.Time
+	wakeSkipped int
+	// The wall clock, replaceable in tests; see wallNow.
+	clock func() time.Time
+
 	stop chan struct{}
 	done sync.WaitGroup
 }
@@ -1360,14 +1367,35 @@ func (e *Engine) NetworkChanged() {
 // What a sleep can do is let NAT mappings and idle connections expire. So:
 // ask STUN where we are, and publish only if that moved; and ask each
 // connection for an answer, reconnecting only the ones that give none.
+//
+// But only once per wakeQuiet. The answers to those questions arrive a few
+// seconds later -- by then iOS has put the phone back to sleep, an arriving
+// packet wakes it, and that is another wake(). Asked every time, the tunnel
+// woke itself every five to six seconds, day and night: on 10/11.10.2026 a
+// phone logged 10,244 wake-ups in 33 hours, 559 of them between three and
+// four in the morning, and the radio never slept. A wake-up this soon after
+// the last check has nothing new to learn anyway.
 func (e *Engine) Woke() {
+	now := e.wallNow()
 	e.mu.Lock()
 	live := e.live && !e.stopping
 	entries := e.orderedWaves()
+	recent := !e.wakeChecked.IsZero() && now.Sub(e.wakeChecked) < wakeQuiet && !now.Before(e.wakeChecked)
+	skipped := e.wakeSkipped
+	if live && recent {
+		e.wakeSkipped++
+	}
+	if live && !recent {
+		e.wakeChecked = now
+		e.wakeSkipped = 0
+	}
 	e.mu.Unlock()
-	if !live {
+	if !live || recent {
 		return
 	}
+	// One line per check rather than per wake-up: the log is a file in the
+	// app group, and a write every few seconds is a cost of its own.
+	e.log("woke up; checking connections (%d wake-up(s) since the last check let pass)", skipped)
 	for _, entry := range entries {
 		if entry.socket != nil {
 			entry.socket.Check(wakeCheck)
@@ -1385,6 +1413,23 @@ func (e *Engine) Woke() {
 // counts as dead. A round trip on a radio that is just waking up can take a
 // second or two; more than this and the heartbeat would have been as quick.
 const wakeCheck = 5 * time.Second
+
+// wakeQuiet is how long after a wake-up's check the next one is let pass.
+// Longer than the round trip that answers a check -- so the answer cannot
+// start the next round -- and as long as candidateRefresh, which asks STUN on
+// that schedule anyway while the phone is awake.
+const wakeQuiet = time.Minute
+
+// wallNow is the wall clock without Go's monotonic reading. On Darwin the
+// monotonic clock stops while the device sleeps, so a monotonic difference
+// across a night asleep comes out as seconds -- and a phone back after hours
+// would count as just checked.
+func (e *Engine) wallNow() time.Time {
+	if e.clock != nil {
+		return e.clock()
+	}
+	return time.Now().Round(0)
+}
 
 func (e *Engine) candidateLoop() {
 	defer e.done.Done()
