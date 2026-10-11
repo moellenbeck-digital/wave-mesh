@@ -6,7 +6,33 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.9.0-develop.2.*
+*Noch nichts seit v0.9.0-develop.3.*
+
+---
+
+## 🔬 Development v0.9.0-develop.3 (11.10.2026)
+
+### Neue Funktionen
+
+- **Die Android-App sieht aus und verhält sich wie die iPhone-App.** Dieselben
+  Abschnitte und Texte, auf Deutsch und Englisch, hell und dunkel. Anmelden
+  startet den Tunnel von selbst, die Freigabeseite öffnet sich im Browser und
+  verschwindet nach der Freigabe wieder. Jeder Wave lässt sich pausieren,
+  prüfen („Verbindung prüfen“) und mit Rückfrage verlassen; Dienste öffnen sich
+  mit einem Tippen, Namen und Adressen lassen sich kopieren. Dazu ein eigener
+  Gerätename, ein teilbares Protokoll, Beitritt per QR-Code und „Automatisch
+  verbinden“, das den Tunnel nach einem Neustart zurückbringt.
+
+### Fehlerbehebungen
+
+- **Die Android-App stürzte direkt nach der Freigabe ab**, sobald sie die erste
+  Netzkarte übernahm.
+- **Nach dem Verlassen des letzten Waves löste das Android-Telefon keine Namen
+  mehr auf.**
+- **Nach jedem Verbinden stand der Tunnel unter Android eine halbe Minute**, weil
+  er beim Start den Port wechselte.
+- **Fehler beim Anmelden blieben unter Android unsichtbar**, und „Anmelden“
+  ohne vorheriges „Verbinden“ tat nichts.
 
 ---
 
