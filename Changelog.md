@@ -6,7 +6,29 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.8.0.*
+*Noch nichts seit v0.9.0-develop.1.*
+
+---
+
+## 🔬 Development v0.9.0-develop.1 (11.10.2026)
+
+### Neue Funktionen
+
+- **Aus dem Cluster in den Wave: der Connector beantwortet die Namen selbst.**
+  Ein Pod, der einen Namen im Wave aufruft, bekommt ihn jetzt vom Connector
+  aufgelöst, der die Netzkarte kennt — ein Dienst, der im Wave dazukommt, ist
+  nach Sekunden auflösbar, und ein Name, den es nicht gibt, ist sofort „gibt es
+  nicht“ statt einer Adresse, an der die Verbindung erst abgewiesen wird. Der
+  Eintrag in CoreDNS ist dafür ein einfaches `forward` auf eine feste Adresse
+  und muss nie mehr angefasst werden. Wer die Egress-Komponente schon nutzt,
+  stellt den CoreDNS-Eintrag einmal um (siehe `coredns.example.yaml`).
+
+### Fehlerbehebungen
+
+- **Neue Karten im Zugriffsgraphen lagen unter alten.** Wer einmal eine Karte
+  verschoben hatte, bekam eine später hinzugefügte Karte (etwa „alle Dienste“)
+  genau unter eine bestehende gelegt. Neue Karten rücken jetzt an einen freien
+  Platz.
 
 ---
 
