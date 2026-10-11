@@ -1650,6 +1650,15 @@ Was daran festliegt:
   Änderung) und klopft bei jeder Verbindung an (`Check()`: ein Ping bzw. ein
   Echo, neu verbunden wird nur, was in fünf Sekunden nichts sagt). Einen
   echten Wechsel meldet der Pfad-Monitor ohnehin selbst.
+  **Und gefragt wird höchstens einmal pro Minute** (`wakeQuiet`). Die
+  Antworten auf die Fragen kommen erst an, wenn iOS das Telefon schon wieder
+  schlafen gelegt hat; das ankommende Paket weckt es, und das ist das nächste
+  `wake()`. So weckte sich der Tunnel selbst, alle fünf bis sechs Sekunden,
+  Tag und Nacht: am 10./11.10.2026 waren es 10 244 Wake-ups in 33 Stunden. Die
+  Frist läuft an der **Wanduhr** (`wallNow()`), denn Gos monotone Uhr steht
+  unter Darwin still, solange das Gerät schläft — eine Nacht sähe sonst aus
+  wie ein paar Sekunden. Geloggt wird nur noch das Prüfen, mit der Zahl der
+  übergangenen Wake-ups davor, nicht jedes `wake()`.
 - **Gesendet wird nur, wenn jemand etwas zu sagen hat — der Akku.** Auf
   Mobilfunk hält jedes Paket das Funkmodul noch Sekunden danach im
   Hochleistungszustand; wer alle drei Sekunden sendet, lässt es nie schlafen.
