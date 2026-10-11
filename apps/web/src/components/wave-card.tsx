@@ -48,6 +48,14 @@ export function WaveCard({
         </div>
       </header>
 
+      {/* A paused wave looks like one whose devices are all offline. Saying
+          why is the difference between "billing" and "the network is down". */}
+      {wave.billing && wave.billing.state !== "active" ? (
+        <p className="mb-6 rounded-md border border-line p-4 text-body-sm text-navy" role="status">
+          {wave.billing.state === "ended" ? t.waveEnded : t.wavePaused}
+        </p>
+      ) : null}
+
       {/* Der Name ist ein Etikett für Menschen: er steht in keiner Netzkarte,
           auf keinem Zertifikat und in keiner Gerätekonfiguration. Ihn zu
           ändern kostet deshalb nichts -- anders als den Suffix darunter. Ein

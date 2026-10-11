@@ -141,6 +141,8 @@ ionos take one token; inwx takes an account and asks for its parts, or reads
   noSeatLeft: (wave: string, seats: number) =>
     `${wave} is booked for ${seats} people, open invitations included. More seats come with the subscription.`,
   noInvite: (email: string, wave: string) => `no open invitation for ${email} in ${wave}`,
+  billedNotDeletable: (wave: string, state: string) =>
+    `${wave} is a booked wave (subscription ${state}). Cancel the subscription; the wave is deleted after the retention.`,
 
   // --- set-password ---------------------------------------------------------
   passwordFor: (email: string) => `Password for ${email}: `,
@@ -277,6 +279,8 @@ ionos nehmen einen Token; inwx nimmt ein Konto und fragt nach seinen Teilen, ode
   noSeatLeft: (wave, seats) =>
     `${wave} ist für ${seats} Personen gebucht, offene Einladungen mitgezählt. Mehr Plätze gibt es über das Abo.`,
   noInvite: (email, wave) => `keine offene Einladung für ${email} in ${wave}`,
+  billedNotDeletable: (wave, state) =>
+    `${wave} ist ein gebuchter Wave (Abo ${state}). Kündige das Abo; der Wave wird nach der Aufbewahrungsfrist gelöscht.`,
 
   passwordFor: (email) => `Passwort für ${email}: `,
   repeat: "Wiederholen: ",

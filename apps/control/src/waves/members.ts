@@ -1,6 +1,6 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { nodes, users, waveMembers, waves } from "../db/schema.ts";
+import { nodes, users, waveBilling, waveMembers, waves } from "../db/schema.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -28,21 +28,40 @@ export async function roleOf(db: Database, waveId: string, userId: string): Prom
 }
 
 /** Every wave this user belongs to, oldest first, so the order is stable. */
+/**
+ * The waves an account is in. `billing` is null for a wave nobody pays for
+ * (every self-hosted one); for a booked wave it says whether the mesh runs, so
+ * a page can tell its owner why the devices see nobody.
+ */
 export async function wavesOf(
   db: Database,
   userId: string,
-): Promise<{ id: string; name: string; dnsSuffix: string; role: Role }[]> {
-  return db
+): Promise<
+  {
+    id: string;
+    name: string;
+    dnsSuffix: string;
+    role: Role;
+    billing: { state: "active" | "suspended" | "ended" } | null;
+  }[]
+> {
+  const rows = await db
     .select({
       id: waves.id,
       name: waves.name,
       dnsSuffix: waves.dnsSuffix,
       role: waveMembers.role,
+      billingState: waveBilling.state,
     })
     .from(waveMembers)
     .innerJoin(waves, eq(waves.id, waveMembers.waveId))
+    .leftJoin(waveBilling, eq(waveBilling.waveId, waves.id))
     .where(eq(waveMembers.userId, userId))
     .orderBy(asc(waveMembers.createdAt), asc(waves.name));
+  return rows.map(({ billingState, ...wave }) => ({
+    ...wave,
+    billing: billingState ? { state: billingState } : null,
+  }));
 }
 
 export async function listMembers(db: Database, waveId: string): Promise<Member[]> {

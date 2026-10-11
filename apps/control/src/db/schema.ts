@@ -1,5 +1,6 @@
 import type { AclPolicy, Candidate, ServiceScheme } from "@wave/proto";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -553,6 +554,12 @@ export const waveBilling = pgTable(
     state: text("state", { enum: ["active", "suspended", "ended"] }).notNull(),
     /** Set once a subscription has ended; the sweep deletes the wave after it. */
     deleteAfter: timestamp("delete_after", { withTimezone: true }),
+    /**
+     * When the site read the state it last sent (ms, from Stripe's clock or the
+     * site's). Two events handled at once can land in either order; an update
+     * older than this one is a stale read and is not applied.
+     */
+    stateAsOf: bigint("state_as_of", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -574,6 +581,12 @@ export const passwordSetups = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").notNull(),
+    /**
+     * What asked for the link -- for billing, the Stripe checkout session.
+     * The same key gets the same link back while it is unused, so a webhook
+     * delivered twice mails one link instead of revoking the first.
+     */
+    key: text("key"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),

@@ -129,6 +129,10 @@ const en = {
     "Every device is then called {pattern}. Connected devices pick that up with the next netmap; a certificate is only possible for a domain you own.",
   accessLink: "Access: who reaches whom →",
   devicesTitle: "Devices",
+  wavePaused:
+    "This wave is paused because its subscription is not active. Devices stay enrolled but reach nobody until it is again.",
+  waveEnded:
+    "The subscription for this wave has ended. It is paused and will be deleted 30 days after the end.",
   addPhone: "Add a phone",
   addPhoneCode: "QR code that opens the wave-mesh app with this server",
   addPhoneHint:
@@ -289,6 +293,9 @@ const de: typeof en = {
     "Danach heißt jedes Gerät {pattern}. Verbundene Geräte übernehmen das mit der nächsten Netzkarte; ein Zertifikat gibt es nur für eine Domain, die dir gehört.",
   accessLink: "Zugriff: wer wen erreicht →",
   devicesTitle: "Geräte",
+  wavePaused:
+    "Dieser Wave ist pausiert, weil sein Abo nicht aktiv ist. Die Geräte bleiben angemeldet, erreichen aber niemanden, bis es wieder aktiv ist.",
+  waveEnded: "Das Abo für diesen Wave ist beendet. Er ist pausiert und wird 30 Tage nach dem Ende gelöscht.",
   addPhone: "Telefon hinzufügen",
   addPhoneCode: "QR-Code, der die wave-mesh-App mit diesem Server öffnet",
   addPhoneHint:

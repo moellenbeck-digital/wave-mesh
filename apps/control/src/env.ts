@@ -83,8 +83,16 @@ const EnvSchema = z.object({
    * that answers 401 is one somebody starts guessing at.
    */
   WAVE_BILLING_TOKEN: z.string().optional(),
-  /** Days an ended subscription's wave is kept before it is deleted. */
-  WAVE_BILLING_RETENTION_DAYS: z.coerce.number().int().min(0).default(30),
+  /**
+   * Days an ended subscription's wave is kept before it is deleted. An empty
+   * value is the default, not zero: `z.coerce` reads "" as 0, and a template
+   * that renders the variable empty would otherwise delete every ended wave
+   * at the next sweep. At least one day, for the same reason.
+   */
+  WAVE_BILLING_RETENTION_DAYS: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(1).default(30),
+  ),
   /** Password-free login for local development. Refused in production. */
   WAVE_DEV_AUTH: z
     .string()

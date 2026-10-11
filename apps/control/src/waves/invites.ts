@@ -62,40 +62,46 @@ export async function createInvite(
   if (!looksLikeEmail(email)) throw new Error(`not an email address: ${input.email}`);
   // Here rather than in each caller: the next one to create an invitation
   // would be the one that forgets, and a booked limit nobody enforces is not
-  // a limit. Throws SeatLimitError.
-  await ensureSeatFor(db, input.waveId, email);
-
+  // a limit. One transaction with the count, which locks the wave's billing
+  // row: two invitations sent at once would otherwise both see the last seat
+  // free. Throws SeatLimitError.
   const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
   const id = newId("wi");
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
 
-  // An earlier invitation for the same address in the same wave is replaced
-  // rather than added to: two live links for one seat means the revoked one
-  // still works, which is the opposite of what revoking is for.
-  await db
-    .update(waveInvites)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(waveInvites.waveId, input.waveId),
-        eq(waveInvites.email, email),
-        isNull(waveInvites.acceptedAt),
-        isNull(waveInvites.revokedAt),
-      ),
-    );
+  const row = await db.transaction(async (tx) => {
+    const t = tx as unknown as Database;
+    await ensureSeatFor(t, input.waveId, email);
 
-  const [row] = await db
-    .insert(waveInvites)
-    .values({
-      id,
-      waveId: input.waveId,
-      email,
-      role: input.role,
-      tokenHash: hashToken(token),
-      invitedByUserId: input.invitedByUserId,
-      expiresAt,
-    })
-    .returning();
+    // An earlier invitation for the same address in the same wave is replaced
+    // rather than added to: two live links for one seat means the revoked one
+    // still works, which is the opposite of what revoking is for.
+    await t
+      .update(waveInvites)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(waveInvites.waveId, input.waveId),
+          eq(waveInvites.email, email),
+          isNull(waveInvites.acceptedAt),
+          isNull(waveInvites.revokedAt),
+        ),
+      );
+
+    const [inserted] = await t
+      .insert(waveInvites)
+      .values({
+        id,
+        waveId: input.waveId,
+        email,
+        role: input.role,
+        tokenHash: hashToken(token),
+        invitedByUserId: input.invitedByUserId,
+        expiresAt,
+      })
+      .returning();
+    return inserted;
+  });
   if (!row) throw new Error("could not create the invitation");
 
   return {

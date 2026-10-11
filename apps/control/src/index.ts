@@ -20,6 +20,7 @@ app.releases.start();
 // finer than a retention counted in days, and once at start catches up on
 // whatever came due while the server was down.
 if (config.billing) {
+  console.log(`billing: on, ended waves are deleted after ${config.billing.retentionDays} days`);
   const sweep = () =>
     app.sweepBilling().catch((error) => console.error(`billing: sweep failed: ${(error as Error).message}`));
   void sweep();

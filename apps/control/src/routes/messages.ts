@@ -98,6 +98,13 @@ const en = {
   savePassword: "Save password",
   setupGone: "This link is gone",
   setupGoneBody: "It was used, replaced by a newer one, or has expired.",
+  setupHasAccess: "This account already has a way in",
+  setupHasAccessBody: "Sign in with your address as usual. The link is no longer needed and no longer works.",
+  setupForeignOrigin: "Not from this page",
+  setupForeignOriginBody: "Open the link from your email again and set the password there.",
+  billedNotDeletable: "This wave is still booked",
+  billedNotDeletableBody:
+    "A wave with a running subscription is not deleted here: cancel the subscription, and the wave is deleted 30 days after it ends.",
 
   // --- invitations ----------------------------------------------------------
   invited: (email: string, wave: string) => `${email} is invited to ${wave}`,
@@ -213,6 +220,14 @@ const de: typeof en = {
   savePassword: "Passwort speichern",
   setupGone: "Diesen Link gibt es nicht mehr",
   setupGoneBody: "Er wurde schon benutzt, durch einen neueren ersetzt oder ist abgelaufen.",
+  setupHasAccess: "Dieses Konto hat schon einen Zugang",
+  setupHasAccessBody:
+    "Melde dich wie gewohnt mit deiner Adresse an. Den Link brauchst du nicht mehr, er funktioniert auch nicht mehr.",
+  setupForeignOrigin: "Nicht von dieser Seite",
+  setupForeignOriginBody: "Öffne den Link aus deiner E-Mail noch einmal und leg das Passwort dort fest.",
+  billedNotDeletable: "Dieser Wave ist noch gebucht",
+  billedNotDeletableBody:
+    "Einen Wave mit laufendem Abo löschst du nicht hier: Kündige das Abo, dann wird der Wave 30 Tage nach dem Ende gelöscht.",
 
   invited: (email, wave) => `${email} ist in ${wave} eingeladen`,
   sendLink: (until) => `Schick diesen Link weiter. Er funktioniert einmal und gilt bis ${until}.`,

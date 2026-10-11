@@ -12,6 +12,7 @@ import { setPassword } from "../auth/password.ts";
 import type { SessionUser } from "../auth/session.ts";
 import { createSession, setSessionCookie } from "../auth/session.ts";
 import { SeatLimitError } from "../billing/seats.ts";
+import { billingStateOf } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { users, waves } from "../db/schema.ts";
 import type { Config } from "../env.ts";
@@ -616,6 +617,13 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     if (String(form.get("name") ?? "").trim() !== wave.name) {
       return page(c, (m) => [m.notItsName, m.typeToConfirm(wave.name)], 400);
     }
+
+    // A booked wave goes when its subscription does: deleted here, Stripe
+    // would go on charging for a wave that is gone, and the site would never
+    // hear of it again. Cancelling ends it, and the sweep deletes it after.
+    const billed = await billingStateOf(db, waveId);
+    if (billed && billed !== "ended")
+      return page(c, (m) => [m.billedNotDeletable, m.billedNotDeletableBody], 409);
 
     const deleted = await deleteWave(db, waveId);
     if (!deleted) return page(c, (m) => [m.unknownWave, m.nothingToDelete], 404);

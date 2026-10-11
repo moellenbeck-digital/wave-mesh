@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { identities, users } from "../db/schema.ts";
 import { newId } from "../ids.ts";
@@ -34,10 +34,14 @@ export async function verifyLogin(
   email: string,
   password: string,
 ): Promise<{ userId: string } | null> {
+  // The account with a password first: an address can belong to more than
+  // one row (a provider login that was never linked), and picking one that
+  // has none would refuse the right password.
   const rows = await db
     .select()
     .from(users)
     .where(eq(users.email, normalizeEmail(email)))
+    .orderBy(sql`${users.passwordHash} is null`, asc(users.createdAt))
     .limit(1);
   const user = rows[0];
 

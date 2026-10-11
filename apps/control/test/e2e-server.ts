@@ -28,8 +28,12 @@ const app = createApp({
  * Only in this file -- the server a deployment runs has none of it.
  */
 const hooks: Record<string, (url: URL) => Promise<Response>> = {
-  // The sweep index.ts runs hourly, now, with the clock it would have.
-  "/__e2e/billing/sweep": async () => Response.json({ deleted: await app.sweepBilling() }),
+  // The sweep index.ts runs hourly, now. `days` moves its clock forward past
+  // the retention, which cannot be set to zero.
+  "/__e2e/billing/sweep": async (url) => {
+    const days = Number(url.searchParams.get("days") ?? 0);
+    return Response.json({ deleted: await app.sweepBilling(new Date(Date.now() + days * 86_400_000)) });
+  },
   // `wave-admin auth-key <wave>`: a single-use key, made by the wave's owner.
   "/__e2e/auth-key": async (url) => {
     const waveId = url.searchParams.get("wave") ?? "";

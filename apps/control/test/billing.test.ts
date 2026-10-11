@@ -54,11 +54,29 @@ const put = (subscriptionId: string, body: unknown, token = TOKEN) =>
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
   });
 
-const ownerLink = (subscriptionId: string) =>
+const ownerLink = (subscriptionId: string, key?: string) =>
   app.request(`/api/billing/subscriptions/${subscriptionId}/owner-link`, {
     method: "POST",
-    headers: { authorization: `Bearer ${TOKEN}` },
+    headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+    ...(key ? { body: JSON.stringify({ key }) } : {}),
   });
+
+const linkPath = async (subscriptionId: string, key?: string): Promise<string> =>
+  new URL(((await (await ownerLink(subscriptionId, key)).json()) as { url: string }).url).pathname;
+
+/** Signs in through the dev provider, which vouches for the address like Google does. */
+async function signInWithProvider(email: string): Promise<CookieJar> {
+  const jar = new CookieJar();
+  const start = await app.request("/auth/dev/start");
+  jar.absorb(start);
+  const state = new URL(start.headers.get("location") ?? "").searchParams.get("state");
+  jar.absorb(
+    await app.request(`/auth/dev/callback?code=${encodeURIComponent(email)}&state=${state}`, {
+      headers: { cookie: jar.header() },
+    }),
+  );
+  return jar;
+}
 
 interface View {
   waveId: string;
@@ -67,6 +85,7 @@ interface View {
   created: boolean;
   state: string;
   seats: number;
+  members: number;
 }
 
 async function buy(subscriptionId = "sub_1", email = "anna@acme.example", name = "Acme GmbH"): Promise<View> {
@@ -313,13 +332,22 @@ describe("an ended subscription", () => {
     expect(await db.select().from(nodes)).toHaveLength(0);
   });
 
-  test("taken back before the sweep is a live wave again", async () => {
-    const { waveId } = await buy();
+  test("stays ended: a later active is a stale read, and saying ended again moves nothing", async () => {
+    await buy();
     await put("sub_1", { seats: 3, state: "ended" });
-    await put("sub_1", { seats: 3, state: "active" });
-    expect((await db.select().from(waveBilling))[0]?.deleteAfter).toBeNull();
-    expect(await app.sweepBilling(new Date(Date.now() + 365 * 24 * 3600 * 1000))).toBe(0);
-    expect(await db.select().from(waves).where(eq(waves.id, waveId))).toHaveLength(1);
+    const deleteAfter = (await db.select().from(waveBilling))[0]?.deleteAfter?.getTime();
+    expect(deleteAfter).toBeNumber();
+
+    const revived = await put("sub_1", { seats: 3, state: "active" });
+    expect(revived.status).toBe(409);
+    expect(await revived.json()).toEqual({ error: "ended" });
+    expect((await put("sub_1", { seats: 3, state: "suspended" })).status).toBe(409);
+
+    const again = await put("sub_1", { seats: 3, state: "ended" });
+    expect(again.status).toBe(200);
+    const row = (await db.select().from(waveBilling))[0];
+    expect(row?.state).toBe("ended");
+    expect(row?.deleteAfter?.getTime()).toBe(deleteAfter);
   });
 
   test("leaves self-hosted waves alone", async () => {
@@ -451,6 +479,7 @@ describe("the owner's way in", () => {
       url: null,
       email: "anna@acme.example",
       hasPassword: true,
+      signInUrl: "http://localhost:8080",
     });
   });
 
@@ -471,5 +500,256 @@ describe("the owner's way in", () => {
 
   test("an unknown subscription has no owner", async () => {
     expect((await ownerLink("sub_nope")).status).toBe(404);
+  });
+});
+
+describe("the contract the site relies on", () => {
+  test("answers with the members in the wave", async () => {
+    const view = await buy();
+    expect(view.members).toBe(1);
+    const owner = (await db.select({ id: waves.ownerUserId }).from(waves))[0]?.id ?? "";
+    const { userId } = await setPassword(db, "bob@acme.example", "correct horse battery");
+    await addMember(db, view.waveId, userId, "member");
+    const again = (await (await put("sub_1", { seats: 3, state: "active" })).json()) as View;
+    expect(again.members).toBe(2);
+    expect(owner).not.toBe(userId);
+  });
+
+  test("creates nothing for a subscription that is not active", async () => {
+    for (const state of ["suspended", "ended"]) {
+      const res = await put(`sub_${state}`, { email: "a@b.example", name: "Late", seats: 1, state });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "unknown-subscription" });
+    }
+    expect(await db.select().from(waves)).toHaveLength(0);
+    expect(await db.select().from(users)).toHaveLength(0);
+  });
+
+  test("a state read before the last one applied is not applied", async () => {
+    await put("sub_1", { email: "anna@acme.example", name: "Acme", seats: 3, state: "active", asOf: 1000 });
+    expect((await put("sub_1", { seats: 3, state: "suspended", asOf: 3000 })).status).toBe(200);
+    const stale = await put("sub_1", { seats: 9, state: "active", asOf: 2000 });
+    expect(stale.status).toBe(200);
+    expect(((await stale.json()) as View).state).toBe("suspended");
+    const row = (await db.select().from(waveBilling))[0];
+    expect(row?.state).toBe("suspended");
+    expect(row?.seats).toBe(3);
+    expect(row?.stateAsOf).toBe(3000);
+    // Without asOf the site is trusted as before.
+    expect(((await (await put("sub_1", { seats: 3, state: "active" })).json()) as View).state).toBe("active");
+  });
+
+  test("the deletion date exists only while ended", async () => {
+    await buy();
+    await put("sub_1", { seats: 3, state: "suspended" });
+    expect((await db.select().from(waveBilling))[0]?.deleteAfter).toBeNull();
+  });
+
+  test("a full server says so instead of failing as an error", async () => {
+    app = makeApp({ WAVE_BILLING_TOKEN: TOKEN, WAVE_IPV4_CONTAINER: "10.64.0.0/16" });
+    await buy("sub_1", "a@one.example", "One");
+    const full = await put("sub_2", { email: "b@two.example", name: "Two", seats: 1, state: "active" });
+    expect(full.status).toBe(507);
+    expect(await full.json()).toEqual({ error: "no-capacity" });
+  });
+
+  test("without a token the prefix is as unknown as any path, and never reaches the frontend", async () => {
+    const proxied: string[] = [];
+    const config = testConfig({ WAVE_WEB_URL: "http://web.internal:3000" });
+    const off = createApp({
+      db,
+      config,
+      providers: createProviders(config),
+      signingKey: testSigningKey(),
+      webFetch: async (input: string | URL | Request) => {
+        proxied.push(String(input));
+        return new Response("frontend");
+      },
+    } as Parameters<typeof createApp>[0]);
+    const res = await off.request("/api/billing/subscriptions/sub_1", { method: "PUT", body: "{}" });
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("404 Not Found");
+
+    const onConfig = testConfig({ WAVE_WEB_URL: "http://web.internal:3000", WAVE_BILLING_TOKEN: TOKEN });
+    const on = createApp({
+      db,
+      config: onConfig,
+      providers: createProviders(onConfig),
+      signingKey: testSigningKey(),
+      webFetch: async (input: string | URL | Request) => {
+        proxied.push(String(input));
+        return new Response("frontend");
+      },
+    } as Parameters<typeof createApp>[0]);
+    const stray = await on.request("/api/billing/whatever", {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(stray.status).toBe(404);
+    expect(proxied).toEqual([]);
+  });
+
+  test("retention: empty means the default, zero is refused", () => {
+    expect(
+      testConfig({ WAVE_BILLING_TOKEN: TOKEN, WAVE_BILLING_RETENTION_DAYS: "" }).billing?.retentionDays,
+    ).toBe(30);
+    expect(() => testConfig({ WAVE_BILLING_TOKEN: TOKEN, WAVE_BILLING_RETENTION_DAYS: "0" })).toThrow();
+  });
+});
+
+describe("whose wave it is", () => {
+  test("an unverified account with a login is never the owner of a paid wave", async () => {
+    // Someone signed up under the address at a provider that does not vouch for it.
+    await db.insert(users).values({ id: "u_squat", email: "anna@acme.example", emailVerified: false });
+    await db.insert(identities).values({
+      id: "i_squat",
+      userId: "u_squat",
+      provider: "oidc:https://sloppy.example",
+      subject: "1",
+      email: "anna@acme.example",
+    });
+    const view = await buy();
+    const owner = (
+      await db.select({ id: waves.ownerUserId }).from(waves).where(eq(waves.id, view.waveId))
+    )[0];
+    expect(owner?.id).not.toBe("u_squat");
+    const link = (await (await ownerLink("sub_1")).json()) as { url: string | null };
+    expect(link.url).not.toBeNull();
+  });
+
+  test("two subscriptions for one new address share one placeholder", async () => {
+    await buy("sub_1", "new@acme.example", "One");
+    await buy("sub_2", "new@acme.example", "Two");
+    expect(await db.select().from(users).where(eq(users.email, "new@acme.example"))).toHaveLength(1);
+  });
+
+  test("a verified provider login before the setup link takes the wave, not a second account", async () => {
+    const view = await buy();
+    const path = await linkPath("sub_1", "cs_1");
+    const jar = await signInWithProvider("anna@acme.example");
+
+    const accounts = await db.select().from(users).where(eq(users.email, "anna@acme.example"));
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]?.emailVerified).toBe(true);
+    const me = (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
+      waves: { id: string; billing: { state: string } | null }[];
+    };
+    expect(me.waves.map((w) => w.id)).toEqual([view.waveId]);
+    expect(me.waves[0]?.billing).toEqual({ state: "active" });
+
+    // The link sent earlier must not set a password on an account that has a way in now.
+    const late = await app.request(path, {
+      method: "POST",
+      body: new URLSearchParams({ password: "correct horse battery" }),
+    });
+    expect(late.status).toBe(410);
+    expect(await late.text()).toContain("already has a way in");
+    expect((await db.select().from(users))[0]?.passwordHash).toBeNull();
+    expect(((await (await ownerLink("sub_1")).json()) as { url: string | null }).url).toBeNull();
+  });
+
+  test("a password set by the operator after the link was sent is not overwritten by it", async () => {
+    await buy();
+    const path = await linkPath("sub_1");
+    await setPassword(db, "anna@acme.example", "the operator's password");
+    const late = await app.request(path, {
+      method: "POST",
+      body: new URLSearchParams({ password: "correct horse battery" }),
+    });
+    expect(late.status).toBe(410);
+    expect(await verifyLogin(db, "anna@acme.example", "the operator's password")).not.toBeNull();
+  });
+
+  test("the password login finds the account that has one", async () => {
+    await db.insert(users).values({ id: "u_old", email: "anna@acme.example", emailVerified: true });
+    const { userId } = await setPassword(db, "other@acme.example", "correct horse battery");
+    await db.update(users).set({ email: "anna@acme.example" }).where(eq(users.id, userId));
+    expect(await verifyLogin(db, "anna@acme.example", "correct horse battery")).toEqual({ userId });
+  });
+});
+
+describe("the setup link", () => {
+  test("the same key gets the same link while it is unused; another key replaces it", async () => {
+    await buy();
+    const first = await linkPath("sub_1", "cs_1");
+    expect(await linkPath("sub_1", "cs_1")).toBe(first);
+    expect((await app.request(first)).status).toBe(200);
+
+    const other = await linkPath("sub_1", "cs_2");
+    expect(other).not.toBe(first);
+    expect((await app.request(first)).status).toBe(410);
+    expect((await app.request(other)).status).toBe(200);
+  });
+
+  test("a used link is not handed out again for its key", async () => {
+    await buy();
+    const first = await linkPath("sub_1", "cs_1");
+    await app.request(first, {
+      method: "POST",
+      body: new URLSearchParams({ password: "correct horse battery" }),
+    });
+    expect(((await (await ownerLink("sub_1", "cs_1")).json()) as { url: string | null }).url).toBeNull();
+  });
+
+  test("is refused from another site's form", async () => {
+    await buy();
+    const path = await linkPath("sub_1");
+    const foreign: Record<string, string>[] = [
+      { origin: "https://evil.example" },
+      { "sec-fetch-site": "cross-site" },
+      { origin: "null" },
+    ];
+    for (const headers of foreign) {
+      const res = await app.request(path, {
+        method: "POST",
+        body: new URLSearchParams({ password: "correct horse battery" }),
+        headers,
+      });
+      expect(res.status).toBe(403);
+    }
+    // Still usable from its own page.
+    const ok = await app.request(path, {
+      method: "POST",
+      body: new URLSearchParams({ password: "correct horse battery" }),
+      headers: { origin: "http://localhost:8080", "sec-fetch-site": "same-origin" },
+    });
+    expect(ok.status).toBe(303);
+  });
+});
+
+describe("a booked wave", () => {
+  test("is not deleted by its owner while the subscription runs", async () => {
+    const view = await buy();
+    const jar = await signInWithProvider("anna@acme.example");
+    const form = new FormData();
+    form.set("name", view.waveName);
+    const refused = await app.request(`/waves/${view.waveId}/delete`, {
+      method: "POST",
+      body: form,
+      headers: { cookie: jar.header() },
+    });
+    expect(refused.status).toBe(409);
+    expect(await db.select().from(waves)).toHaveLength(1);
+
+    await put("sub_1", { seats: 3, state: "ended" });
+    const form2 = new FormData();
+    form2.set("name", view.waveName);
+    const allowed = await app.request(`/waves/${view.waveId}/delete`, {
+      method: "POST",
+      body: form2,
+      headers: { cookie: jar.header() },
+    });
+    expect(allowed.status).toBe(303);
+    expect(await db.select().from(waves)).toHaveLength(0);
+  });
+
+  test("the sweep deletes each wave on its own and skips one taken off the list", async () => {
+    await buy("sub_1", "a@one.example", "One");
+    await buy("sub_2", "b@two.example", "Two");
+    await put("sub_1", { seats: 3, state: "ended" });
+    await put("sub_2", { seats: 3, state: "ended" });
+    // Due, but no longer ended by the time the sweep gets to it.
+    await db.update(waveBilling).set({ state: "suspended" }).where(eq(waveBilling.subscriptionId, "sub_2"));
+    expect(await app.sweepBilling(new Date(Date.now() + 365 * 24 * 3600 * 1000))).toBe(1);
+    expect((await db.select({ name: waves.name }).from(waves)).map((w) => w.name)).toEqual(["two"]);
   });
 });

@@ -89,7 +89,7 @@ async function enrol(hostname: string, jar: CookieJar): Promise<Response> {
 
 const me = async (jar: CookieJar) =>
   (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
-    waves: { id: string; name: string; dnsSuffix: string; role: string }[];
+    waves: { id: string; name: string; dnsSuffix: string; role: string; billing: unknown }[];
     invites: { wave: string; role: string }[];
   };
 
@@ -174,7 +174,7 @@ describe("a second user in the same wave", () => {
     const joined = await app.request(`/invite/${token}`, { headers: { cookie: ada.header() } });
     expect(joined.status).toBe(200);
     expect((await me(ada)).waves).toEqual([
-      { id: wave.id, name: wave.name, dnsSuffix: expect.any(String), role: "member" },
+      { id: wave.id, name: wave.name, dnsSuffix: expect.any(String), role: "member", billing: null },
     ]);
 
     // One membership each, so her device needs no question asked.

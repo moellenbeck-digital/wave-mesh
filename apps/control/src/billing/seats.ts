@@ -32,11 +32,14 @@ export class SeatLimitError extends Error {
  * self-hosted one -- has no limit and costs one lookup.
  */
 export async function ensureSeatFor(db: Database, waveId: string, email: string): Promise<void> {
+  // FOR UPDATE: called inside the transaction that then adds the person, and
+  // the lock is what makes "count, then add" one step for two callers at once.
   const billed = await db
     .select({ seats: waveBilling.seats })
     .from(waveBilling)
     .where(eq(waveBilling.waveId, waveId))
-    .limit(1);
+    .limit(1)
+    .for("update");
   const seats = billed[0]?.seats;
   if (seats === undefined) return;
 
