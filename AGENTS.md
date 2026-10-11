@@ -1478,15 +1478,37 @@ Was daran festliegt:
 **Und die andere Richtung: aus dem Cluster in den Wave** (`apps/connector/src/
 egress.ts`, Komponente `deployment/cluster/components/egress`). Ein Pod in
 Cluster B ruft `https://plausible.wave.example.com` auf, einen Dienst, den
-Cluster A in den Wave stellt. CoreDNS beantwortet jeden Namen unter der
-Wave-Domain mit dem Service `wave-egress`, der zeigt auf den Connector, und der
-liest den Namen — SNI bei TLS, `Host` bei HTTP — und reicht die Verbindung an
-die Adresse aus seiner Netzkarte weiter. Was daran festliegt:
+Cluster A in den Wave stellt. CoreDNS reicht die Wave-Domain an den Resolver
+des Connectors weiter, der jeden Namen aus seiner Netzkarte mit der Adresse des
+Service `wave-egress` beantwortet; dort liest der Connector den Namen — SNI bei
+TLS, `Host` bei HTTP — und reicht die Verbindung an die Adresse aus seiner
+Netzkarte weiter. Was daran festliegt:
+
+- **Der Connector beantwortet die Namen, nicht CoreDNS und nicht der
+  Operator.** Er hält die Netzkarte; ein Dienst, der im Wave dazukommt, ist
+  damit ohne Zutun auflösbar, und einer, den es nicht gibt, ist NXDOMAIN statt
+  einer Adresse, an der die Verbindung erst abgewiesen wird. Den Operator
+  CoreDNS schreiben zu lassen hieße Schreibrecht in `kube-system` — wer die
+  Konfiguration von CoreDNS schreibt, kann jeden Namen im Cluster umbiegen —
+  und eine Kopie der Netzkarte, die hinterherläuft. Ein Kubernetes-Service je
+  Dienst brächte ebenfalls nichts: er hieße `….svc.cluster.local`, nicht wie
+  im Zertifikat, und zeigte doch nur auf denselben Pod.
+- **`wave-egress` hat eine feste ClusterIP**, aus demselben Grund wie der
+  interne Ingress: CoreDNS' `forward` nimmt nur Adressen, und der Resolver
+  braucht sie als Antwort (`WAVE_EGRESS_ADDRESS`). Eine feste *Pod*-Adresse
+  gibt es nicht portabel — die vergibt das CNI, und Flannel kann es nicht.
+  Resolver und Weiterleitung stehen hinter derselben Adresse; der Eintrag in
+  CoreDNS ist damit statisch.
+- **DNS nur über UDP.** Die Antwort ist ein A-Record und passt immer in ein
+  Datagramm; der CoreDNS-Block fragt mit `prefer_udp`. AAAA bleibt leer
+  (NODATA), nicht NXDOMAIN — der Service ist IPv4, und ein Client, der beides
+  fragt, fällt so sofort auf A zurück.
 
 - **TLS wird nie aufgebrochen.** Der Pod prüft das Zertifikat dessen, was er
   aufruft; kein Connector sieht die Anfrage. Deshalb nach Namen und nicht als
   Reverse Proxy.
-- **Nur Namen aus der Netzkarte.** Alles andere bekommt bei TLS den Alert
+- **Nur Namen aus der Netzkarte.** Was trotz NXDOMAIN ankommt — etwa über
+  einen Eintrag in `/etc/hosts` — bekommt bei TLS den Alert
   `unrecognized_name`, bei HTTP eine 421 — sonst wäre der Connector ein offener
   Proxy ins Internet für jeden Pod. Und weil die Netzkarte schon durch die ACL
   gegangen ist, ist ein Ziel, das die Policy dem Connector nicht gibt, hier
@@ -1495,7 +1517,7 @@ die Adresse aus seiner Netzkarte weiter. Was daran festliegt:
   Downward-API; ohne sie verweigert der Connector den Start). Der Pod teilt sein
   Netz mit `wave0`: überall gebunden, wäre der Proxy auch über die Wave-Adresse
   des Connectors erreichbar und jeder Peer hätte ein Sprungbrett zu jedem
-  anderen.
+  anderen. Der Resolver bindet aus demselben Grund dort.
 - **Die eigenen Dienste gehen direkt an den internen Ingress.** Verkehr, der im
   Pod entsteht, läuft durch OUTPUT, nicht durch PREROUTING; das DNAT auf `wave0`
   sähe ihn nie.
@@ -1512,7 +1534,8 @@ die Adresse aus seiner Netzkarte weiter. Was daran festliegt:
 
 Geprüft ist die Weiterleitung über echte Sockets — SNI aus einem echten
 ClientHello, auch auf zwei Records verteilt, Bytes unverändert, Verweigerung,
-eigene Dienste —, nicht in einem Cluster. Der CoreDNS-Block ist ungefahren.
+eigene Dienste — und der Resolver an seiner Entscheidung, nicht in einem
+Cluster. Der CoreDNS-Block ist ungefahren.
 
 **Pre-Auth-Keys** sind die Voraussetzung dafür: ein Connector wird deployt, nicht
 geklickt. `admin.ts auth-key <wave>` gibt einen Schlüssel aus — einmal sichtbar,

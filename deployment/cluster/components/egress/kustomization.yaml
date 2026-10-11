@@ -1,9 +1,11 @@
 # Die andere Richtung: aus dem Cluster in den Wave, nach Namen.
 #
-# Ein Pod ruft https://plausible.wave.example.com auf; CoreDNS beantwortet
-# jeden Namen unter der Wave-Domain mit dem Service `wave-egress`, und der
-# Connector liest SNI beziehungsweise Host und reicht die Verbindung an das
-# Gerät oder den Dienst im Wave weiter -- ohne TLS aufzubrechen. Nur HTTP und
+# Ein Pod ruft https://plausible.wave.example.com auf; CoreDNS reicht die
+# Wave-Domain an den Resolver des Connectors weiter, der jeden Namen aus der
+# Netzkarte mit der festen Adresse des Service `wave-egress` beantwortet (und
+# jeden anderen mit NXDOMAIN). Dort liest der Connector SNI beziehungsweise
+# Host und reicht die Verbindung an das Gerät oder den Dienst im Wave weiter
+# -- ohne TLS aufzubrechen. Nur HTTP und
 # HTTPS: andere Protokolle tragen keinen Namen, nach dem sich weiterleiten ließe.
 #
 # Einschalten im Overlay:
@@ -26,6 +28,9 @@ configMapGenerator:
     behavior: merge
     literals:
       - WAVE_EGRESS=1
+      # Die ClusterIP aus service.yaml: die Antwort auf jeden Namen. Wer sie
+      # dort ändert, ändert sie hier.
+      - WAVE_EGRESS_ADDRESS=10.43.0.53
 
 patches:
   - target: { kind: StatefulSet, name: wave-connector }
@@ -51,3 +56,4 @@ patches:
                 ports:
                   - { name: egress-tls, containerPort: 8443, protocol: TCP }
                   - { name: egress-http, containerPort: 8080, protocol: TCP }
+                  - { name: egress-dns, containerPort: 8053, protocol: UDP }

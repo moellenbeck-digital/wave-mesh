@@ -1,7 +1,16 @@
-# Wohin CoreDNS die Namen des Waves zeigen lässt. Eine gewöhnliche ClusterIP,
-# vergeben, nicht festgenagelt: CoreDNS findet sie über ihren Namen
-# (wave-egress.wave.svc.cluster.local), anders als der interne Ingress, dessen
-# Adresse als Zahl in einer nftables-Regel steht.
+# Die eine Adresse, hinter der der Connector für den Cluster steht: Resolver
+# und Weiterleitung zugleich. Der Resolver beantwortet jeden Namen des Waves
+# mit genau dieser ClusterIP, und CoreDNS leitet die Zone hierher weiter --
+# `forward` nimmt nur Adressen, keine Namen. Deshalb festgenagelt, wie der
+# interne Ingress, und an zwei Stellen: hier und in WAVE_EGRESS_ADDRESS
+# (kustomization.yaml). Sie muss im Service-CIDR des Clusters liegen (k3s:
+# 10.43.0.0/16, kubeadm meist 10.96.0.0/12) und frei sein -- ist sie es nicht,
+# scheitert der Apply sichtbar am Service. Ein anderer Cluster ändert beide
+# Stellen im Overlay.
+#
+# Kein TCP für DNS: die Antworten sind ein A-Record und passen immer in ein
+# Datagramm, und der CoreDNS-Block fragt mit `prefer_udp` auch dann über UDP,
+# wenn ein Pod ihn über TCP gefragt hat.
 apiVersion: v1
 kind: Service
 metadata:
@@ -12,8 +21,10 @@ metadata:
     app.kubernetes.io/part-of: wave-mesh
 spec:
   type: ClusterIP
+  clusterIP: 10.43.0.53
   selector:
     app: wave-connector
   ports:
+    - { name: dns, port: 53, targetPort: egress-dns, protocol: UDP }
     - { name: https, port: 443, targetPort: egress-tls, protocol: TCP }
     - { name: http, port: 80, targetPort: egress-http, protocol: TCP }

@@ -1,12 +1,15 @@
 import { connect, createServer, type Server, type Socket } from "node:net";
+import type { ResolverConfig } from "@wave/dns";
 import type { ProfileStatus } from "@wave/ipc";
 
 /**
  * The connector's other direction: from the cluster into the wave.
  *
  * A pod in this cluster calls `https://plausible.wave.example.com`. CoreDNS
- * answers every name under the wave's suffix with the ClusterIP of the
- * `wave-egress` Service, which points here. This reads the name the client
+ * forwards the wave's suffix to the connector's own resolver, which answers
+ * every name in the netmap with the fixed ClusterIP of the `wave-egress`
+ * Service, which points here, and every other name with NXDOMAIN. This reads
+ * the name the client
  * asked for -- SNI for TLS, the Host header for plain HTTP -- looks it up in
  * the wave's netmap and passes the connection on, byte for byte, to that
  * device or service. TLS is never opened: the pod checks the certificate of
@@ -47,9 +50,7 @@ const normalise = (name: string): string => name.trim().toLowerCase().replace(/\
  */
 export function egressTable(status: ProfileStatus[], controlUrl?: string): EgressTable {
   const table: EgressTable = new Map();
-  const profile = controlUrl
-    ? status.find((entry) => entry.controlUrl === controlUrl)
-    : (status.find((entry) => entry.state === "up") ?? status[0]);
+  const profile = profileOf(status, controlUrl);
   if (profile?.state !== "up") return table;
   for (const peer of profile.peers) {
     if (peer.dnsName && peer.ipv4) table.set(normalise(peer.dnsName), { ipv4: peer.ipv4, local: false });
@@ -61,6 +62,41 @@ export function egressTable(status: ProfileStatus[], controlUrl?: string): Egres
     table.set(normalise(service.dnsName), { ipv4: service.ipv4, local: true });
   }
   return table;
+}
+
+function profileOf(status: ProfileStatus[], controlUrl?: string): ProfileStatus | undefined {
+  return controlUrl
+    ? status.find((entry) => entry.controlUrl === controlUrl)
+    : (status.find((entry) => entry.state === "up") ?? status[0]);
+}
+
+/**
+ * The wave's zone: our own name without our hostname. Read from the netmap
+ * like everything else here, so a wave that moves to another domain takes the
+ * resolver with it -- only the CoreDNS block has to follow by hand.
+ */
+export function egressZone(status: ProfileStatus[], controlUrl?: string): string | undefined {
+  const self = profileOf(status, controlUrl)?.self;
+  if (!self?.dnsName.startsWith(`${self.hostname}.`)) return undefined;
+  return normalise(self.dnsName.slice(self.hostname.length + 1)) || undefined;
+}
+
+/**
+ * What the connector's resolver answers: every name in the table with the one
+ * address all of them share -- the Service in front of this pod -- and, being
+ * a zone of its own, NXDOMAIN for every other name in it. That is the point of
+ * answering here rather than rewriting in CoreDNS: a pod asking for a name the
+ * wave does not have learns it from DNS, not from a refused connection.
+ *
+ * No AAAA: the Service is IPv4, and a known name without one answers empty
+ * rather than "no such name", so a client asking both falls back at once.
+ */
+export function egressResolver(table: EgressTable, zone: string, address: string): ResolverConfig {
+  return {
+    zone,
+    records: [...table.keys()].map((name) => ({ name, ipv4: address })),
+    routes: [],
+  };
 }
 
 /** What reading the start of a connection came to. */
