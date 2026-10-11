@@ -6,7 +6,40 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.9.0-develop.3.*
+*Noch nichts seit v0.9.0.*
+
+---
+
+## ✅ Stable v0.9.0 (11.10.2026)
+
+*Enthält alles aus v0.9.0-develop.1 bis v0.9.0-develop.3.*
+
+### Neue Funktionen (gegenüber v0.8.0)
+
+- **Die Android-App sieht aus und verhält sich wie die iPhone-App**: dieselben
+  Abschnitte und Texte, Anmelden ohne vorheriges Verbinden, Freigabe im
+  Browser, Waves pausieren, prüfen und verlassen, Protokoll teilen, Beitritt
+  per QR-Code und „Automatisch verbinden“ nach einem Neustart. *(seit develop.3)*
+- **Aus dem Cluster in den Wave: der Connector beantwortet die Namen selbst.**
+  Ein Dienst, der im Wave dazukommt, ist nach Sekunden auflösbar; der Eintrag
+  in CoreDNS muss nie mehr angefasst werden. Wer die Egress-Komponente schon
+  nutzt, stellt ihn einmal um (siehe `coredns.example.yaml`). *(seit develop.1)*
+
+### Fehlerbehebungen (gegenüber v0.8.0)
+
+- **Die iPhone-App hält das Telefon nicht mehr ständig wach** — es wachte Tag
+  und Nacht alle fünf bis sechs Sekunden auf, jetzt etwa zehnmal seltener.
+  *(seit develop.2)*
+- **Ein Connector im Cluster schiebt dem Wave nicht mehr jede Minute eine neue
+  Netzkarte zu**, die jedes Telefon weckte. *(seit develop.2)*
+- **Die Android-App stürzte nach der Freigabe nicht mehr ab**, behält nach dem
+  Verlassen des letzten Waves ihre Namensauflösung, steht nach dem Verbinden
+  nicht mehr eine halbe Minute still und zeigt Fehler beim Anmelden an.
+  *(seit develop.3)*
+- **Der Update-Dialog unter macOS zeigt Umlaute richtig** — statt „verf√ºgbar“
+  steht dort wieder „verfügbar“. *(neu in diesem Release)*
+- **Neue Karten im Zugriffsgraphen landen an einem freien Platz** statt unter
+  einer bestehenden. *(seit develop.1)*
 
 ---
 
