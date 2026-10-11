@@ -131,8 +131,10 @@ const en = {
   devicesTitle: "Devices",
   wavePaused:
     "This wave is paused because its subscription is not active. Devices stay enrolled but reach nobody until it is again.",
-  waveEnded:
-    "The subscription for this wave has ended. It is paused and will be deleted 30 days after the end.",
+  waveEnded: (deleteAfter: string | null | undefined) =>
+    deleteAfter
+      ? `The subscription for this wave has ended. It is paused and will be deleted on ${new Intl.DateTimeFormat("en-GB", { dateStyle: "long" }).format(new Date(deleteAfter))}.`
+      : "The subscription for this wave has ended. It is paused and will be deleted soon.",
   addPhone: "Add a phone",
   addPhoneCode: "QR code that opens the wave-mesh app with this server",
   addPhoneHint:
@@ -295,7 +297,10 @@ const de: typeof en = {
   devicesTitle: "Geräte",
   wavePaused:
     "Dieser Wave ist pausiert, weil sein Abo nicht aktiv ist. Die Geräte bleiben angemeldet, erreichen aber niemanden, bis es wieder aktiv ist.",
-  waveEnded: "Das Abo für diesen Wave ist beendet. Er ist pausiert und wird 30 Tage nach dem Ende gelöscht.",
+  waveEnded: (deleteAfter) =>
+    deleteAfter
+      ? `Das Abo für diesen Wave ist beendet. Er ist pausiert und wird am ${new Intl.DateTimeFormat("de-DE", { dateStyle: "long" }).format(new Date(deleteAfter))} gelöscht.`
+      : "Das Abo für diesen Wave ist beendet. Er ist pausiert und wird bald gelöscht.",
   addPhone: "Telefon hinzufügen",
   addPhoneCode: "QR-Code, der die wave-mesh-App mit diesem Server öffnet",
   addPhoneHint:

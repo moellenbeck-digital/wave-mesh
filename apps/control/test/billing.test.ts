@@ -5,6 +5,7 @@ import { createApp } from "../src/app.ts";
 import { setPassword, verifyLogin } from "../src/auth/password.ts";
 import { createProviders } from "../src/auth/providers.ts";
 import { SeatLimitError } from "../src/billing/seats.ts";
+import { ownerAccess } from "../src/billing/setup-links.ts";
 import type { Database } from "../src/db/client.ts";
 import {
   identities,
@@ -631,10 +632,10 @@ describe("whose wave it is", () => {
     expect(accounts).toHaveLength(1);
     expect(accounts[0]?.emailVerified).toBe(true);
     const me = (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
-      waves: { id: string; billing: { state: string } | null }[];
+      waves: { id: string; billing: { state: string; deleteAfter: string | null } | null }[];
     };
     expect(me.waves.map((w) => w.id)).toEqual([view.waveId]);
-    expect(me.waves[0]?.billing).toEqual({ state: "active" });
+    expect(me.waves[0]?.billing).toEqual({ state: "active", deleteAfter: null });
 
     // The link sent earlier must not set a password on an account that has a way in now.
     const late = await app.request(path, {
@@ -668,6 +669,50 @@ describe("whose wave it is", () => {
 });
 
 describe("the setup link", () => {
+  test("after the billing secret changed, the same key gets a fresh link that works", async () => {
+    await buy();
+    const owner = (await db.select({ id: waves.ownerUserId }).from(waves))[0]?.id ?? "";
+    const base = { baseUrl: "https://wave.example", key: "cs_1" };
+    const before = await ownerAccess(db, owner, { ...base, secret: "s".repeat(40) });
+    const after = await ownerAccess(db, owner, { ...base, secret: "r".repeat(40) });
+    expect(after?.url).not.toBe(before?.url);
+    // The link mailed after the rotation is one the server recognises.
+    expect((await app.request(new URL(after?.url ?? "").pathname)).status).toBe(200);
+    expect((await app.request(new URL(before?.url ?? "").pathname)).status).toBe(410);
+  });
+
+  test("a link that comes back after its address got a verified account moves the wave there", async () => {
+    const view = await buy();
+    const path = await linkPath("sub_1", "cs_1");
+    const placeholder = (await db.select({ id: waves.ownerUserId }).from(waves))[0]?.id ?? "";
+    // The race: a first Google login and the payment, each seeing nobody yet.
+    await db.insert(users).values({ id: "u_google", email: "anna@acme.example", emailVerified: true });
+    await db.insert(identities).values({
+      id: "i_google",
+      userId: "u_google",
+      provider: "google",
+      subject: "g-1",
+      email: "anna@acme.example",
+    });
+    await device(view.waveId, "n_pre", 9);
+
+    const res = await app.request(path, {
+      method: "POST",
+      body: new URLSearchParams({ password: "correct horse battery" }),
+    });
+    expect(res.status).toBe(410);
+    expect(await res.text()).toContain("already has a way in");
+
+    expect((await db.select().from(waves))[0]?.ownerUserId).toBe("u_google");
+    expect(await db.select().from(waveMembers).where(eq(waveMembers.waveId, view.waveId))).toEqual([
+      expect.objectContaining({ userId: "u_google", role: "owner" }),
+    ]);
+    expect((await db.select().from(nodes))[0]?.userId).toBe("u_google");
+    expect(await db.select().from(users).where(eq(users.id, placeholder))).toEqual([]);
+    // No password was set on the account that signs in with Google.
+    expect((await db.select().from(users).where(eq(users.id, "u_google")))[0]?.passwordHash).toBeNull();
+  });
+
   test("the same key gets the same link while it is unused; another key replaces it", async () => {
     await buy();
     const first = await linkPath("sub_1", "cs_1");
@@ -728,9 +773,19 @@ describe("a booked wave", () => {
       headers: { cookie: jar.header() },
     });
     expect(refused.status).toBe(409);
+    expect(await refused.text()).toContain("deleted 30 days after it ends");
     expect(await db.select().from(waves)).toHaveLength(1);
 
     await put("sub_1", { seats: 3, state: "ended" });
+    // The owner is told the date, not a number of days that is a server setting.
+    const me = (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
+      waves: { billing: { state: string; deleteAfter: string | null } | null }[];
+    };
+    const row = (await db.select().from(waveBilling))[0];
+    expect(me.waves[0]?.billing).toEqual({
+      state: "ended",
+      deleteAfter: row?.deleteAfter?.toISOString() ?? "",
+    });
     const form2 = new FormData();
     form2.set("name", view.waveName);
     const allowed = await app.request(`/waves/${view.waveId}/delete`, {

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, isNotNull, lte, sql } from "drizzle-orm";
 import { type Actor, audit } from "../audit.ts";
+import { lockAddress } from "../auth/address-lock.ts";
 import type { Database } from "../db/client.ts";
 import { users, waveBilling, waveMembers, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
@@ -306,7 +307,7 @@ async function createBilledWave(
       // One placeholder per address even when two checkouts for the same new
       // address arrive at once: users.email has no unique index (provider
       // accounts may share one), so the address itself is the lock.
-      await t.execute(sql`select pg_advisory_xact_lock(hashtext(${`billing-owner:${email}`}))`);
+      await lockAddress(t, email);
       const userId = await ownerFor(t, email);
       // Two customers called "acme" collide on the suffix; a discriminator
       // rather than a refusal, the same as ensureWaveForUser() does.

@@ -24,7 +24,11 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
     später „aktiv“ meldet, und ein gebuchter Wave lässt sich nicht von Hand
     löschen, solange sein Abo läuft.
   - Ein pausierter Wave sagt auf seiner Karte, warum die Geräte niemanden
-    sehen, und bekommt keine Zertifikate.
+    sehen, und bekommt keine Zertifikate, auch keines, das vor der Pause
+    bestellt war. Ein beendetes Abo nennt das Datum der Löschung.
+  - Hat sich der Eigentümer schon mit Google angemeldet, bevor er den Link aus
+    der Mail nutzt, zieht der bezahlte Wave in dieses Konto um, statt dass der
+    Link verfällt.
 
 ---
 

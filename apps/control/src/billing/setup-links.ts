@@ -2,7 +2,16 @@ import { createHmac } from "node:crypto";
 import { and, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { hashPassword } from "../auth/password.ts";
 import type { Database } from "../db/client.ts";
-import { identities, passwordSetups, users } from "../db/schema.ts";
+import {
+  identities,
+  nodes,
+  passwordSetups,
+  users,
+  waveAuthKeys,
+  waveInvites,
+  waveMembers,
+  waves,
+} from "../db/schema.ts";
 import { newId } from "../ids.ts";
 
 /** As long as an invitation: long enough for a mailbox, short enough to go stale. */
@@ -67,7 +76,7 @@ export async function ownerAccess(
 
     if (options.key) {
       const same = await t
-        .select({ id: passwordSetups.id })
+        .select({ id: passwordSetups.id, tokenHash: passwordSetups.tokenHash })
         .from(passwordSetups)
         .where(
           and(
@@ -79,12 +88,13 @@ export async function ownerAccess(
           ),
         )
         .limit(1);
-      if (same[0]) {
-        return {
-          email: user.email,
-          hasPassword,
-          url: setupUrl(options.baseUrl, tokenFor(options.secret, same[0].id)),
-        };
+      // Derived again only if it still is the token that was stored: after
+      // the billing secret changed, the same derivation yields a token that
+      // matches nothing, and mailing it would send a link that says "gone".
+      // Then a fresh link is the right answer, the same as for a new key.
+      const derived = same[0] ? tokenFor(options.secret, same[0].id) : null;
+      if (derived && hashToken(derived) === same[0]?.tokenHash) {
+        return { email: user.email, hasPassword, url: setupUrl(options.baseUrl, derived) };
       }
     }
 
@@ -160,6 +170,10 @@ export async function redeemSetup(db: Database, token: string, password: string)
 
   return db.transaction(async (tx) => {
     const t = tx as unknown as Database;
+    // The account first, then its link: the order ownerAccess() takes them
+    // in. The other way round, a redeem and a new link for the same account
+    // at the same moment each held what the other waited for.
+    await t.select({ id: users.id }).from(users).where(eq(users.id, setup.userId)).for("update");
     const locked = await t
       .select({ id: passwordSetups.id })
       .from(passwordSetups)
@@ -175,29 +189,36 @@ export async function redeemSetup(db: Database, token: string, password: string)
       .for("update");
     if (!locked[0]) return { kind: "gone" } as const;
 
-    // A second verified account with the same address would make two accounts
-    // the password login could pick between. The one that is there first is
-    // the one its owner already signs in with.
+    // Another verified account holds the address: its owner signed in with a
+    // provider before the payment made this placeholder (the two raced, or
+    // the login came first). The link came back from that very mailbox, so
+    // it is the same person -- the paid wave moves to the account they
+    // already use, and the placeholder goes. No password is set and nobody
+    // is signed in here: that account may have a second factor, and a link
+    // must not be a way around it.
     const other = await t
       .select({ id: users.id })
       .from(users)
       .where(and(eq(users.email, setup.email), eq(users.emailVerified, true), ne(users.id, setup.userId)))
       .limit(1);
+    const verified = other[0];
+    if (verified) {
+      await t.update(passwordSetups).set({ usedAt: new Date() }).where(eq(passwordSetups.id, setup.id));
+      if (await isPlaceholder(t, setup.userId)) await moveTo(t, setup.userId, verified.id);
+      return { kind: "has-access" } as const;
+    }
 
-    const written =
-      other.length > 0
-        ? []
-        : await t
-            .update(users)
-            .set({ passwordHash, emailVerified: true })
-            .where(
-              and(
-                eq(users.id, setup.userId),
-                isNull(users.passwordHash),
-                sql`not exists (select 1 from ${identities} where ${identities.userId} = ${users.id})`,
-              ),
-            )
-            .returning({ id: users.id });
+    const written = await t
+      .update(users)
+      .set({ passwordHash, emailVerified: true })
+      .where(
+        and(
+          eq(users.id, setup.userId),
+          isNull(users.passwordHash),
+          sql`not exists (select 1 from ${identities} where ${identities.userId} = ${users.id})`,
+        ),
+      )
+      .returning({ id: users.id });
 
     await t.update(passwordSetups).set({ usedAt: new Date() }).where(eq(passwordSetups.id, setup.id));
     if (written.length === 0) return { kind: "has-access" } as const;
@@ -214,6 +235,61 @@ export async function redeemSetup(db: Database, token: string, password: string)
       .onConflictDoNothing();
     return { kind: "redeemed", userId: setup.userId } as const;
   });
+}
+
+/** Still the account a payment made: unverified, no password, no login. */
+async function isPlaceholder(db: Database, userId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.emailVerified, false), isNull(users.passwordHash)))
+    .limit(1);
+  return rows.length > 0 && !(await hasAnyIdentity(db, userId));
+}
+
+/**
+ * Hands everything a placeholder owns to the account that holds its address,
+ * then drops the placeholder. A placeholder only ever owns paid waves and is
+ * their only member until its owner arrives, but the moves are written for
+ * any membership: where the account is in the wave already, it keeps its own
+ * row and takes the higher role.
+ */
+async function moveTo(db: Database, fromUserId: string, toUserId: string): Promise<void> {
+  await db.update(waves).set({ ownerUserId: toUserId }).where(eq(waves.ownerUserId, fromUserId));
+  const moving = await db
+    .select({ waveId: waveMembers.waveId, role: waveMembers.role })
+    .from(waveMembers)
+    .where(eq(waveMembers.userId, fromUserId));
+  for (const member of moving) {
+    const already = await db
+      .select({ role: waveMembers.role })
+      .from(waveMembers)
+      .where(and(eq(waveMembers.waveId, member.waveId), eq(waveMembers.userId, toUserId)))
+      .limit(1);
+    if (already[0]) {
+      if (member.role === "owner" && already[0].role !== "owner") {
+        await db
+          .update(waveMembers)
+          .set({ role: "owner" })
+          .where(and(eq(waveMembers.waveId, member.waveId), eq(waveMembers.userId, toUserId)));
+      }
+    } else {
+      await db
+        .update(waveMembers)
+        .set({ userId: toUserId })
+        .where(and(eq(waveMembers.waveId, member.waveId), eq(waveMembers.userId, fromUserId)));
+    }
+  }
+  // Whatever else hangs off the account by a cascading key goes along: an
+  // operator may have enrolled a device into the paid wave with a pre-auth
+  // key in the owner's name before the owner ever signed in.
+  await db.update(nodes).set({ userId: toUserId }).where(eq(nodes.userId, fromUserId));
+  await db.update(waveAuthKeys).set({ userId: toUserId }).where(eq(waveAuthKeys.userId, fromUserId));
+  await db
+    .update(waveInvites)
+    .set({ invitedByUserId: toUserId })
+    .where(eq(waveInvites.invitedByUserId, fromUserId));
+  await db.delete(users).where(eq(users.id, fromUserId));
 }
 
 /** Whether an account can sign in some other way than a password. */

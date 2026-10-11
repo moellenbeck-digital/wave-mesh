@@ -103,8 +103,8 @@ const en = {
   setupForeignOrigin: "Not from this page",
   setupForeignOriginBody: "Open the link from your email again and set the password there.",
   billedNotDeletable: "This wave is still booked",
-  billedNotDeletableBody:
-    "A wave with a running subscription is not deleted here: cancel the subscription, and the wave is deleted 30 days after it ends.",
+  billedNotDeletableBody: (days: number) =>
+    `A wave with a running subscription is not deleted here: cancel the subscription, and the wave is deleted ${days} days after it ends.`,
 
   // --- invitations ----------------------------------------------------------
   invited: (email: string, wave: string) => `${email} is invited to ${wave}`,
@@ -226,8 +226,8 @@ const de: typeof en = {
   setupForeignOrigin: "Nicht von dieser Seite",
   setupForeignOriginBody: "Öffne den Link aus deiner E-Mail noch einmal und leg das Passwort dort fest.",
   billedNotDeletable: "Dieser Wave ist noch gebucht",
-  billedNotDeletableBody:
-    "Einen Wave mit laufendem Abo löschst du nicht hier: Kündige das Abo, dann wird der Wave 30 Tage nach dem Ende gelöscht.",
+  billedNotDeletableBody: (days) =>
+    `Einen Wave mit laufendem Abo löschst du nicht hier: Kündige das Abo, dann wird der Wave ${days} Tage nach dem Ende gelöscht.`,
 
   invited: (email, wave) => `${email} ist in ${wave} eingeladen`,
   sendLink: (until) => `Schick diesen Link weiter. Er funktioniert einmal und gilt bis ${until}.`,

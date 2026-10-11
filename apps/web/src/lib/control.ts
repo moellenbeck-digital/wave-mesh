@@ -17,7 +17,7 @@ export interface Wave {
    * Null for a wave nobody pays for; for a booked one, whether its mesh runs.
    * Optional because an older control server does not send it.
    */
-  billing?: { state: "active" | "suspended" | "ended" } | null;
+  billing?: { state: "active" | "suspended" | "ended"; deleteAfter?: string | null } | null;
 }
 
 /** Who may invite, remove a member and remove a device. Members may only look. */

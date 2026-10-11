@@ -623,7 +623,11 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     // hear of it again. Cancelling ends it, and the sweep deletes it after.
     const billed = await billingStateOf(db, waveId);
     if (billed && billed !== "ended")
-      return page(c, (m) => [m.billedNotDeletable, m.billedNotDeletableBody], 409);
+      return page(
+        c,
+        (m) => [m.billedNotDeletable, m.billedNotDeletableBody(config.billing?.retentionDays ?? 30)],
+        409,
+      );
 
     const deleted = await deleteWave(db, waveId);
     if (!deleted) return page(c, (m) => [m.unknownWave, m.nothingToDelete], 404);

@@ -42,7 +42,7 @@ export async function wavesOf(
     name: string;
     dnsSuffix: string;
     role: Role;
-    billing: { state: "active" | "suspended" | "ended" } | null;
+    billing: { state: "active" | "suspended" | "ended"; deleteAfter: string | null } | null;
   }[]
 > {
   const rows = await db
@@ -52,15 +52,18 @@ export async function wavesOf(
       dnsSuffix: waves.dnsSuffix,
       role: waveMembers.role,
       billingState: waveBilling.state,
+      deleteAfter: waveBilling.deleteAfter,
     })
     .from(waveMembers)
     .innerJoin(waves, eq(waves.id, waveMembers.waveId))
     .leftJoin(waveBilling, eq(waveBilling.waveId, waves.id))
     .where(eq(waveMembers.userId, userId))
     .orderBy(asc(waveMembers.createdAt), asc(waves.name));
-  return rows.map(({ billingState, ...wave }) => ({
+  // The deletion date, not the number of days: the days are a setting of the
+  // server, the date is what the owner needs to know.
+  return rows.map(({ billingState, deleteAfter, ...wave }) => ({
     ...wave,
-    billing: billingState ? { state: billingState } : null,
+    billing: billingState ? { state: billingState, deleteAfter: deleteAfter?.toISOString() ?? null } : null,
   }));
 }
 

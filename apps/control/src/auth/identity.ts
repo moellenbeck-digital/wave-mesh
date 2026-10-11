@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { identities, users } from "../db/schema.ts";
 import { newId } from "../ids.ts";
+import { lockAddress } from "./address-lock.ts";
 
 export interface ProviderClaims {
   provider: string;
@@ -49,6 +50,10 @@ export async function resolveUser(db: Database, claims: ProviderClaims): Promise
     }
 
     if (email && claims.emailVerified) {
+      // The same lock a payment takes before it makes the owner's placeholder:
+      // decided one at a time, a first login and a checkout for this address
+      // cannot both conclude that nobody holds it yet.
+      await lockAddress(tx as unknown as Database, email);
       const match = await tx
         .select({ id: users.id })
         .from(users)

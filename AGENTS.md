@@ -1246,8 +1246,11 @@ Was daran festliegt:
   nie: Bei einem Anbieter, der für Adressen nicht bürgt, kann sich jeder unter
   einer fremden Adresse anmelden, und dem gehörte sonst ein bezahlter Wave.
   Sonst ist es ein Platzhalter ohne Passwort und ohne Anmeldung, je Adresse
-  einer (die Adresse ist dabei die Sperre: `users.email` hat keinen
-  Unique-Index).
+  einer. Die Adresse ist dabei die Sperre (`users.email` hat keinen
+  Unique-Index, `auth/address-lock.ts`), und zwar für beide Wege, die über ein
+  Konto zu einer Adresse entscheiden: die Zahlung und die Anmeldung bei einem
+  Anbieter. Ohne die zweite sahen eine erste Google-Anmeldung und ein Checkout
+  im selben Augenblick beide „noch niemand da“.
 - **Ein Platzhalter wird auf zwei Wegen zum Konto**, und beide beweisen das
   Postfach: über den Setup-Link, oder über eine Anmeldung bei einem Anbieter,
   der die Adresse bestätigt — dann übernimmt `resolveUser()` den Platzhalter
@@ -1256,13 +1259,23 @@ Was daran festliegt:
   einen Zugang hat (Passwort vom Operator, Anbieter): geprüft wird beim
   Einlösen, in einer Transaktion, und der Link ist danach verbraucht. Die
   Passwort-Anmeldung nimmt bei mehreren Konten einer Adresse das mit Passwort.
+  Hat die Adresse beim Einlösen schon ein *anderes* bestätigtes Konto, zieht
+  der Wave dorthin um (Eigentum, Mitgliedschaft, Geräte, Schlüssel), der
+  Platzhalter verschwindet, und die Seite sagt „melde dich wie gewohnt an“:
+  Der Link kam aus demselben Postfach. Eingeloggt wird dabei niemand — das
+  Konto hat vielleicht einen zweiten Faktor, und ein Link ist kein Weg darum
+  herum.
 - **Derselbe `key`, derselbe Link.** Die Seite schickt die Checkout-Session als
   `key`. Solange der Link unbenutzt und gültig ist, kommt für denselben Schlüssel
   derselbe zurück: Der Token wird aus der Zeile und `WAVE_BILLING_TOKEN`
   abgeleitet (HMAC), gespeichert bleibt nur sein SHA-256. Ohne das zöge eine
   doppelte Zustellung von Stripe den Link der ersten Mail zurück. Ein anderer
   oder kein Schlüssel ersetzt den alten Link; ausgestellt wird unter einer
-  Sperre auf dem Konto. Jeder Link gilt einmal und sieben Tage, und das
+  Sperre auf dem Konto. Abgeleitet wird nur, solange der Hash noch passt:
+  Nach einem Wechsel von `WAVE_BILLING_TOKEN` gibt es für denselben Schlüssel
+  einen neuen Link statt eines, den der Server nicht mehr kennt. Konto vor
+  Link, beim Ausstellen wie beim Einlösen — andersherum warteten beide
+  aufeinander. Jeder Link gilt einmal und sieben Tage, und das
   Formular nimmt nur Posts von der eigenen Herkunft an (`Origin`,
   `Sec-Fetch-Site`) — sonst könnte eine fremde Seite jemanden in ein fremdes
   Konto einloggen.
@@ -1273,10 +1286,13 @@ Was daran festliegt:
   ist eine Netzkarte statt einer Runde Neufreigaben. Neue Geräte kommen in
   dieser Zeit nicht hinein, weder über den Browser noch über einen
   Pre-Auth-Key — und ein Einmalschlüssel wird dabei nicht verbraucht. Auch
-  Zertifikate stellt der Server dann nicht aus. `netmapVersion` zählt nur
-  hoch, wenn das Mesh startet oder stoppt. `/api/me` nennt je Wave
-  `billing: { state }` (null für einen selbst betriebenen), und die
-  Wave-Karte sagt, warum die Geräte niemanden sehen.
+  Zertifikate stellt der Server dann nicht aus, auch keines, das vor der
+  Pause bestellt war: die Abfrage des Auftrags antwortet 403, und der Auftrag
+  wartet. `netmapVersion` zählt nur hoch, wenn das Mesh startet oder stoppt.
+  `/api/me` nennt je Wave `billing: { state, deleteAfter }` (null für einen
+  selbst betriebenen), und die Wave-Karte sagt, warum die Geräte niemanden
+  sehen — bei einem beendeten Abo mit dem Datum der Löschung, nicht mit einer
+  Zahl von Tagen, die eine Einstellung des Servers ist.
 - **Gekündigt wird mit Frist gelöscht.** `ended` setzt `delete_after` auf jetzt
   plus `WAVE_BILLING_RETENTION_DAYS`, ein wiederholtes `ended` schiebt das
   nicht hinaus. Gelöscht wird im Control-Prozess selbst (stündlich und einmal
@@ -1290,7 +1306,12 @@ Was daran festliegt:
 - **Ein gebuchter Wave wird nicht von Hand gelöscht**, solange sein Abo läuft —
   weder über den Löschknopf noch mit `wave-admin delete-wave`. Sonst bucht
   Stripe weiter für einen Wave, den es nicht mehr gibt, und die Seite erfährt
-  nie davon. Erst nach `ended` geht es, sonst löscht der Sweep.
+  nie davon. Erst nach `ended` geht es, sonst löscht der Sweep. `deleteWave()`
+  sperrt dafür zuerst die Abrechnungszeile und dann den Wave — dieselbe
+  Reihenfolge wie Einladungen und Sweep. Andersherum hielt ein Löschen den
+  Wave und wollte die Zeile, eine gleichzeitige Einladung hielt die Zeile und
+  wollte den Wave, und Postgres brach eins von beiden ab (nachgestellt: 40
+  Deadlocks in 80 Läufen vorher, keiner danach).
 - **Voll ist eine Antwort, kein Fehler.** Jeder Wave belegt ein `/16`, ein
   Server hat also höchstens 64 (siehe D5). Ist keins mehr frei, antwortet das
   Anlegen mit 507 `no-capacity` und schreibt es laut ins Log: Ein zahlender
@@ -1301,7 +1322,10 @@ Was daran festliegt:
   gleichzeitige Einladungen sähen sonst beide den letzten Platz frei. Auch
   `wave-admin invite` und `wave-admin add-member` halten sich daran — mehr
   Plätze gibt es über das Abo, nicht über die Shell. Eine neue Einladung für
-  dieselbe Adresse ersetzt die alte und kostet keinen Platz. Unter die Zahl
+  dieselbe Adresse ersetzt die alte und kostet keinen Platz. Angenommen wird
+  unter derselben Sperre, Einlösen und Beitreten in einem Schritt — dazwischen
+  zählte die Einladung nicht mehr und das Mitglied noch nicht, und genau ein
+  Platz zu viel ließ sich vergeben. Unter die Zahl
   der Mitglieder senken kann der Kunde die Plätze trotzdem, im Kundenportal;
   die Antwort nennt deshalb `members`, und die Seite hebt die Menge bei Stripe
   wieder darauf an.

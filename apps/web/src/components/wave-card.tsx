@@ -52,7 +52,7 @@ export function WaveCard({
           why is the difference between "billing" and "the network is down". */}
       {wave.billing && wave.billing.state !== "active" ? (
         <p className="mb-6 rounded-md border border-line p-4 text-body-sm text-navy" role="status">
-          {wave.billing.state === "ended" ? t.waveEnded : t.wavePaused}
+          {wave.billing.state === "ended" ? t.waveEnded(wave.billing.deleteAfter) : t.wavePaused}
         </p>
       ) : null}
 

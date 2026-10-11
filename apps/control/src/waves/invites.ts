@@ -1,7 +1,7 @@
 import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import { ensureSeatFor } from "../billing/seats.ts";
 import type { Database } from "../db/client.ts";
-import { users, waveInvites, waves } from "../db/schema.ts";
+import { users, waveBilling, waveInvites, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
 import { addMember } from "./members.ts";
 
@@ -195,14 +195,30 @@ export async function acceptInvite(
   if (!user.email || normaliseEmail(user.email) !== invite.email) return "wrong-address";
   if (!user.emailVerified) return "unverified-address";
 
-  const claimed = await db
-    .update(waveInvites)
-    .set({ acceptedAt: new Date(), acceptedByUserId: user.id })
-    .where(and(eq(waveInvites.id, invite.id), isNull(waveInvites.acceptedAt), isNull(waveInvites.revokedAt)))
-    .returning({ id: waveInvites.id });
-  if (!claimed[0]) return "gone";
-
-  await addMember(db, invite.waveId, user.id, invite.role);
+  // One step, under the same lock an invitation takes for its seat count
+  // (billing/seats.ts): spent and joined at once. Two statements on their
+  // own left a moment in which the invitation no longer counted as an open
+  // seat and the person did not yet count as a member -- room for one more
+  // invitation than was booked. A wave without billing locks nothing.
+  const joined = await db.transaction(async (tx) => {
+    const t = tx as unknown as Database;
+    await t
+      .select({ waveId: waveBilling.waveId })
+      .from(waveBilling)
+      .where(eq(waveBilling.waveId, invite.waveId))
+      .for("update");
+    const claimed = await t
+      .update(waveInvites)
+      .set({ acceptedAt: new Date(), acceptedByUserId: user.id })
+      .where(
+        and(eq(waveInvites.id, invite.id), isNull(waveInvites.acceptedAt), isNull(waveInvites.revokedAt)),
+      )
+      .returning({ id: waveInvites.id });
+    if (!claimed[0]) return false;
+    await addMember(t, invite.waveId, user.id, invite.role);
+    return true;
+  });
+  if (!joined) return "gone";
   return { waveId: invite.waveId, waveName: invite.waveName, role: invite.role };
 }
 

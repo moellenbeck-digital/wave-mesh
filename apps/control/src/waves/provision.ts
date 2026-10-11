@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { nodes, users, waveMembers, waves } from "../db/schema.ts";
+import { nodes, users, waveBilling, waveMembers, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
 import { allocatePrefix } from "../net/addressing.ts";
 import { invitesFor } from "./invites.ts";
@@ -354,6 +354,16 @@ export interface DeletedWave {
  */
 export async function deleteWave(db: Database, waveId: string): Promise<DeletedWave | null> {
   return db.transaction(async (tx) => {
+    // The billing row before the wave: the order invitations and the sweep
+    // take them in (billing/seats.ts, billing/subscriptions.ts). The cascade
+    // below would otherwise reach for it while holding the wave, and an
+    // invitation created at the same moment holds it while reaching for the
+    // wave -- each waiting for the other until Postgres kills one.
+    await tx
+      .select({ waveId: waveBilling.waveId })
+      .from(waveBilling)
+      .where(eq(waveBilling.waveId, waveId))
+      .for("update");
     const found = await tx.select({ name: waves.name }).from(waves).where(eq(waves.id, waveId)).limit(1);
     const wave = found[0];
     if (!wave) return null;
