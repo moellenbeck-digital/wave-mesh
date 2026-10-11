@@ -57,7 +57,7 @@ step "control server with billing"
 # Retention 0: an ended wave is due at once, so the sweep below has something
 # to delete without waiting thirty days.
 WAVE_PORT=8080 WAVE_BASE_URL="$CONTROL" WAVE_HOST=0.0.0.0 \
-  WAVE_BILLING_TOKEN="$TOKEN" WAVE_BILLING_RETENTION_DAYS=0 \
+  WAVE_BILLING_TOKEN="$TOKEN" \
   bun "$REPO/apps/control/test/e2e-server.ts" >"$WORK/control.log" 2>&1 &
 curl -s --retry 40 --retry-all-errors --retry-delay 1 "$CONTROL/healthz" >/dev/null || fail "control server did not start"
 ok "up at $CONTROL"
@@ -89,19 +89,34 @@ SUFFIX=$(field .dnsSuffix)
   || fail "unexpected wave: $(cat "$WORK/billing.json")"
 # Only what the site needs -- the internal "meshChanged" stays inside.
 KEYS=$(jq -c 'keys' "$WORK/billing.json")
-[[ "$KEYS" == '["created","dnsSuffix","seats","state","waveId","waveName"]' ]] \
+[[ "$KEYS" == '["created","dnsSuffix","members","seats","state","waveId","waveName"]' ]] \
   || fail "the answer has the fields $KEYS"
-ok "created $WAVE_NAME ($WAVE_ID, $SUFFIX)"
+[[ "$(field .members)" == 1 ]] || fail "a new wave has $(field .members) members, expected its owner"
+ok "created $WAVE_NAME ($WAVE_ID, $SUFFIX), 1 member"
 
 subscription active 2
 [[ "$(field .created)" == false && "$(field .waveId)" == "$WAVE_ID" ]] \
   || fail "the repeated delivery made something new: $(cat "$WORK/billing.json")"
 ok "the same event again: created=false, the same wave"
 
+for state in suspended ended; do
+  code=$(billing PUT "/api/billing/subscriptions/sub_never_active" \
+    "{\"email\":\"late@example.com\",\"name\":\"Late\",\"seats\":1,\"state\":\"$state\"}")
+  [[ "$code" == 404 && "$(field .error)" == unknown-subscription ]] \
+    || fail "a $state subscription never seen made something: $code $(cat "$WORK/billing.json")"
+done
+ok "a subscription first seen paused or ended makes no wave (404)"
+
 step "the owner sets a password through the setup link"
-[[ $(billing POST "/api/billing/subscriptions/$SUB/owner-link") == 200 ]] \
+# Keyed by the checkout session, as the site sends it: Stripe delivering the
+# checkout twice must mail the same link, not one that revokes the other.
+[[ $(billing POST "/api/billing/subscriptions/$SUB/owner-link" '{"key":"cs_e2e"}') == 200 ]] \
   || fail "owner-link answered $(cat "$WORK/billing.json")"
 SETUP_URL=$(field .url)
+[[ "$(field .signInUrl)" == "$CONTROL" ]] || fail "owner-link names no sign-in address: $(cat "$WORK/billing.json")"
+[[ $(billing POST "/api/billing/subscriptions/$SUB/owner-link" '{"key":"cs_e2e"}') == 200 && "$(field .url)" == "$SETUP_URL" ]] \
+  || fail "the same key gave another link: $(cat "$WORK/billing.json")"
+ok "the same key, the same link"
 [[ "$(field .email)" == "$OWNER" && "$(field .hasPassword)" == false && "$SETUP_URL" == "$CONTROL/account/setup/"* ]] \
   || fail "owner-link answered $(cat "$WORK/billing.json")"
 code=$(curl -s -o "$WORK/setup.html" -w '%{http_code}' "$SETUP_URL")
@@ -267,9 +282,18 @@ DELETE_AFTER=$(jq -r '[.entries[] | select(.action == "billing.update")][0].deta
 [[ -n "$DELETE_AFTER" ]] || fail "ending set no deletion date: $AUDIT"
 ok "no ping, delete_after $DELETE_AFTER"
 
+code=$(billing PUT "/api/billing/subscriptions/$SUB" '{"seats":3,"state":"active"}')
+[[ "$code" == 409 && "$(field .error)" == ended ]] || fail "an ended subscription came back: $code $(cat "$WORK/billing.json")"
+code=$(billing PUT "/api/billing/subscriptions/$SUB" '{"seats":3,"state":"suspended"}')
+[[ "$code" == 409 ]] || fail "an ended subscription was paused again: $code"
+unreachable "" "$B_IP" "A reached B after a stale active"
+ok "ended stays ended: a later active or suspended is 409"
+
 step "the sweep deletes it and cuts its devices off"
 mark a
 SWEPT=$(curl -s -X POST "$CONTROL/__e2e/billing/sweep" | jq -r .deleted)
+[[ "$SWEPT" == 0 ]] || fail "the sweep deleted $SWEPT waves inside the retention"
+SWEPT=$(curl -s -X POST "$CONTROL/__e2e/billing/sweep?days=31" | jq -r .deleted)
 [[ "$SWEPT" == 1 ]] || fail "the sweep deleted $SWEPT waves, expected 1"
 grep -q "billing: deleted $WAVE_NAME ($WAVE_ID), subscription $SUB ended" "$WORK/control.log" \
   || fail "the operator's log does not say what was deleted"

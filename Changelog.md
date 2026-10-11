@@ -16,6 +16,15 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   Personen auf, wie gebucht sind. Der neue Eigentümer legt sein Passwort über
   einen Link fest, den die Seite ihm schickt. Ohne `WAVE_BILLING_TOKEN` gibt es
   nichts davon; selbst betriebene Server ändern sich nicht.
+  - Ein bezahlter Wave gehört nur einem bestätigten Konto oder einem
+    Platzhalter, nie einem unbestätigten Konto mit fremder Anmeldung. Meldet
+    sich der Eigentümer mit Google an, bevor er den Link nutzt, übernimmt diese
+    Anmeldung den Platzhalter, statt ein zweites Konto ohne Wave anzulegen.
+  - Ein gekündigter Wave bleibt gekündigt, auch wenn ein veraltetes Ereignis
+    später „aktiv“ meldet, und ein gebuchter Wave lässt sich nicht von Hand
+    löschen, solange sein Abo läuft.
+  - Ein pausierter Wave sagt auf seiner Karte, warum die Geräte niemanden
+    sehen, und bekommt keine Zertifikate.
 
 ---
 

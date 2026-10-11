@@ -1196,13 +1196,19 @@ Verwaltungs-API (`apps/control/src/routes/billing.ts`, `src/billing/`):
 
 ```bash
 WAVE_BILLING_TOKEN=…              # ≥ 32 Zeichen; ohne ihn gibt es /api/billing/* nicht (404)
-WAVE_BILLING_RETENTION_DAYS=30    # so lange bleibt ein gekündigter Wave stehen
+WAVE_BILLING_RETENTION_DAYS=30    # so lange bleibt ein gekündigter Wave stehen; leer = 30, mindestens 1
 ```
 
 | Aufruf | Wirkung |
 |---|---|
-| `PUT /api/billing/subscriptions/:id` `{ email?, name?, seats, state }` | Wave des Abos so stellen, wie gesagt (`active`, `suspended`, `ended`) |
-| `POST /api/billing/subscriptions/:id/owner-link` | Link, mit dem der Eigentümer sein erstes Passwort setzt (oder `url: null`) |
+| `PUT /api/billing/subscriptions/:id` `{ email?, name?, seats, state, asOf? }` | Wave des Abos so stellen, wie gesagt (`active`, `suspended`, `ended`); Antwort mit `members` |
+| `POST /api/billing/subscriptions/:id/owner-link` `{ key? }` | Link, mit dem der Eigentümer sein erstes Passwort setzt (oder `url: null`), dazu `signInUrl` |
+
+Antworten, auf die sich die Seite verlässt: `404 {"error":"unknown-subscription"}`
+(nie gesehen und nicht genug gesagt), `409 {"error":"ended"}` (für immer
+beendet), `507 {"error":"no-capacity"}` (kein Adressblock mehr frei). Jede
+andere 404 ist Konfiguration — kein Token, falsche Adresse — und für die Seite
+ein Fehler, den sie wiederholt, nicht „unbekannt“.
 | `GET/POST /account/setup/:token` | die Seite dazu |
 
 Was daran festliegt:
@@ -1212,41 +1218,97 @@ Was daran festliegt:
   Abo und den Zustand, den der Wave haben soll, und geschrieben wird nur, was
   abweicht: zweimal dasselbe ist einmal, und ein verspätetes Ereignis ist nicht
   schlimmer als ein wiederholtes. Ein Abo, das es noch nicht gibt, entsteht nur
-  mit Adresse und Namen — die bringt allein `checkout.session.completed` mit;
-  alles davor bekommt 404, und die Seite wartet auf die Kasse. Zwei
-  gleichzeitige Zustellungen klärt der Unique-Index auf der Abo-ID: Wave und
+  mit Adresse, Namen **und** `active` — ein Abo, das hier zum ersten Mal
+  pausiert oder beendet auftaucht, hat nichts zu bekommen. Zwei gleichzeitige
+  Zustellungen klärt der Unique-Index auf der Abo-ID: Wave und
   Abrechnungszeile entstehen in einer Transaktion, der Verlierer rollt zurück
   und liest den Gewinner.
+- **Zwei Ereignisse gleichzeitig können in jeder Reihenfolge ankommen.** Die
+  Seite liest das Abo bei Stripe und schickt dann; zwei Handler können sich
+  dazwischen überholen. Deshalb läuft das Anwenden unter `FOR UPDATE` auf der
+  Abrechnungszeile, und `asOf` (wann die Seite den Zustand gelesen hat, ms)
+  wird gespeichert: was älter ist als der zuletzt angewandte Stand, wird nicht
+  angewandt und mit dem aktuellen Stand beantwortet.
+- **Beendet bleibt beendet.** Stripe holt ein gekündigtes Abo nie zurück; ein
+  späteres `active` oder `suspended` ist also ein veralteter Lesestand und
+  bekommt 409. Sonst liefe ein Wave nach der Kündigung kostenlos weiter, und
+  seine Löschung wäre aufgehoben. `delete_after` gibt es nur in `ended`.
 - **Die Adresse aus Stripe ist nicht bestätigt.** Stripe nimmt jede getippte
   Adresse und prüft das Postfach nie. Das Konto entsteht deshalb ohne Passwort
   und mit `emailVerified = false`. Hieße es bestätigt, hängte sich ein späterer
   Google-Login mit dieser Adresse an ein Konto, dessen Passwort der Zahlende
   gewählt hat — bei einer fremden Adresse eine Kontoübernahme. Bestätigt wird
   die Adresse erst, wenn der Setup-Link befolgt wird, den die Seite an genau
-  diese Adresse schickt. Gibt es zur Adresse schon ein Konto, wird es
-  Eigentümer; einen Link gibt es dann nicht, und kein Link setzt je das
-  Passwort eines Kontos, das schon einen Zugang hat (Passwort oder Anbieter).
-  Ein neuer Link zieht den alten zurück, jeder gilt einmal und sieben Tage.
+  diese Adresse schickt.
+- **Eigentümer wird nur ein bestätigtes Konto — oder ein Platzhalter.** Gibt es
+  zur Adresse ein Konto mit `emailVerified`, gehört ihm der Wave, und einen
+  Link braucht es nicht. Ein *unbestätigtes* Konto mit einem Zugang wird es
+  nie: Bei einem Anbieter, der für Adressen nicht bürgt, kann sich jeder unter
+  einer fremden Adresse anmelden, und dem gehörte sonst ein bezahlter Wave.
+  Sonst ist es ein Platzhalter ohne Passwort und ohne Anmeldung, je Adresse
+  einer (die Adresse ist dabei die Sperre: `users.email` hat keinen
+  Unique-Index).
+- **Ein Platzhalter wird auf zwei Wegen zum Konto**, und beide beweisen das
+  Postfach: über den Setup-Link, oder über eine Anmeldung bei einem Anbieter,
+  der die Adresse bestätigt — dann übernimmt `resolveUser()` den Platzhalter
+  (Identität dran, bestätigt), statt ein zweites Konto anzulegen, das keinen
+  Wave hätte. Kein Link setzt je das Passwort eines Kontos, das inzwischen
+  einen Zugang hat (Passwort vom Operator, Anbieter): geprüft wird beim
+  Einlösen, in einer Transaktion, und der Link ist danach verbraucht. Die
+  Passwort-Anmeldung nimmt bei mehreren Konten einer Adresse das mit Passwort.
+- **Derselbe `key`, derselbe Link.** Die Seite schickt die Checkout-Session als
+  `key`. Solange der Link unbenutzt und gültig ist, kommt für denselben Schlüssel
+  derselbe zurück: Der Token wird aus der Zeile und `WAVE_BILLING_TOKEN`
+  abgeleitet (HMAC), gespeichert bleibt nur sein SHA-256. Ohne das zöge eine
+  doppelte Zustellung von Stripe den Link der ersten Mail zurück. Ein anderer
+  oder kein Schlüssel ersetzt den alten Link; ausgestellt wird unter einer
+  Sperre auf dem Konto. Jeder Link gilt einmal und sieben Tage, und das
+  Formular nimmt nur Posts von der eigenen Herkunft an (`Origin`,
+  `Sec-Fetch-Site`) — sonst könnte eine fremde Seite jemanden in ein fremdes
+  Konto einloggen.
 - **Pausieren heißt: leere Netzkarte, alles bleibt.** `suspended` und `ended`
   lassen Geräte, Adressen, Mitglieder und Policy stehen; `buildNetmap()` gibt
   jedem Gerät nur keine Peers und keine Dienste mehr, und es gibt keine
   Punch-Hinweise. Die Geräte bleiben angemeldet und verbunden, Wiederaufnehmen
   ist eine Netzkarte statt einer Runde Neufreigaben. Neue Geräte kommen in
   dieser Zeit nicht hinein, weder über den Browser noch über einen
-  Pre-Auth-Key — und ein Einmalschlüssel wird dabei nicht verbraucht.
-  `netmapVersion` zählt nur hoch, wenn das Mesh startet oder stoppt.
+  Pre-Auth-Key — und ein Einmalschlüssel wird dabei nicht verbraucht. Auch
+  Zertifikate stellt der Server dann nicht aus. `netmapVersion` zählt nur
+  hoch, wenn das Mesh startet oder stoppt. `/api/me` nennt je Wave
+  `billing: { state }` (null für einen selbst betriebenen), und die
+  Wave-Karte sagt, warum die Geräte niemanden sehen.
 - **Gekündigt wird mit Frist gelöscht.** `ended` setzt `delete_after` auf jetzt
   plus `WAVE_BILLING_RETENTION_DAYS`, ein wiederholtes `ended` schiebt das
-  nicht hinaus, `active` nimmt es zurück. Gelöscht wird im Control-Prozess
-  selbst (stündlich und einmal beim Start), über `deleteWave()` und mit
-  getrennten Verbindungen wie beim Löschknopf des Eigentümers: „dreißig Tage
-  sind um“ ist kein Ereignis, das Stripe der Seite schicken würde. Was
-  gelöscht wurde, steht auf stdout — das Audit-Log des Waves geht mit ihm.
+  nicht hinaus. Gelöscht wird im Control-Prozess selbst (stündlich und einmal
+  beim Start), über `deleteWave()` und mit getrennten Verbindungen wie beim
+  Löschknopf des Eigentümers: „dreißig Tage sind um“ ist kein Ereignis, das
+  Stripe der Seite schicken würde. Jeder Wave wird unter seiner Sperre noch
+  einmal geprüft und einzeln gelöscht; scheitert einer, kommen die anderen
+  trotzdem dran. Was gelöscht wurde, steht auf stdout — das Audit-Log des Waves
+  geht mit ihm, und geschrieben wird es erst nach dem Commit (ein Fehler darin
+  machte sonst aus dem Commit einen stillen Rollback).
+- **Ein gebuchter Wave wird nicht von Hand gelöscht**, solange sein Abo läuft —
+  weder über den Löschknopf noch mit `wave-admin delete-wave`. Sonst bucht
+  Stripe weiter für einen Wave, den es nicht mehr gibt, und die Seite erfährt
+  nie davon. Erst nach `ended` geht es, sonst löscht der Sweep.
+- **Voll ist eine Antwort, kein Fehler.** Jeder Wave belegt ein `/16`, ein
+  Server hat also höchstens 64 (siehe D5). Ist keins mehr frei, antwortet das
+  Anlegen mit 507 `no-capacity` und schreibt es laut ins Log: Ein zahlender
+  Kunde bekommt hier keinen Wave, und ein Wiederholen ändert daran nichts.
 - **Plätze sind Mitglieder plus offene Einladungen.** Geprüft wird in
   `createInvite()` selbst (`SeatLimitError`), damit kein Aufrufer es vergisst,
-  und auch `wave-admin invite` hält sich daran — mehr Plätze gibt es über das
-  Abo, nicht über die Shell. Eine neue Einladung für dieselbe Adresse ersetzt
-  die alte und kostet keinen Platz.
+  in einer Transaktion mit `FOR UPDATE` auf der Abrechnungszeile — zwei
+  gleichzeitige Einladungen sähen sonst beide den letzten Platz frei. Auch
+  `wave-admin invite` und `wave-admin add-member` halten sich daran — mehr
+  Plätze gibt es über das Abo, nicht über die Shell. Eine neue Einladung für
+  dieselbe Adresse ersetzt die alte und kostet keinen Platz. Unter die Zahl
+  der Mitglieder senken kann der Kunde die Plätze trotzdem, im Kundenportal;
+  die Antwort nennt deshalb `members`, und die Seite hebt die Menge bei Stripe
+  wieder darauf an.
+- **`/api/billing/*` ist nie eine Seite des Frontends.** Ohne Token antwortet
+  das Präfix mit derselben schlichten 404 wie jeder unbekannte Pfad, und mit
+  Token geht ein unbekannter Pfad darunter nicht an den Proxy — samt
+  `Authorization`-Header.
 - **Ein selbst betriebener Wave hat keine Abrechnungszeile**, und für ihn gilt
   nichts davon: keine Grenze, keine Pause, kein Löschen.
 - **Der Token wird als Hash verglichen**, damit der Vergleich für jede Länge
@@ -1256,10 +1318,12 @@ Was daran festliegt:
   kein Ping, kein neues Gerät (Browser und Pre-Auth-Key, der danach noch
   gilt), fortgesetzt wieder Ping ohne Neufreigabe; Plätze; `ended` mit
   `delete_after` und dem Sweep, der den Wave löscht und die Geräte trennt;
-  401, 404 ohne Token, kein Start mit kurzem. Weil das E2E-Postgres im Prozess
-  lebt, stößt das Skript Sweep und Pre-Auth-Key über zwei Test-Routen an, die
-  nur `apps/control/test/e2e-server.ts` kennt (`POST /__e2e/billing/sweep`,
-  `POST /__e2e/auth-key?wave=…`).
+  derselbe Link für denselben `key`; 404 für ein Abo, das zuerst pausiert oder
+  beendet auftaucht; 409 nach `ended`; 401, 404 ohne Token, kein Start mit
+  kurzem. Weil das E2E-Postgres im Prozess lebt, stößt das Skript Sweep und
+  Pre-Auth-Key über zwei Test-Routen an, die nur
+  `apps/control/test/e2e-server.ts` kennt (`POST /__e2e/billing/sweep?days=…`
+  stellt die Uhr des Sweeps vor, `POST /__e2e/auth-key?wave=…`).
 
 Offen und nicht Teil davon: ein **eigener Control-Server je Geschäftskunde**
 (ein Eintrag in einer ArgoCD-ApplicationSet, daraus Namespace, Overlay,
