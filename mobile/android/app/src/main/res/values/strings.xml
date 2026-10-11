@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- English is the base: a phone set to any language without its own folder
      falls back to this one. German lives in values-de. Android picks the folder
-     from the system language; there is no switch in the app. -->
+     from the system language; there is no switch in the app. The wording is the
+     iOS app's (Localizable.xcstrings), with "Android" where it says "iOS". -->
 <resources>
     <!-- The product name is a name, not a word: it stays the same in every
          language, which is why values-de does not repeat it. -->
@@ -9,12 +10,52 @@
 
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
-    <string name="open_enrolment_link">Open the enrolment link</string>
-    <string name="control_server_address">control server address</string>
+    <string name="cancel">Cancel</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="done">Done</string>
+    <string name="tunnel_off">The tunnel is off. Nothing in your waves is reachable from this device.</string>
+
+    <!-- %1$s: the server -->
+    <string name="connecting_to">Connecting to %1$s…</string>
+    <string name="waiting_for_approval">Waiting for approval in the browser…</string>
+    <string name="open_approval_again">Open the approval page again</string>
+
+    <string name="join_header">Join a wave</string>
+    <string name="add_header">Add another wave</string>
+    <string name="address_placeholder">Control server, e.g. wave.example.com</string>
     <string name="log_in">Log in</string>
-    <string name="no_wave_yet">This device is in no wave yet. Logging in is the only way in — there is no second one.</string>
+    <string name="no_wave_yet">This device is in no wave yet. Enter the address of your control server to join one; the tunnel starts by itself.</string>
+
+    <string name="this_device">This device</string>
+    <string name="device_name">Device name</string>
+    <!-- %1$s: the name the device will get -->
+    <string name="device_preview">In the next wave you join, this device is called %1$s. A wave it is already in keeps the name it got there.</string>
+    <string name="device_fallback" translatable="false">node</string>
+    <string name="connect_automatically">Connect automatically</string>
+    <string name="auto_connect_footer">After a restart the tunnel comes back by itself. Android runs one VPN at a time: switch this off if you also use another one and want to choose each time.</string>
+    <string name="log">Log</string>
+
     <string name="no_control_connection">no control connection; peers will stop being updated</string>
+    <string name="paused">Paused. This device stays in the wave and can switch it back on without a new approval.</string>
+    <string name="check_connection">Check connection</string>
+    <string name="open_web">Open the web interface</string>
+    <string name="add_wave_here">Add another wave at this server</string>
     <string name="leave_wave">Leave this wave</string>
+    <string name="relay_connected">Relay connected</string>
+    <string name="relay_down">Relay not connected: devices only reachable through it are cut off until it is back.</string>
+    <string name="no_relay">This server offers no relay. Devices the phone cannot reach directly, such as a connector in a cluster, stay unreachable.</string>
+    <string name="removed">This device was removed from the wave. Log in again to come back; it needs a new approval.</string>
+    <string name="log_in_again">Log in again</string>
+    <string name="netmap_rejected">The control server sent a network map that does not carry its signature. Nothing in it was used; the wave keeps the last good one.</string>
+    <!-- %1$s: the core's reason -->
+    <string name="wave_failed">This wave did not come up: %1$s</string>
+
+    <string name="copy_name">Copy name</string>
+    <string name="copy_address">Copy address</string>
+    <string name="offline">offline</string>
+    <!-- %1$s: e.g. "8 sec. ago" -->
+    <string name="last_handshake">Last handshake %1$s</string>
+    <string name="not_reached">Not reached yet</string>
 
     <!-- Path of a peer. The core reports "relay", "idle" or the address of the
          direct path; only the words are translated. -->
@@ -25,10 +66,69 @@
     <!-- %1$s: "relay" or an address, %2$d: round-trip time in milliseconds -->
     <string name="path_with_rtt">%1$s · %2$d ms</string>
 
+    <string name="takeover_title">Another VPN is connected</string>
+    <string name="takeover_message">Android runs one VPN at a time. Connecting wave-mesh disconnects the other one, for example Tailscale.</string>
+    <string name="takeover_confirm">Connect wave-mesh</string>
+    <!-- %1$s: the wave -->
+    <string name="leave_title">Leave %1$s?</string>
+    <string name="leave_message">This device leaves the wave and forgets its keys. Joining again needs a new approval.</string>
+    <!-- %1$s: the server's host -->
+    <string name="invite_title">Connect to %1$s?</string>
+    <string name="invite_join">This phone joins a wave at %1$s once you approve it in the browser.</string>
+    <string name="invite_add">This phone is already in a wave at %1$s. It can join another one there; you approve it in the browser.</string>
+
+    <!-- %1$s: the address that was entered -->
+    <string name="failure_certificate">No wave-mesh control server answers at %1$s; its certificate belongs to another service. Enter the address of your control server, not the domain of your wave.</string>
+    <string name="failure_no_such_host">The address %1$s does not exist. Check how your control server\'s address is spelled.</string>
+    <string name="failure_no_answer">No server answers at %1$s. Check the address and this device\'s connection.</string>
+    <string name="failure_not_a_server">%1$s is not a wave-mesh control server.</string>
+    <string name="failure_invalid_address">%1$s is not a valid address.</string>
+    <string name="error_tunnel_stopped_during_login">The tunnel stopped before the login finished.</string>
+    <!-- %1$s: the reason -->
+    <string name="error_tunnel_did_not_start">The tunnel did not start: %1$s</string>
+    <string name="error_tunnel_did_not_start_log">The tunnel did not start. The log says more.</string>
+    <string name="error_vpn_not_allowed">Android did not allow the VPN.</string>
+    <string name="error_no_core">the wave core did not start</string>
+
+    <!-- Check connection -->
+    <string name="again">Again</string>
+    <string name="devices">Devices</string>
+    <string name="services">Services</string>
+    <string name="check_tunnel_ok">Tunnel is running</string>
+    <string name="check_tunnel_bad">The tunnel is not running. Connect first.</string>
+    <string name="check_control_ok">Connected to the control server</string>
+    <string name="check_control_bad">No connection to the control server: devices still reach each other, but changes do not arrive.</string>
+    <string name="check_dns_ok">Names in this wave resolve through the tunnel</string>
+    <string name="check_dns_bad">No resolver for this wave: names will not resolve, addresses still work.</string>
+    <string name="check_relay_ok">Relay connected: devices behind NAT stay reachable</string>
+    <string name="check_relay_down">The relay is not connected: devices only reachable through it are cut off for now.</string>
+    <string name="check_relay_none">This server offers no relay: devices the phone cannot reach directly, such as a connector in a cluster, stay unreachable.</string>
+    <string name="check_services_footer">Each service gets a real connection through the tunnel, the way a browser would open it.</string>
+    <!-- %1$s: a device -->
+    <string name="check_peer_offline">%1$s: offline at the server</string>
+    <string name="check_peer_resting">%1$s: resting, wakes with the first packet</string>
+    <string name="through_relay">through the relay</string>
+    <string name="directly">directly</string>
+    <!-- %1$s: a device, %2$s: "directly" or "through the relay" -->
+    <string name="check_peer_reachable">%1$s: reachable %2$s</string>
+    <string name="check_peer_never">%1$s: online at the server, but never reached from here. Is it running, and does the server offer a relay?</string>
+    <string name="check_peer_quiet">%1$s: no handshake for a while</string>
+    <!-- %1$s: a service -->
+    <string name="check_service_checking">%1$s: checking …</string>
+    <!-- %1$s: a service, %2$d: milliseconds -->
+    <string name="check_service_answers">%1$s: answers in %2$d ms</string>
+    <string name="check_service_refused">%1$s: reached, but nothing listens on that port</string>
+    <string name="check_service_silent">%1$s: no answer. The device that serves it may be down or unreachable.</string>
+
+    <!-- Log -->
+    <string name="log_empty">The log is empty.</string>
+    <string name="log_footer">The log stays on this device until you share it.</string>
+    <string name="refresh">Refresh</string>
+    <string name="share">Share</string>
+    <string name="clear">Clear</string>
+
     <string name="notification_channel">Tunnel status</string>
     <string name="notification_running">the tunnel is running</string>
-    <string name="login_failed">login failed</string>
-    <string name="logout_failed">logout failed</string>
 
     <!-- Shown once before the first connect. Same statement as the iOS app. -->
     <string name="disclosure_intro">wave-mesh sets up a VPN on this device that connects it with the other devices in your wave.</string>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the copy of the log made for sharing; nothing else in the app's
+     storage can be handed out. -->
+<paths>
+    <cache-path name="log" path="log/" />
+</paths>

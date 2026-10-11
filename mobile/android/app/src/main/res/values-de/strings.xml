@@ -1,25 +1,109 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Same wording and form of address as the web interface: "du", and "der
-     Wave". A key missing here falls back to values/strings.xml. -->
+<!-- Same wording and form of address as the web interface and the iOS app:
+     "du", and "der Wave". A key missing here falls back to values/strings.xml. -->
 <resources>
     <string name="connect">Verbinden</string>
     <string name="disconnect">Trennen</string>
-    <string name="open_enrolment_link">Anmeldelink öffnen</string>
-    <string name="control_server_address">Adresse des Control-Servers</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="dismiss">Ausblenden</string>
+    <string name="done">Fertig</string>
+    <string name="tunnel_off">Der Tunnel ist aus. Von diesem Gerät aus ist in deinen Waves nichts erreichbar.</string>
+
+    <string name="connecting_to">Verbinde mit %1$s …</string>
+    <string name="waiting_for_approval">Warte auf die Bestätigung im Browser …</string>
+    <string name="open_approval_again">Bestätigungsseite erneut öffnen</string>
+
+    <string name="join_header">Einem Wave beitreten</string>
+    <string name="add_header">Weiteren Wave hinzufügen</string>
+    <string name="address_placeholder">Control-Server, z. B. wave.example.com</string>
     <string name="log_in">Anmelden</string>
-    <string name="no_wave_yet">Dieses Gerät ist noch in keinem Wave. Anmelden ist der einzige Weg hinein — einen zweiten gibt es nicht.</string>
+    <string name="no_wave_yet">Dieses Gerät ist noch in keinem Wave. Gib die Adresse deines Control-Servers ein, um beizutreten; der Tunnel startet von selbst.</string>
+
+    <string name="this_device">Dieses Gerät</string>
+    <string name="device_name">Gerätename</string>
+    <string name="device_preview">Im nächsten Wave, dem du beitrittst, heißt dieses Gerät %1$s. In einem Wave, in dem es schon ist, behält es seinen bisherigen Namen.</string>
+    <string name="connect_automatically">Automatisch verbinden</string>
+    <string name="auto_connect_footer">Nach einem Neustart kommt der Tunnel von selbst wieder. Android lässt nur ein VPN gleichzeitig zu: schalte das aus, wenn du auch ein anderes nutzt und jedes Mal selbst wählen willst.</string>
+    <string name="log">Protokoll</string>
+
     <string name="no_control_connection">keine Verbindung zum Control-Server; die Peers werden nicht mehr aktualisiert</string>
+    <string name="paused">Pausiert. Dieses Gerät bleibt im Wave und kann ihn ohne neue Bestätigung wieder einschalten.</string>
+    <string name="check_connection">Verbindung prüfen</string>
+    <string name="open_web">Weboberfläche öffnen</string>
+    <string name="add_wave_here">Weiteren Wave an diesem Server hinzufügen</string>
     <string name="leave_wave">Diesen Wave verlassen</string>
+    <string name="relay_connected">Relay verbunden</string>
+    <string name="relay_down">Relay nicht verbunden: Geräte, die nur darüber erreichbar sind, bleiben weg, bis es wieder steht.</string>
+    <string name="no_relay">Dieser Server bietet kein Relay an. Geräte, die das Telefon nicht direkt erreicht, etwa ein Connector in einem Cluster, bleiben unerreichbar.</string>
+    <string name="removed">Dieses Gerät wurde aus dem Wave entfernt. Melde dich erneut an, um zurückzukommen; das braucht eine neue Bestätigung.</string>
+    <string name="log_in_again">Erneut anmelden</string>
+    <string name="netmap_rejected">Der Control-Server hat eine Netzkarte geschickt, die seine Signatur nicht trägt. Nichts davon wurde übernommen; der Wave behält die letzte gültige.</string>
+    <string name="wave_failed">Dieser Wave ist nicht hochgekommen: %1$s</string>
+
+    <string name="copy_name">Name kopieren</string>
+    <string name="copy_address">Adresse kopieren</string>
+    <string name="offline">offline</string>
+    <string name="last_handshake">Letzter Handshake %1$s</string>
+    <string name="not_reached">Noch nicht erreicht</string>
 
     <string name="path_none">kein fester Pfad</string>
     <string name="path_relay">Relay</string>
     <string name="path_idle">ruht</string>
     <string name="path_with_rtt">%1$s · %2$d ms</string>
 
-    <string name="notification_channel">Tunnelstatus</string>
+    <string name="takeover_title">Ein anderes VPN ist verbunden</string>
+    <string name="takeover_message">Android lässt nur ein VPN gleichzeitig zu. Verbindest du wave-mesh, wird das andere getrennt, zum Beispiel Tailscale.</string>
+    <string name="takeover_confirm">wave-mesh verbinden</string>
+    <string name="leave_title">%1$s verlassen?</string>
+    <string name="leave_message">Dieses Gerät verlässt den Wave und vergisst seine Schlüssel. Erneut beitreten braucht eine neue Bestätigung.</string>
+    <string name="invite_title">Mit %1$s verbinden?</string>
+    <string name="invite_join">Dieses Telefon tritt einem Wave bei %1$s bei, sobald du es im Browser freigibst.</string>
+    <string name="invite_add">Dieses Telefon ist schon in einem Wave bei %1$s. Es kann dort einem weiteren beitreten; freigeben kannst du das im Browser.</string>
+
+    <string name="failure_certificate">Unter %1$s antwortet kein wave-mesh-Control-Server; das Zertifikat gehört zu einem anderen Dienst. Gib die Adresse deines Control-Servers ein, nicht die Domain deines Waves.</string>
+    <string name="failure_no_such_host">Die Adresse %1$s gibt es nicht. Prüf die Schreibweise der Adresse deines Control-Servers.</string>
+    <string name="failure_no_answer">Unter %1$s antwortet kein Server. Prüf die Adresse und die Verbindung dieses Geräts.</string>
+    <string name="failure_not_a_server">%1$s ist kein wave-mesh-Control-Server.</string>
+    <string name="failure_invalid_address">%1$s ist keine gültige Adresse.</string>
+    <string name="error_tunnel_stopped_during_login">Der Tunnel wurde beendet, bevor die Anmeldung fertig war.</string>
+    <string name="error_tunnel_did_not_start">Der Tunnel ist nicht gestartet: %1$s</string>
+    <string name="error_tunnel_did_not_start_log">Der Tunnel ist nicht gestartet. Mehr steht im Protokoll.</string>
+    <string name="error_vpn_not_allowed">Android hat das VPN nicht erlaubt.</string>
+    <string name="error_no_core">der wave-Kern ist nicht gestartet</string>
+
+    <string name="again">Erneut</string>
+    <string name="devices">Geräte</string>
+    <string name="services">Dienste</string>
+    <string name="check_tunnel_ok">Der Tunnel läuft</string>
+    <string name="check_tunnel_bad">Der Tunnel läuft nicht. Verbinde zuerst.</string>
+    <string name="check_control_ok">Mit dem Control-Server verbunden</string>
+    <string name="check_control_bad">Keine Verbindung zum Control-Server: Die Geräte erreichen sich weiter, aber Änderungen kommen nicht an.</string>
+    <string name="check_dns_ok">Namen in diesem Wave werden über den Tunnel aufgelöst</string>
+    <string name="check_dns_bad">Kein Resolver für diesen Wave: Namen lösen nicht auf, Adressen funktionieren weiter.</string>
+    <string name="check_relay_ok">Relay verbunden: Geräte hinter NAT bleiben erreichbar</string>
+    <string name="check_relay_down">Das Relay ist nicht verbunden: Geräte, die nur darüber erreichbar sind, bleiben vorerst weg.</string>
+    <string name="check_relay_none">Dieser Server bietet kein Relay an: Geräte, die das Telefon nicht direkt erreicht, etwa ein Connector in einem Cluster, bleiben unerreichbar.</string>
+    <string name="check_services_footer">Zu jedem Dienst wird eine echte Verbindung durch den Tunnel aufgebaut, so wie ein Browser ihn öffnen würde.</string>
+    <string name="check_peer_offline">%1$s: beim Server offline</string>
+    <string name="check_peer_resting">%1$s: ruht, wacht mit dem ersten Paket auf</string>
+    <string name="through_relay">über das Relay</string>
+    <string name="directly">direkt</string>
+    <string name="check_peer_reachable">%1$s: %2$s erreichbar</string>
+    <string name="check_peer_never">%1$s: beim Server online, aber von hier nie erreicht. Läuft es, und bietet der Server ein Relay an?</string>
+    <string name="check_peer_quiet">%1$s: seit einer Weile kein Handshake</string>
+    <string name="check_service_checking">%1$s: wird geprüft …</string>
+    <string name="check_service_answers">%1$s: antwortet in %2$d ms</string>
+    <string name="check_service_refused">%1$s: erreicht, aber auf dem Port lauscht nichts</string>
+    <string name="check_service_silent">%1$s: keine Antwort. Das Gerät dahinter ist vielleicht aus oder nicht erreichbar.</string>
+
+    <string name="log_empty">Das Protokoll ist leer.</string>
+    <string name="log_footer">Das Protokoll bleibt auf diesem Gerät, bis du es teilst.</string>
+    <string name="refresh">Aktualisieren</string>
+    <string name="share">Teilen</string>
+    <string name="clear">Leeren</string>
+
+    <string name="notification_channel">Tunnel-Status</string>
     <string name="notification_running">der Tunnel läuft</string>
-    <string name="login_failed">Anmelden fehlgeschlagen</string>
-    <string name="logout_failed">Abmelden fehlgeschlagen</string>
 
     <string name="disclosure_intro">wave-mesh richtet auf diesem Gerät ein VPN ein, das es mit den anderen Geräten deines Waves verbindet.</string>
     <string name="disclosure_connects_title">Was verbunden wird</string>

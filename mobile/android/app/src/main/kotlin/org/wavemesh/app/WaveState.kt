@@ -18,14 +18,21 @@ object WaveState {
     private const val KEY_STATE = "state"
     private const val KEY_PENDING_AUTH = "pendingAuthUrl"
 
+    @Volatile
+    private var opened: SharedPreferences? = null
+
+    /// Opened once per process: every opening asks the keystore for the
+    /// master key, and the app asks for the enrolment link every second.
     private fun preferences(context: Context): SharedPreferences =
-        EncryptedSharedPreferences.create(
-            context,
-            FILE,
-            MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        opened ?: synchronized(this) {
+            opened ?: EncryptedSharedPreferences.create(
+                context.applicationContext,
+                FILE,
+                MasterKey.Builder(context.applicationContext).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            ).also { opened = it }
+        }
 
     /// An empty string is a device that has never joined anything, which the
     /// core takes as exactly that rather than as an error.

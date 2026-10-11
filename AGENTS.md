@@ -1694,6 +1694,13 @@ Was daran festliegt:
   noch im LAN brauchbar. Was bleibt, sind
   ältere Clients, bis sie aktualisiert sind, und der Herzschlag zum Relay
   (15 s, je Gerät an das Relay, nicht an Peers).
+- **Die Android-App folgt der iOS-App**, in Verhalten, Texten und Gestalt
+  (`mobile/README.md`). Drei Fallen, alle am 11.10.2026 im Emulator gefunden:
+  der Deskriptor geht mit `detachFd()` an den Kern, sonst schließen ihn zwei
+  und fdsan beendet die App an der ersten Netzkarte; ohne Wave bekommt der
+  Tunnel den Platzhalter, sonst nimmt das Verlassen des letzten Waves dem
+  Telefon das DNS; und der erste `onAvailable` ist kein Netzwechsel, sonst
+  wechselt jeder Start den Port.
 - **Android tauscht bei jedem `establish()` den Deskriptor**, iOS behält seinen
   Packet Flow. `VpnService.Builder` gibt einen neuen zurück und schließt den
   alten — ein Kern, der noch den ersten liest, sieht einen Tunnel, der einfach

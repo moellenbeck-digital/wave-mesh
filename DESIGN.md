@@ -121,11 +121,16 @@ Schalter soll zu wave-mesh gehören.
 
 ### Mobile Apps
 
-Die Apps unter `mobile/` verwenden die Systemvorgaben (SwiftUI, Material 3)
-mit genau einer Abweichung: der Akzent ist Petrol — `#0f6e6e` auf hellem,
-`#0f7f7f` auf dunklem Grund, aus demselben Grund wie beim Zeichen in dunklen
-Leisten. iOS: `AccentColor` im Asset-Katalog, Android: `primary` im
-`colorScheme`. Das App-Icon ist das Zeichen weiß auf Petrol (die Plattform gibt
+Die iOS-App verwendet die Systemvorgaben von SwiftUI mit genau einer
+Abweichung: der Akzent ist Petrol — `#0f6e6e` auf hellem, `#0f7f7f` auf dunklem
+Grund, aus demselben Grund wie beim Zeichen in dunklen Leisten (`AccentColor`
+im Asset-Katalog). **Die Android-App sieht aus wie die iOS-App**, nicht wie
+Material: gruppierte Liste auf `#F2F2F7` (dunkel Schwarz), Abschnitte weiß
+(dunkel `#1C1C1E`) mit großem Radius, Kopf- und Fußzeilen in Grau, Aktionen als
+Text in Petrol, Zerstörendes in Rot, großer Titel und die Pille oben rechts.
+Die Farben sind die Systemfarben von iOS und stehen einmal in
+`mobile/android/…/Theme.kt`; Material bleibt nur darunter (Textfelder,
+Dialoge) und bekommt dieselben Werte. Das App-Icon ist das Zeichen weiß auf Petrol (die Plattform gibt
 die Form vor, der Kreis entfällt), erzeugt aus `markSvg()`, nie nachgezeichnet.
 
 ---
