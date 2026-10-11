@@ -24,7 +24,7 @@ resources:
 
 images:
   - name: ghcr.io/moellenbeck-digital/wave-mesh/connector
-    newTag: "0.7.0"
+    newTag: "0.8.0"
 
 configMapGenerator:
   - name: wave-connector-config
