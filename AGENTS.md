@@ -36,6 +36,7 @@ cd apps/web && bun run typecheck   # eigener Lauf: DOM und JSX, nicht Bun
 ./test/e2e/nat-traversal.sh  # Hole Punching durch zwei NATs
 ./test/e2e/relay-fallback.sh # symmetrisches NAT → Relay
 ./test/e2e/acl.sh            # eine Policy: Peers über die Netzkarte, Ports über nftables
+./test/e2e/billing.sh        # Abrechnungs-API: Wave anlegen, pausieren, fortsetzen, Plätze, Löschen
 
 ./test/e2e/mobile-core.sh    # der Go-Kern an einem echten TUN: zwei Waves, ein Interface
 ./test/e2e/mobile-nat.sh                # derselbe Kern durch zwei NATs, direkter Pfad
@@ -1250,6 +1251,15 @@ Was daran festliegt:
   nichts davon: keine Grenze, keine Pause, kein Löschen.
 - **Der Token wird als Hash verglichen**, damit der Vergleich für jede Länge
   gleich lange dauert, und unter 32 Zeichen startet der Server nicht.
+- **`test/e2e/billing.sh` fährt das durch echte Tunnel**: Anlegen über die
+  API, Passwort über den Setup-Link, zwei Geräte; pausiert keine Peers und
+  kein Ping, kein neues Gerät (Browser und Pre-Auth-Key, der danach noch
+  gilt), fortgesetzt wieder Ping ohne Neufreigabe; Plätze; `ended` mit
+  `delete_after` und dem Sweep, der den Wave löscht und die Geräte trennt;
+  401, 404 ohne Token, kein Start mit kurzem. Weil das E2E-Postgres im Prozess
+  lebt, stößt das Skript Sweep und Pre-Auth-Key über zwei Test-Routen an, die
+  nur `apps/control/test/e2e-server.ts` kennt (`POST /__e2e/billing/sweep`,
+  `POST /__e2e/auth-key?wave=…`).
 
 Offen und nicht Teil davon: ein **eigener Control-Server je Geschäftskunde**
 (ein Eintrag in einer ArgoCD-ApplicationSet, daraus Namespace, Overlay,
