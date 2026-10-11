@@ -6,7 +6,25 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.9.0-develop.1.*
+*Noch nichts seit v0.9.0-develop.2.*
+
+---
+
+## 🔬 Development v0.9.0-develop.2 (11.10.2026)
+
+### Fehlerbehebungen
+
+- **Die iPhone-App hält das Telefon nicht mehr ständig wach.** Nach jedem
+  Aufwachen fragte der Tunnel seine Server, ob die Verbindungen noch stehen —
+  und die Antworten weckten das Telefon gleich wieder. So wachte es Tag und
+  Nacht alle fünf bis sechs Sekunden auf. Jetzt fragt es höchstens einmal pro
+  Minute; im ersten Protokoll danach wachte es etwa zehnmal seltener auf.
+- **Weniger Unruhe im ganzen Wave durch einen Connector im Cluster.** Ein
+  Connector hinter dem NAT eines Kubernetes-Clusters meldete jede Minute eine
+  neue Adresse, die niemand je erreicht hat, und jede Meldung schob allen
+  Geräten im Wave eine neue Netzkarte zu — jedes Telefon wurde davon geweckt.
+  Eine solche Adresse wird erst gemeldet, wenn sie sich bestätigt; bei einem
+  NAT, das jedes Mal eine neue vergibt, bleibt es ruhig.
 
 ---
 
