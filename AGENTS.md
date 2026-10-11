@@ -901,8 +901,11 @@ Was daran festliegt:
   die FFI des Trays: ein modaler Dialog im Tray-Thread hielte Icon und
   Steuersocket an, solange er dasteht, und ein Angebot steht womöglich
   stundenlang. Der Text geht **über die Umgebung** hinein, nie ins Skript —
-  er trägt eine Version, die von einem Server kam. Welche Version installiert
-  wird, entscheidet auch hier der Daemon; der Dialog sagt nur „jetzt".
+  er trägt eine Version, die von einem Server kam. Unter macOS liest das Skript
+  sie mit `do shell script`, **nicht mit `system attribute`**: Letzteres
+  dekodiert die Umgebung als MacRoman, und jeder deutsche Dialog sagte
+  „verf√ºgbar" (11.10.2026). Welche Version installiert wird, entscheidet auch
+  hier der Daemon; der Dialog sagt nur „jetzt".
   Geprüft ist unter Linux, dass der Benachrichtigungsdienst die Aktionen
   annimmt; macOS und Windows nur als Befehlszeilen.
 - **Der Dialog trägt immer das wave-Zeichen**, nie ein Systemsymbol — er

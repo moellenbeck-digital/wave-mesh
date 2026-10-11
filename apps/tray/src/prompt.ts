@@ -143,17 +143,33 @@ function promptIcon(): PromptIcon | null {
  * that is no image fails with "Datei enthält kein Symbol" (-50), the PNG shows.
  */
 export function macosDialog(icon: PromptIcon | null): string[] {
-  const symbol = icon ? '(POSIX file (system attribute "WAVE_PROMPT_ICON"))' : "note";
+  const symbol = icon ? '(POSIX file (env("WAVE_PROMPT_ICON")))' : "note";
   // The labels come from the environment like the text: they are ours, but a
   // translation with a quote in it would otherwise be a syntax error.
-  const later = '(system attribute "WAVE_PROMPT_LATER")';
-  const install = '(system attribute "WAVE_PROMPT_INSTALL")';
+  const later = '(env("WAVE_PROMPT_LATER"))';
+  const install = '(env("WAVE_PROMPT_INSTALL"))';
   const script =
-    'display dialog (system attribute "WAVE_PROMPT_BODY") with title (system attribute "WAVE_PROMPT_TITLE") ' +
+    'display dialog (env("WAVE_PROMPT_BODY")) with title (env("WAVE_PROMPT_TITLE")) ' +
     `buttons {${later}, ${install}} default button ${install} cancel button ${later} ` +
     `with icon ${symbol} giving up after 3600`;
-  return ["osascript", "-e", script];
+  return ["osascript", ...MACOS_ENV_HANDLER.flatMap((line) => ["-e", line]), "-e", script];
 }
+
+/**
+ * Reads a variable from the environment as UTF-8. AppleScript's own `system
+ * attribute` decodes it as MacRoman, which made "verfügbar" into
+ * "verf√ºgbar" in every German dialog (seen on macOS 26, 11.10.2026). `do
+ * shell script` hands back what the shell printed, decoded as UTF-8. The name
+ * is always one of ours; the value is expanded once by the shell and never
+ * read as code, so the rule above still holds -- nothing is spliced in.
+ * `without altering line endings`, or the blank line in the body would come
+ * back as a carriage return.
+ */
+const MACOS_ENV_HANDLER = [
+  "on env(name)",
+  `return do shell script "printf %s \\"$" & name & "\\"" without altering line endings`,
+  "end env",
+];
 
 /**
  * "button returned:Install now, gave up:false" -- or nothing, on Later. The
