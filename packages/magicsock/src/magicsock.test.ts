@@ -340,19 +340,52 @@ describe("STUN", () => {
     await sock.start();
     cleanup.push(() => sock.close());
 
+    const lists: string[] = [];
     for (let round = 0; round < 20; round++) {
       await sock.discoverReflexive();
+      lists.push(JSON.stringify(sock.reflexiveCandidates()));
       now += 60_000;
     }
-    const left = sock.reflexiveCandidates();
-    expect(left.length).toBeLessThanOrEqual(3);
-    // The newest survive, not the first ones.
-    expect(left.at(-1)?.port).toBe(next - 1);
+    // None of those ports ever reached anybody, and publishing each changed the
+    // list every round -- a netmap for the whole wave every minute. The first
+    // goes out alone; from the second round on there is nothing to publish,
+    // and nothing changes.
+    expect(lists[0]).toBe(JSON.stringify([{ ip: "203.0.113.7", port: 20_000 }]));
+    expect(new Set(lists.slice(1))).toEqual(new Set(["[]"]));
   });
 });
 
 describe("own addresses", () => {
-  const seen = (port: number, seenAt: number) => ({ mapped: { ip: "203.0.113.7", port }, seenAt });
+  const seen = (port: number, seenAt: number, rounds = 2) => ({
+    mapped: { ip: "203.0.113.7", port },
+    seenAt,
+    rounds,
+  });
+
+  test("publishes a first address at once", () => {
+    expect(currentReflexive([seen(1, 1000, 1)], 1000)).toEqual([{ ip: "203.0.113.7", port: 1 }]);
+  });
+
+  test("holds back a port seen once while another port on the address is around", () => {
+    // A NAT that keeps its mapping confirms the new port a round later; one
+    // that hands out a fresh port every round never does.
+    const now = 1_000_000;
+    expect(currentReflexive([seen(1, now - 60_000, 5), seen(2, now, 1)], now).map((m) => m.port)).toEqual([
+      1,
+    ]);
+    expect(
+      currentReflexive([seen(1, now - 120_000, 1), seen(2, now - 60_000, 1), seen(3, now, 1)], now),
+    ).toEqual([]);
+    expect(currentReflexive([seen(1, now - 60_000, 5), seen(2, now, 2)], now).map((m) => m.port)).toEqual([
+      1, 2,
+    ]);
+  });
+
+  test("does not hold back the same port on another address", () => {
+    const now = 1_000_000;
+    const elsewhere = { mapped: { ip: "198.51.100.9", port: 7 }, seenAt: now, rounds: 1 };
+    expect(currentReflexive([seen(1, now - 60_000, 5), elsewhere], now)).toHaveLength(2);
+  });
 
   test("keeps what was reported recently, oldest first", () => {
     const now = 1_000_000;

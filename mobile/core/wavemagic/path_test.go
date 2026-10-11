@@ -196,10 +196,10 @@ func TestCurrentReflexiveForgetsWhatNobodyReportsAnyMore(t *testing.T) {
 	address := func(port uint16) netip.AddrPort {
 		return netip.AddrPortFrom(netip.MustParseAddr("203.0.113.7"), port)
 	}
-	got := wavemagic.CurrentReflexive(map[netip.AddrPort]time.Time{
-		address(3): now,
-		address(1): now.Add(-wavemagic.ReflexiveTTL - time.Second),
-		address(2): now.Add(-time.Second),
+	got := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
+		address(3): {SeenAt: now, Rounds: 2},
+		address(1): {SeenAt: now.Add(-wavemagic.ReflexiveTTL - time.Second), Rounds: 2},
+		address(2): {SeenAt: now.Add(-time.Second), Rounds: 2},
 	}, now)
 	want := []netip.AddrPort{address(2), address(3)}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
@@ -207,14 +207,14 @@ func TestCurrentReflexiveForgetsWhatNobodyReportsAnyMore(t *testing.T) {
 	}
 }
 
-// A port-randomising NAT reports a new port every round; before the age limit
-// a connector published 2670 of them.
+// A ceiling on top of the age limit; before it, a connector behind a
+// port-randomising NAT published 2670 addresses.
 func TestCurrentReflexiveKeepsOnlyTheNewestFew(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
-	seen := map[netip.AddrPort]time.Time{}
+	seen := map[netip.AddrPort]wavemagic.SeenAddress{}
 	for index := 0; index < 30; index++ {
 		address := netip.AddrPortFrom(netip.MustParseAddr("203.0.113.7"), uint16(1000+index))
-		seen[address] = now.Add(time.Duration(index-30) * time.Second)
+		seen[address] = wavemagic.SeenAddress{SeenAt: now.Add(time.Duration(index-30) * time.Second), Rounds: 2}
 	}
 	got := wavemagic.CurrentReflexive(seen, now)
 	if len(got) != wavemagic.MaxReflexive {
@@ -222,6 +222,36 @@ func TestCurrentReflexiveKeepsOnlyTheNewestFew(t *testing.T) {
 	}
 	if got[len(got)-1].Port() != 1029 {
 		t.Fatalf("the newest must survive, got %v", got)
+	}
+}
+
+// Behind a NAT that hands out a fresh port every round, the list must stop
+// changing: each change was a netmap for the whole wave, every minute.
+func TestCurrentReflexiveHoldsBackAPortThatReplacesAnother(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	address := func(port uint16) netip.AddrPort {
+		return netip.AddrPortFrom(netip.MustParseAddr("203.0.113.7"), port)
+	}
+	first := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
+		address(1): {SeenAt: now, Rounds: 1},
+	}, now)
+	if len(first) != 1 {
+		t.Fatalf("a first address was held back: %v", first)
+	}
+	churning := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
+		address(1): {SeenAt: now.Add(-2 * time.Minute), Rounds: 1},
+		address(2): {SeenAt: now.Add(-time.Minute), Rounds: 1},
+		address(3): {SeenAt: now, Rounds: 1},
+	}, now)
+	if len(churning) != 0 {
+		t.Fatalf("ports seen once each were published: %v", churning)
+	}
+	confirmed := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
+		address(1): {SeenAt: now.Add(-time.Minute), Rounds: 5},
+		address(2): {SeenAt: now, Rounds: 1},
+	}, now)
+	if len(confirmed) != 1 || confirmed[0] != address(1) {
+		t.Fatalf("got %v, want only the confirmed port", confirmed)
 	}
 }
 

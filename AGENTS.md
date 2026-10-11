@@ -1998,6 +1998,18 @@ Schlüssel `disclosureAccepted.v1` eine neue Nummer.
   hält je Art höchstens acht (`boundCandidates()`, beim Speichern *und* beim
   Bauen der Netzkarte — Letzteres für Zeilen und Clients von davor). Der
   Go-Kern tut dasselbe.
+  **Ein einmal gesehener Port wartet, solange auf seiner IP ein anderer
+  steht** (`currentReflexive()`/`CurrentReflexive()`), bis eine zweite Runde
+  ihn bestätigt. Die Schranken oben begrenzten die Liste, aber sie drehte sich
+  weiter: hinter dem SNAT des k3s-Pods brachte jede STUN-Runde einen neuen
+  Port, die Liste war jede Minute eine andere, und jede Änderung ist eine
+  Netzkarte für den ganzen Wave. Am 11.10.2026 waren das 60 von 68
+  Netzkarten in einer Stunde, über 24 000 in zwanzig Tagen — jede weckte jedes
+  Telefon im Wave, für Ports, die nie jemand erreicht hat. Ein NAT, das seine
+  Zuordnung hält, bestätigt den Port eine Minute später; eine erste Adresse
+  steht allein und geht sofort hinaus. „Allein", nicht „zuerst": sonst rückte
+  beim Ablaufen des ältesten Ports der nächstälteste nach, und die Liste drehte
+  sich wieder.
   **Und der Takt läuft ab dem letzten Ping, nicht ab dem letzten Pong**
   (`probeDue()`/`ProbeDue()`). Ab dem Pong gerechnet war ein Kandidat, der nie
   antwortet, bei *jedem* Tick fällig — viermal pro Sekunde, für immer, auch
