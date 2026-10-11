@@ -197,6 +197,40 @@ export function layout(nodes: GraphNode[]): Record<string, { x: number; y: numbe
   return out;
 }
 
+type Point = { x: number; y: number };
+
+/**
+ * Where every card stands: where this browser saw it dragged to, otherwise its
+ * column's place -- moved down past any card already standing there.
+ *
+ * The saved places are what makes this necessary. A card that is new to the
+ * page gets the place its column would give it, and that place is usually
+ * taken: up to v0.8.0 dragging one card saved the whole layout, so the first
+ * service sat exactly where `svc:*` arrived later and was drawn over it. The
+ * card was there, and nobody could see it.
+ */
+export function place(nodes: GraphNode[], moved: Record<string, Point>): Record<string, Point> {
+  const computed = layout(nodes);
+  const out: Record<string, Point> = {};
+  const taken: Point[] = [];
+  for (const node of nodes) {
+    const saved = moved[node.id];
+    if (!saved) continue;
+    out[node.id] = saved;
+    taken.push(saved);
+  }
+  const overlaps = (p: Point) =>
+    taken.some((q) => Math.abs(p.x - q.x) < NODE_W && Math.abs(p.y - q.y) < NODE_H);
+  for (const node of nodes) {
+    if (out[node.id]) continue;
+    let spot = computed[node.id] ?? { x: COLUMN_X[node.kind], y: 20 };
+    while (overlaps(spot)) spot = { x: spot.x, y: spot.y + ROW };
+    out[node.id] = spot;
+    taken.push(spot);
+  }
+  return out;
+}
+
 export function viewHeight(positions: Record<string, { x: number; y: number }>): number {
   return Math.max(400, ...Object.values(positions).map((p) => p.y + NODE_H + 20));
 }
