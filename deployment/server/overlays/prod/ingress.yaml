@@ -11,6 +11,13 @@ metadata:
   name: wave-control
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-production
+    # /v1/control ist eine gehaltene Verbindung, und auf einem schlafenden
+    # Telefon ist sie minutenlang still: iOS hält die Timer an, der Heartbeat
+    # kommt erst mit dem nächsten Aufwachen. Mit der Vorgabe von nginx (60 s)
+    # trennte der Proxy sie jede Minute, das EOF weckte das Telefon, und das
+    # baute TLS neu auf -- 284-mal in 19 Stunden (12.10.2026).
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   tls:
