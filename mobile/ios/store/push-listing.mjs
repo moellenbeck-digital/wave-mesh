@@ -37,7 +37,8 @@ await api("PATCH", `/v1/appInfos/${info.id}`, {
 console.log(`category ${listing.primaryCategory}, ${listing.secondaryCategory}`);
 
 const infoLocs = (await api("GET", `/v1/appInfos/${info.id}/appInfoLocalizations`)).data;
-const versionLocs = (await api("GET", `/v1/appStoreVersions/${version.id}/appStoreVersionLocalizations`)).data;
+const versionLocs = async () =>
+  (await api("GET", `/v1/appStoreVersions/${version.id}/appStoreVersionLocalizations`)).data;
 for (const [locale, text] of Object.entries(listing.localizations)) {
   const infoAttributes = { name: text.name, subtitle: text.subtitle, privacyPolicyUrl: text.privacyPolicyUrl };
   const existingInfo = infoLocs.find((l) => l.attributes.locale === locale);
@@ -61,7 +62,9 @@ for (const [locale, text] of Object.entries(listing.localizations)) {
     supportUrl: text.supportUrl,
     marketingUrl: text.marketingUrl,
   };
-  const existingVersion = versionLocs.find((l) => l.attributes.locale === locale);
+  // Read after the app-wide text: adding a language there adds it to the
+  // version too, empty, and a second POST for it is refused.
+  const existingVersion = (await versionLocs()).find((l) => l.attributes.locale === locale);
   if (existingVersion) {
     await api("PATCH", `/v1/appStoreVersionLocalizations/${existingVersion.id}`, {
       data: { type: "appStoreVersionLocalizations", id: existingVersion.id, attributes: versionAttributes },

@@ -9,7 +9,8 @@ nach App Store Connect geschrieben, nicht von Hand geklickt.
 | `screenshots.sh` | Screenshots für 6,9″-iPhone und 13″-iPad, je Sprache (`WaveUITests/StoreScreenshots.swift`, FakeTunnel mit `-UITestDemo`) |
 | `push-listing.mjs` | schreibt `listing.json` nach App Store Connect |
 | `upload-screenshots.mjs` | ersetzt die Screenshots der vorbereiteten Version |
-| `asc.mjs` | der API-Zugang beider Skripte |
+| `push-settings.mjs` | Preis (kostenlos), Verfügbarkeit (ohne `excludedTerritories`), Altersfreigabe (4+) |
+| `asc.mjs` | der API-Zugang der Skripte |
 
 Die Screenshots liegen nicht im Repo (`screenshots/` ist ignoriert); sie
 entstehen jedes Mal neu aus dem Stand des Codes.
@@ -21,14 +22,16 @@ mobile/ios/store/screenshots.sh                       # braucht Xcode und Wavemo
 export ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_KEY_P8_BASE64=…   # Schlüssel mit Rolle „App Manager“
 REVIEW_DEMO_PASSWORD=… node mobile/ios/store/push-listing.mjs
 node mobile/ios/store/upload-screenshots.mjs
+node mobile/ios/store/push-settings.mjs
 ```
 
 Der Schlüssel in „wave-mesh CI/Apple Notarization“ reicht dafür nicht: er darf
-Builds hochladen, aber keine Metadaten ändern (403).
+Builds hochladen, aber keine Metadaten ändern (403). Der mit Rolle „App
+Manager“ liegt als Dokument in „wave-mesh CI/Apple App Manager“; die
+Schlüssel-ID steht im Dateinamen, die Issuer-ID ist die des Teams.
 
 Einmalig im Browser, weil die API sie nicht anbietet: **App-Datenschutz**
-(Antworten unten), **Preis** (kostenlos), **Verfügbarkeit** (alle Länder außer
-Frankreich, siehe unten) und **Altersfreigabe** (überall „Nein“/„Keine“ → 4+).
+(Antworten unten).
 
 Danach in App Store Connect den Build der Version wählen (gleiche
 `MARKETING_VERSION` wie `listing.json`), Exportfrage „Standard-Verschlüsselung“
