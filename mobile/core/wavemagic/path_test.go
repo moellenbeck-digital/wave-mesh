@@ -197,9 +197,9 @@ func TestCurrentReflexiveForgetsWhatNobodyReportsAnyMore(t *testing.T) {
 		return netip.AddrPortFrom(netip.MustParseAddr("203.0.113.7"), port)
 	}
 	got := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
-		address(3): {SeenAt: now, Rounds: 2},
-		address(1): {SeenAt: now.Add(-wavemagic.ReflexiveTTL - time.Second), Rounds: 2},
-		address(2): {SeenAt: now.Add(-time.Second), Rounds: 2},
+		address(3): {FirstSeenAt: now.Add(-time.Minute), SeenAt: now},
+		address(1): {FirstSeenAt: now.Add(-time.Hour), SeenAt: now.Add(-wavemagic.ReflexiveTTL - time.Second)},
+		address(2): {FirstSeenAt: now.Add(-time.Hour), SeenAt: now.Add(-time.Second)},
 	}, now)
 	want := []netip.AddrPort{address(2), address(3)}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
@@ -214,7 +214,7 @@ func TestCurrentReflexiveKeepsOnlyTheNewestFew(t *testing.T) {
 	seen := map[netip.AddrPort]wavemagic.SeenAddress{}
 	for index := 0; index < 30; index++ {
 		address := netip.AddrPortFrom(netip.MustParseAddr("203.0.113.7"), uint16(1000+index))
-		seen[address] = wavemagic.SeenAddress{SeenAt: now.Add(time.Duration(index-30) * time.Second), Rounds: 2}
+		seen[address] = wavemagic.SeenAddress{FirstSeenAt: now.Add(-time.Hour), SeenAt: now.Add(time.Duration(index-30) * time.Second)}
 	}
 	got := wavemagic.CurrentReflexive(seen, now)
 	if len(got) != wavemagic.MaxReflexive {
@@ -233,25 +233,35 @@ func TestCurrentReflexiveHoldsBackAPortThatReplacesAnother(t *testing.T) {
 		return netip.AddrPortFrom(netip.MustParseAddr("203.0.113.7"), port)
 	}
 	first := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
-		address(1): {SeenAt: now, Rounds: 1},
+		address(1): {FirstSeenAt: now, SeenAt: now},
 	}, now)
 	if len(first) != 1 {
 		t.Fatalf("a first address was held back: %v", first)
 	}
 	churning := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
-		address(1): {SeenAt: now.Add(-2 * time.Minute), Rounds: 1},
-		address(2): {SeenAt: now.Add(-time.Minute), Rounds: 1},
-		address(3): {SeenAt: now, Rounds: 1},
+		address(1): {FirstSeenAt: now.Add(-2 * time.Minute), SeenAt: now.Add(-2 * time.Minute)},
+		address(2): {FirstSeenAt: now.Add(-time.Minute), SeenAt: now.Add(-time.Minute)},
+		address(3): {FirstSeenAt: now, SeenAt: now},
 	}, now)
 	if len(churning) != 0 {
 		t.Fatalf("ports seen once each were published: %v", churning)
 	}
 	confirmed := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
-		address(1): {SeenAt: now.Add(-time.Minute), Rounds: 5},
-		address(2): {SeenAt: now, Rounds: 1},
+		address(1): {FirstSeenAt: now.Add(-time.Hour), SeenAt: now.Add(-time.Minute)},
+		address(2): {FirstSeenAt: now, SeenAt: now},
 	}, now)
 	if len(confirmed) != 1 || confirmed[0] != address(1) {
 		t.Fatalf("got %v, want only the confirmed port", confirmed)
+	}
+	// Reported many times within a second -- the pongs of one wake-up's
+	// check -- is still one sighting. Behind carrier NAT the mapping is gone
+	// after the next sleep, and counting the pongs published every new port.
+	burst := wavemagic.CurrentReflexive(map[netip.AddrPort]wavemagic.SeenAddress{
+		address(1): {FirstSeenAt: now.Add(-time.Minute), SeenAt: now.Add(-time.Minute)},
+		address(2): {FirstSeenAt: now.Add(-time.Second), SeenAt: now},
+	}, now)
+	if len(burst) != 0 {
+		t.Fatalf("a port reported in one burst was published: %v", burst)
 	}
 }
 

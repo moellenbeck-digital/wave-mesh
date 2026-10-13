@@ -2020,6 +2020,13 @@ Schlüssel `disclosureAccepted.v1` eine neue Nummer.
   steht allein und geht sofort hinaus. „Allein", nicht „zuerst": sonst rückte
   beim Ablaufen des ältesten Ports der nächstälteste nach, und die Liste drehte
   sich wieder.
+  **Bestätigt heißt: über mindestens 30 s gesehen** (`REFLEXIVE_CONFIRM_MS`/
+  `ReflexiveConfirm`), nicht zweimal gemeldet. Auch das Pong eines Peers
+  meldet unsere Adresse, und die Pongs einer Prüfrunde kommen in derselben
+  Sekunde. Gezählt bestätigten sie einen Port sofort: ein iPhone auf
+  Mobilfunk, dessen CGNAT-Zuordnung nach jedem Schlaf weg ist, veröffentlichte
+  so bei fast jedem Aufwachen einen neuen — 73-mal in 18 Stunden am
+  12.10.2026, jedes Mal eine Netzkarte für den Wave.
   **Und der Takt läuft ab dem letzten Ping, nicht ab dem letzten Pong**
   (`probeDue()`/`ProbeDue()`). Ab dem Pong gerechnet war ein Kandidat, der nie
   antwortet, bei *jedem* Tick fällig — viermal pro Sekunde, für immer, auch
