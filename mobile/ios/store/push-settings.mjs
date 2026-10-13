@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The settings around the listing: price (free), where the app is sold, the
-// age rating and the content rights question. Safe to run again -- a price schedule and an availability
-// replace what was there, the age rating is updated in place.
+// age rating and the content rights question. Safe to run again: a price
+// schedule replaces the last one, the rest is updated in place.
 //
 //   the API key as in asc.mjs (App Manager role)
 //
@@ -44,23 +44,43 @@ for (let next = "/v1/territories?limit=200"; next; ) {
   territories.push(...page.data.map((t) => t.id));
   next = page.links?.next ? new URL(page.links.next).pathname + new URL(page.links.next).search : null;
 }
-const entries = territories.map((id) => ({
-  type: "territoryAvailabilities",
-  id: `\${${id}}`,
-  attributes: { available: !excluded.has(id) },
-  relationships: { territory: { data: { type: "territories", id } } },
-}));
-await api("POST", "/v2/appAvailabilities", {
-  data: {
-    type: "appAvailabilities",
-    attributes: { availableInNewTerritories: true },
-    relationships: {
-      app: { data: { type: "apps", id: appId } },
-      territoryAvailabilities: { data: entries.map(({ type, id }) => ({ type, id })) },
-    },
-  },
-  included: entries,
+const existing = await api("GET", `/v1/apps/${appId}/appAvailabilityV2`).catch((error) => {
+  if (/: 404 /.test(error.message)) return null;
+  throw error;
 });
+if (existing) {
+  // Created once; after that each territory is its own resource.
+  for (let next = `/v2/appAvailabilities/${existing.data.id}/territoryAvailabilities?include=territory&limit=200`; next; ) {
+    const page = await api("GET", next);
+    for (const entry of page.data) {
+      const id = entry.relationships.territory.data.id;
+      const available = !excluded.has(id);
+      if (entry.attributes.available === available) continue;
+      await api("PATCH", `/v1/territoryAvailabilities/${entry.id}`, {
+        data: { type: "territoryAvailabilities", id: entry.id, attributes: { available } },
+      });
+    }
+    next = page.links?.next ? new URL(page.links.next).pathname + new URL(page.links.next).search : null;
+  }
+} else {
+  const entries = territories.map((id) => ({
+    type: "territoryAvailabilities",
+    id: `\${${id}}`,
+    attributes: { available: !excluded.has(id) },
+    relationships: { territory: { data: { type: "territories", id } } },
+  }));
+  await api("POST", "/v2/appAvailabilities", {
+    data: {
+      type: "appAvailabilities",
+      attributes: { availableInNewTerritories: true },
+      relationships: {
+        app: { data: { type: "apps", id: appId } },
+        territoryAvailabilities: { data: entries.map(({ type, id }) => ({ type, id })) },
+      },
+    },
+    included: entries,
+  });
+}
 console.log(`sold in  ${territories.length - excluded.size} of ${territories.length} (not ${[...excluded].join(", ")})`);
 
 // Age rating: nothing in the app that any question asks about, which is 4+.
