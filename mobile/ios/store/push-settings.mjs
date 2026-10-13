@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// The settings around the listing: price (free), where the app is sold and
-// the age rating. Safe to run again -- a price schedule and an availability
+// The settings around the listing: price (free), where the app is sold, the
+// age rating and the content rights question. Safe to run again -- a price schedule and an availability
 // replace what was there, the age rating is updated in place.
 //
 //   the API key as in asc.mjs (App Manager role)
@@ -93,3 +93,9 @@ await api("PATCH", `/v1/ageRatingDeclarations/${declaration.id}`, {
 });
 const rated = (await api("GET", `/v1/appInfos/${info.id}`)).data.attributes.appStoreAgeRating;
 console.log(`age      ${rated ?? "(computed on submission)"}`);
+
+// The app shows nothing but what the user's own control server sends.
+await api("PATCH", `/v1/apps/${appId}`, {
+  data: { type: "apps", id: appId, attributes: { contentRightsDeclaration: "DOES_NOT_USE_THIRD_PARTY_CONTENT" } },
+});
+console.log("rights   no third-party content");
