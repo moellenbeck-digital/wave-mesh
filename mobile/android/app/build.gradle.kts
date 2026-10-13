@@ -21,7 +21,7 @@ android {
         // Google Play takes new apps and updates only at the current level.
         targetSdk = 36
         versionCode = 1
-        versionName = "0.8.0"
+        versionName = "0.9.0"
     }
 
     sourceSets["main"].java.srcDirs("src/main/kotlin")

@@ -1,0 +1,37 @@
+{
+  "version": "0.9.0",
+  "primaryCategory": "UTILITIES",
+  "secondaryCategory": "PRODUCTIVITY",
+  "copyright": "2026 Moellenbeck-Digital UG (haftungsbeschränkt)",
+  "localizations": {
+    "en-US": {
+      "name": "wave-mesh",
+      "subtitle": "Self-hosted mesh VPN",
+      "privacyPolicyUrl": "https://wave-mesh.org/en/privacy",
+      "supportUrl": "https://wave-mesh.org/en",
+      "marketingUrl": "https://wave-mesh.org/en",
+      "promotionalText": "Your laptops, servers and clusters in one private network, directly from device to device. On a control server you run yourself, or one we run for you.",
+      "keywords": "vpn,mesh,self-hosted,remote access,network,kubernetes,homelab,nas,server,tunnel,private network",
+      "description": "wave-mesh connects your iPhone and iPad with your other devices – laptops, servers, NAS boxes and Kubernetes clusters – in one private network, a wave. Connections run directly from device to device, even behind NAT and without port forwarding.\n\nThe app is the client for a wave-mesh control server: one you run yourself, or one Moellenbeck Digital runs for you. Enter its address, approve the device in the browser, and the tunnel starts.\n\n• Reach the devices and services in your wave by name\n• End-to-end encrypted with WireGuard®. Private keys are created on the device and never leave it\n• Direct connections wherever possible, an encrypted relay where not\n• Several waves at once, each paused and resumed on its own\n• Connects again by itself after a restart or a network change\n• \"Check connection\" says in plain sentences what works and what does not\n• Join from the QR code your control server shows\n\nNo analytics, no advertising. The app talks only to the control server you enter; no data is sold or passed on.\n\nYou need an account on a wave-mesh control server. How to run one, or have us run it: wave-mesh.org\n\nWireGuard is a registered trademark of Jason A. Donenfeld."
+    },
+    "de-DE": {
+      "name": "wave-mesh",
+      "subtitle": "Selbst gehostetes Mesh-VPN",
+      "privacyPolicyUrl": "https://wave-mesh.org/datenschutz",
+      "supportUrl": "https://wave-mesh.org",
+      "marketingUrl": "https://wave-mesh.org",
+      "promotionalText": "Laptops, Server und Cluster in einem privaten Netz, direkt von Gerät zu Gerät. Mit einem Control-Server, den du selbst betreibst oder wir für dich.",
+      "keywords": "vpn,mesh,selbst gehostet,fernzugriff,netzwerk,kubernetes,homelab,nas,server,tunnel,privates netz",
+      "description": "wave-mesh verbindet dein iPhone und iPad mit deinen anderen Geräten – Laptops, Servern, NAS und Kubernetes-Clustern – in einem privaten Netz, einem Wave. Die Verbindungen laufen direkt von Gerät zu Gerät, auch hinter NAT und ohne Portfreigaben.\n\nDie App ist der Client für einen wave-mesh Control-Server: einen, den du selbst betreibst, oder einen, den Moellenbeck Digital für dich betreibt. Adresse eingeben, das Gerät im Browser freigeben, und der Tunnel startet.\n\n• Geräte und Dienste in deinem Wave über ihren Namen erreichen\n• Ende-zu-Ende verschlüsselt mit WireGuard®. Private Schlüssel entstehen auf dem Gerät und verlassen es nie\n• Direkte Verbindungen, wo immer es geht, sonst über ein verschlüsseltes Relay\n• Mehrere Waves gleichzeitig, jeder einzeln pausierbar\n• Verbindet sich nach einem Neustart oder Netzwechsel von selbst wieder\n• „Verbindung prüfen“ sagt in klaren Sätzen, was geht und was nicht\n• Beitritt per QR-Code, den dein Control-Server anzeigt\n\nKeine Analyse, keine Werbung. Die App spricht nur mit dem Control-Server, den du eingibst; Daten werden weder verkauft noch weitergegeben.\n\nDu brauchst ein Konto auf einem wave-mesh Control-Server. Wie du einen betreibst oder von uns betreiben lässt: wave-mesh.org\n\nWireGuard ist eine eingetragene Marke von Jason A. Donenfeld."
+    }
+  },
+  "review": {
+    "contactFirstName": "Max",
+    "contactLastName": "Möllenbeck",
+    "contactEmail": "admin@moellenbeck-digital.io",
+    "contactPhone": "+49 1512 2628837",
+    "demoAccountRequired": true,
+    "demoAccountName": "app-review@wave-mesh.org",
+    "notes": "wave-mesh is a mesh VPN client for teams and administrators. It connects the device to a \"wave\": a private network of the user's own devices, coordinated by a wave-mesh control server that the customer runs themselves or that Moellenbeck Digital runs for them. Traffic between the devices is end-to-end encrypted with WireGuard and flows directly between them. The app does not route general internet traffic and is not a public VPN service. It uses NEPacketTunnelProvider; Moellenbeck-Digital UG is enrolled as an organization.\n\nTo test:\n1. Open the app and tap Continue on the explanation of what the control server learns.\n2. Enter the control server wave.moellenbeck-digital.io and tap Log in.\n3. iOS asks whether wave-mesh may add a VPN configuration: allow it.\n4. A sign-in page opens. Sign in with the demo account (email and password above).\n5. The app shows the demo wave as connected, with this device's name and address in it. \"Check connection\" lists what works.\n\nThe demo wave belongs to this review account only. The same account also signs in to the web interface at https://wave.moellenbeck-digital.io, which lists the device once it has joined.\n\nThe app collects no analytics and shows no advertising. It sends the control server the user enters only what joining needs: the device's name, its public keys and the network addresses it can be reached at."
+  }
+}
