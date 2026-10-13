@@ -2,9 +2,7 @@
   "version": "0.9.0",
   "primaryCategory": "UTILITIES",
   "secondaryCategory": "PRODUCTIVITY",
-  "excludedTerritories": [
-    "FRA"
-  ],
+  "excludedTerritories": ["FRA"],
   "copyright": "2026 Moellenbeck-Digital UG (haftungsbeschränkt)",
   "localizations": {
     "en-US": {
