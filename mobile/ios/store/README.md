@@ -71,3 +71,9 @@ durch uns“ aber auch selbst Server betreiben, geben wir es an:
 Für Apps mit Verschlüsselung verlangt Apple beim Vertrieb in Frankreich eine
 Erklärung bei der ANSSI. Bis die vorliegt, ist Frankreich in der
 Verfügbarkeit abgewählt.
+
+## China
+
+VPN-Apps brauchen auf dem chinesischen Festland eine staatliche Lizenz; ohne
+sie nimmt Apple sie dort aus dem Store. China ist deshalb ebenfalls
+abgewählt (`excludedTerritories` in `listing.json`).
