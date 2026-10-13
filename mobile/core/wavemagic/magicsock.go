@@ -1148,19 +1148,33 @@ const ReflexiveTTL = 3 * time.Minute
 // ports faster.
 const MaxReflexive = 8
 
-// SeenAddress is what we know about one address of ours: when it was last
-// reported, and how many times -- by STUN or by a peer's pong.
+// ReflexiveConfirm is how far apart two reports of a port must lie before the
+// port counts as confirmed. Half a STUN round: a NAT that keeps its mapping
+// reports the port again a round later, wherever the report comes from.
+const ReflexiveConfirm = 30 * time.Second
+
+// SeenAddress is what we know about one address of ours: when it was first
+// and when last reported -- by STUN or by a peer's pong.
+//
+// A span, not a count of reports. Counted, the pongs of one wake-up's check
+// confirmed a port within a second: on a phone behind carrier NAT, whose
+// mapping is gone after every sleep, each wake-up published a new port, 73
+// times in 18 hours (12.10.2026), and each was a netmap for the whole wave.
 type SeenAddress struct {
-	SeenAt time.Time
-	Rounds int
+	FirstSeenAt time.Time
+	SeenAt      time.Time
+}
+
+func (seen SeenAddress) confirmed() bool {
+	return seen.SeenAt.Sub(seen.FirstSeenAt) >= ReflexiveConfirm
 }
 
 // CurrentReflexive picks the addresses of ours worth publishing: seen
 // recently, newest few only, oldest first -- the order an append-only list
 // had, which the server relies on when it trims an old client's list.
 //
-// A port reported only once is held back while another port on the same
-// address is around, until it is reported again. Behind a NAT that forgets
+// A port not yet confirmed (see ReflexiveConfirm) is held back while another
+// port on the same address is around. Behind a NAT that forgets
 // its mapping between rounds -- the SNAT in front of a k3s pod, measured
 // 11.10.2026 -- every round names a fresh port, and publishing each one
 // changed the list every minute: a netmap for the whole wave every minute,
@@ -1173,12 +1187,12 @@ func CurrentReflexive(seen map[netip.AddrPort]SeenAddress, now time.Time) []neti
 	type entry struct {
 		address netip.AddrPort
 		seenAt  time.Time
-		rounds  int
+		sure    bool
 	}
 	recent := make([]entry, 0, len(seen))
 	for address, known := range seen {
 		if now.Sub(known.SeenAt) <= ReflexiveTTL {
-			recent = append(recent, entry{address, known.SeenAt, known.Rounds})
+			recent = append(recent, entry{address, known.SeenAt, known.confirmed()})
 		}
 	}
 	contested := func(item entry) bool {
@@ -1191,7 +1205,7 @@ func CurrentReflexive(seen map[netip.AddrPort]SeenAddress, now time.Time) []neti
 	}
 	fresh := make([]entry, 0, len(recent))
 	for _, item := range recent {
-		if item.rounds > 1 || !contested(item) {
+		if item.sure || !contested(item) {
 			fresh = append(fresh, item)
 		}
 	}
@@ -1215,7 +1229,11 @@ func CurrentReflexive(seen map[netip.AddrPort]SeenAddress, now time.Time) []neti
 
 func (s *Sock) rememberReflexiveLocked(address netip.AddrPort) {
 	now := s.now()
-	s.reflexive[address] = SeenAddress{SeenAt: now, Rounds: s.reflexive[address].Rounds + 1}
+	first := now
+	if known, ok := s.reflexive[address]; ok {
+		first = known.FirstSeenAt
+	}
+	s.reflexive[address] = SeenAddress{FirstSeenAt: first, SeenAt: now}
 	// Pruned here as well, not only when read: the map would otherwise grow by
 	// one entry a minute for as long as the tunnel runs.
 	for known, seen := range s.reflexive {

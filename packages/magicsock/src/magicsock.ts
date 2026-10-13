@@ -221,11 +221,24 @@ export const REFLEXIVE_TTL_MS = 180_000;
 /** A ceiling on top of the age limit, in case a NAT hands out ports faster. */
 export const MAX_REFLEXIVE = 8;
 
+/**
+ * How far apart two reports of a port must lie before it counts as confirmed.
+ * Half a STUN round: a NAT that keeps its mapping reports the port again a
+ * round later, wherever the report comes from.
+ */
+export const REFLEXIVE_CONFIRM_MS = 30_000;
+
+/**
+ * What we know about one address of ours: when it was first and when last
+ * reported -- by STUN or by a peer's pong. A span, not a count of reports:
+ * counted, the pongs of one burst of probes confirmed a port within a second,
+ * and on a phone behind carrier NAT, whose mapping is gone after every sleep,
+ * each wake-up published a new port -- 73 times in 18 hours (12.10.2026).
+ */
 export interface SeenAddress {
   mapped: Mapped;
+  firstSeenAt: number;
   seenAt: number;
-  /** In how many STUN rounds it was reported. */
-  rounds: number;
 }
 
 /**
@@ -233,8 +246,8 @@ export interface SeenAddress {
  * oldest first -- the order an append-only list had, which the server relies
  * on when it trims an old client's list.
  *
- * A port reported only once is held back while another port on the same
- * address is around, until a second round reports it again. Behind a NAT that forgets its mapping between
+ * A port not yet confirmed (see REFLEXIVE_CONFIRM_MS) is held back while
+ * another port on the same address is around. Behind a NAT that forgets its mapping between
  * rounds -- the SNAT in front of a k3s pod, measured 11.10.2026 -- every round
  * names a fresh port, and publishing each one changed the list every minute:
  * a netmap for the whole wave every minute, 24,000 of them in twenty days,
@@ -250,7 +263,7 @@ export function currentReflexive(seen: Iterable<SeenAddress>, now: number): Mapp
   const contested = (entry: SeenAddress) =>
     recent.some((other) => other.mapped.ip === entry.mapped.ip && other.mapped.port !== entry.mapped.port);
   return recent
-    .filter((entry) => entry.rounds > 1 || !contested(entry))
+    .filter((entry) => entry.seenAt - entry.firstSeenAt >= REFLEXIVE_CONFIRM_MS || !contested(entry))
     .sort((a, b) => b.seenAt - a.seenAt)
     .slice(0, MAX_REFLEXIVE)
     .reverse()
@@ -849,8 +862,8 @@ export class MagicSock {
     const known = this.reflexive.get(key(mapped));
     this.reflexive.set(key(mapped), {
       mapped,
+      firstSeenAt: known?.firstSeenAt ?? now,
       seenAt: now,
-      rounds: (known?.rounds ?? 0) + 1,
     });
     // Pruned here as well, not only when read: the map would otherwise grow
     // by one entry a minute for as long as the process runs.

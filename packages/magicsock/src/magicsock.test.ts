@@ -356,35 +356,40 @@ describe("STUN", () => {
 });
 
 describe("own addresses", () => {
-  const seen = (port: number, seenAt: number, rounds = 2) => ({
+  /** A port reported from `seenAt - span` to `seenAt`; a span of 0 is one sighting. */
+  const seen = (port: number, seenAt: number, span = 60_000) => ({
     mapped: { ip: "203.0.113.7", port },
+    firstSeenAt: seenAt - span,
     seenAt,
-    rounds,
   });
 
   test("publishes a first address at once", () => {
-    expect(currentReflexive([seen(1, 1000, 1)], 1000)).toEqual([{ ip: "203.0.113.7", port: 1 }]);
+    expect(currentReflexive([seen(1, 1000, 0)], 1000)).toEqual([{ ip: "203.0.113.7", port: 1 }]);
   });
 
-  test("holds back a port seen once while another port on the address is around", () => {
+  test("holds back an unconfirmed port while another port on the address is around", () => {
     // A NAT that keeps its mapping confirms the new port a round later; one
     // that hands out a fresh port every round never does.
     const now = 1_000_000;
-    expect(currentReflexive([seen(1, now - 60_000, 5), seen(2, now, 1)], now).map((m) => m.port)).toEqual([
-      1,
-    ]);
+    expect(currentReflexive([seen(1, now - 60_000), seen(2, now, 0)], now).map((m) => m.port)).toEqual([1]);
     expect(
-      currentReflexive([seen(1, now - 120_000, 1), seen(2, now - 60_000, 1), seen(3, now, 1)], now),
+      currentReflexive([seen(1, now - 120_000, 0), seen(2, now - 60_000, 0), seen(3, now, 0)], now),
     ).toEqual([]);
-    expect(currentReflexive([seen(1, now - 60_000, 5), seen(2, now, 2)], now).map((m) => m.port)).toEqual([
-      1, 2,
-    ]);
+    expect(currentReflexive([seen(1, now - 60_000), seen(2, now)], now).map((m) => m.port)).toEqual([1, 2]);
+  });
+
+  test("counts a burst of reports as one sighting", () => {
+    // The pongs of one round of probes arrive within a second. Behind carrier
+    // NAT the mapping is gone after the phone's next sleep, and counting each
+    // pong published every new port -- a netmap for the whole wave each time.
+    const now = 1_000_000;
+    expect(currentReflexive([seen(1, now - 60_000, 0), seen(2, now, 1000)], now)).toEqual([]);
   });
 
   test("does not hold back the same port on another address", () => {
     const now = 1_000_000;
-    const elsewhere = { mapped: { ip: "198.51.100.9", port: 7 }, seenAt: now, rounds: 1 };
-    expect(currentReflexive([seen(1, now - 60_000, 5), elsewhere], now)).toHaveLength(2);
+    const elsewhere = { mapped: { ip: "198.51.100.9", port: 7 }, firstSeenAt: now, seenAt: now };
+    expect(currentReflexive([seen(1, now - 60_000), elsewhere], now)).toHaveLength(2);
   });
 
   test("keeps what was reported recently, oldest first", () => {
