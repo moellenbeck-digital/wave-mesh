@@ -1,7 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { identities, users } from "../db/schema.ts";
 import { newId } from "../ids.ts";
+import { lockAddress } from "./address-lock.ts";
 
 export interface ProviderClaims {
   provider: string;
@@ -49,6 +50,10 @@ export async function resolveUser(db: Database, claims: ProviderClaims): Promise
     }
 
     if (email && claims.emailVerified) {
+      // The same lock a payment takes before it makes the owner's placeholder:
+      // decided one at a time, a first login and a checkout for this address
+      // cannot both conclude that nobody holds it yet.
+      await lockAddress(tx as unknown as Database, email);
       const match = await tx
         .select({ id: users.id })
         .from(users)
@@ -65,6 +70,42 @@ export async function resolveUser(db: Database, claims: ProviderClaims): Promise
           email,
         });
         return { userId: owner.id, isNewUser: false, linkedExisting: true };
+      }
+
+      // An account made by a payment for this address and not yet claimed:
+      // no password, no login of any kind, not verified (billing/
+      // subscriptions.ts). The provider vouching for the address is the same
+      // proof the setup link mailed there would have been, so this login *is*
+      // the owner arriving -- by another door. Taking it over here, rather
+      // than making a second account, keeps the paid wave with the person who
+      // paid, and keeps one account per verified address.
+      const placeholder = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.email, email),
+            eq(users.emailVerified, false),
+            isNull(users.passwordHash),
+            sql`not exists (select 1 from ${identities} where ${identities.userId} = ${users.id})`,
+          ),
+        )
+        .orderBy(asc(users.createdAt))
+        .limit(1);
+      const claimed = placeholder[0];
+      if (claimed) {
+        await tx
+          .update(users)
+          .set({ emailVerified: true, name: claims.name, avatarUrl: claims.avatarUrl })
+          .where(eq(users.id, claimed.id));
+        await tx.insert(identities).values({
+          id: newId("i"),
+          userId: claimed.id,
+          provider: claims.provider,
+          subject: claims.subject,
+          email,
+        });
+        return { userId: claimed.id, isNewUser: false, linkedExisting: true };
       }
     }
 

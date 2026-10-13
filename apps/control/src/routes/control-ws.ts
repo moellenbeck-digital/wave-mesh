@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { mayMeet } from "../acl/evaluate.ts";
 import { compiledPolicyFor } from "../acl/store.ts";
+import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { nodes, waves } from "../db/schema.ts";
 import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
@@ -158,6 +159,9 @@ export class NetmapHub {
     // Only to those who may meet the sender. A hint carries its candidates,
     // which are its addresses -- the very thing a node left out of a netmap is
     // not supposed to learn.
+    // A paused wave has no peers in its netmaps, so nobody may learn anyone's
+    // addresses through the side door either.
+    if (await isSuspended(this.db, waveId)) return;
     const policy = await compiledPolicyFor(this.db, waveId);
     for (const connection of this.byWave.get(waveId) ?? []) {
       if (connection.nodeId === fromNodeId) continue;

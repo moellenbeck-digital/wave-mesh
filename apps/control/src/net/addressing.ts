@@ -92,7 +92,7 @@ export function allocatePrefix(container: string, prefixLength: number, taken: I
     const candidate = (outer.base + offset) >>> 0;
     if (!used.has(candidate)) return `${intToIpv4(candidate)}/${prefixLength}`;
   }
-  throw new Error(
+  throw new ContainerFullError(
     `${container} is full: it holds ${outer.size / blockSize} blocks of /${prefixLength} and every one is taken`,
   );
 }
@@ -146,4 +146,12 @@ export function uniqueHostname(requested: string, taken: Iterable<string>): stri
     if (!used.has(candidate)) return candidate;
   }
   throw new Error(`cannot find a free hostname for ${requested}`);
+}
+
+/** Every block of the container is taken: the server cannot number another wave. */
+export class ContainerFullError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ContainerFullError";
+  }
 }

@@ -118,6 +118,40 @@ und `wave logout` nur den genannten treffen — auch auf dem Server.
 test/e2e/docker/run.sh same-server.sh
 ```
 
+## `billing.sh` — ein gekaufter Wave
+
+Die Abrechnungs-API, die wave-mesh.org für Stripe ruft, gegen echte Tunnel.
+Ein Control-Server mit `WAVE_BILLING_TOKEN` und `WAVE_BILLING_RETENTION_DAYS=0`,
+drei Namespaces an einer Brücke:
+
+- `PUT /api/billing/subscriptions/sub_e2e` legt den Wave an (`created: true`,
+  genau die Felder, die die Seite braucht), ein zweites Mal ist `created: false`.
+- Der Owner-Link setzt das Passwort, meldet an und bestätigt die Adresse; ein
+  zweites Mal ist er weg (410), und neu gibt es keinen.
+- Zwei Geräte treten bei und pingen sich. `suspended` leert die Netzkarte,
+  kein Ping mehr, beide bleiben angemeldet; ein drittes Gerät kommt weder über
+  den Browser (403 „This wave is paused") noch mit einem Pre-Auth-Key hinein.
+- `active` bringt den Ping ohne neue Freigabe zurück, und derselbe Schlüssel,
+  den die Pause abgewiesen hat, meldet das dritte Gerät jetzt an — er wurde
+  nicht verbraucht.
+- Zwei Plätze: Eigentümer plus eine Einladung, die nächste wird abgewiesen
+  (409 „No seat left"), dieselbe Adresse noch einmal kostet nichts, ein
+  dritter Platz lässt die nächste zu.
+- `ended` stoppt das Mesh und setzt `delete_after` (aus dem Audit-Log); der
+  Sweep löscht den Wave, trennt die Geräte, und das Abo ist danach unbekannt.
+- Falscher Token 401, ein Server ohne Token hat keine API (404), einer mit
+  zu kurzem startet nicht.
+
+```bash
+test/e2e/docker/run.sh billing.sh
+```
+
+Sweep und Pre-Auth-Key gehen über zwei Test-Routen des E2E-Servers
+(`POST /__e2e/billing/sweep`, `POST /__e2e/auth-key?wave=…`): das Postgres
+lebt dort im Prozess, `wave-admin` kommt nicht heran, und auf den stündlichen
+Sweep zu warten ist keine Option. Der Server, den ein Deployment fährt, hat
+beide nicht.
+
 ## `mobile-services.sh` — Dienste eines Clusters auf dem Telefon
 
 Der Telefon-Kern in zwei Waves, im zweiten ein Connector wie im Cluster: Dienste

@@ -6,7 +6,29 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.10.0-develop.1.*
+### Neue Funktionen
+
+- **Waves verkaufen, Teil Control-Server:** Eine Verwaltungs-API unter
+  `/api/billing/*`, über die wave-mesh.org nach einer Zahlung mit Stripe einen
+  Wave anlegt, ihn bei ausbleibender Zahlung pausiert und nach einer Kündigung
+  nach einer Frist löscht. Ein pausierter Wave behält alle Daten, nur sehen
+  sich seine Geräte nicht mehr. Ein bezahlter Wave nimmt höchstens so viele
+  Personen auf, wie gebucht sind. Der neue Eigentümer legt sein Passwort über
+  einen Link fest, den die Seite ihm schickt. Ohne `WAVE_BILLING_TOKEN` gibt es
+  nichts davon; selbst betriebene Server ändern sich nicht.
+  - Ein bezahlter Wave gehört nur einem bestätigten Konto oder einem
+    Platzhalter, nie einem unbestätigten Konto mit fremder Anmeldung. Meldet
+    sich der Eigentümer mit Google an, bevor er den Link nutzt, übernimmt diese
+    Anmeldung den Platzhalter, statt ein zweites Konto ohne Wave anzulegen.
+  - Ein gekündigter Wave bleibt gekündigt, auch wenn ein veraltetes Ereignis
+    später „aktiv“ meldet, und ein gebuchter Wave lässt sich nicht von Hand
+    löschen, solange sein Abo läuft.
+  - Ein pausierter Wave sagt auf seiner Karte, warum die Geräte niemanden
+    sehen, und bekommt keine Zertifikate, auch keines, das vor der Pause
+    bestellt war. Ein beendetes Abo nennt das Datum der Löschung.
+  - Hat sich der Eigentümer schon mit Google angemeldet, bevor er den Link aus
+    der Mail nutzt, zieht der bezahlte Wave in dieses Konto um, statt dass der
+    Link verfällt.
 
 ---
 

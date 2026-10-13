@@ -1,6 +1,7 @@
 import { createMemoryNonceStore, der, type NonceStore } from "@wave/crypto";
 import { CertOrderRequest } from "@wave/proto";
 import { Hono } from "hono";
+import { isSuspended } from "../billing/subscriptions.ts";
 import type { CertificateService } from "../certs/issue.ts";
 import type { Database } from "../db/client.ts";
 import { authenticateMachine, nodeByMachineKey } from "./machine-auth.ts";
@@ -29,6 +30,11 @@ export function certRoutes({ db, certs, nonces }: CertRouteDeps) {
 
     const node = await nodeByMachineKey(db, result.machineKey);
     if (!node) return c.json({ error: "unknown node" }, 404);
+    // A paused wave keeps its devices but gets nothing new from the server,
+    // and a certificate is something new: issued now, valid for months.
+    if (await isSuspended(db, node.waveId)) {
+      return c.json({ error: "this wave is paused: its subscription is not active" }, 403);
+    }
 
     const parsed = CertOrderRequest.safeParse(JSON.parse(body || "{}"));
     if (!parsed.success) return c.json({ error: "invalid request", detail: parsed.error.issues }, 400);
@@ -56,6 +62,13 @@ export function certRoutes({ db, certs, nonces }: CertRouteDeps) {
 
     const node = await nodeByMachineKey(db, result.machineKey);
     if (!node) return c.json({ error: "unknown node" }, 404);
+    // Paused here too, not only at the order: one placed just before the
+    // pause would otherwise be pushed on by the node's polling and handed
+    // out during it. The order stays as it is and goes on once the wave is
+    // active again.
+    if (await isSuspended(db, node.waveId)) {
+      return c.json({ error: "this wave is paused: its subscription is not active" }, 403);
+    }
 
     // Scoped to this node: an order id is not a secret, and someone else's
     // certificate is not this device's business even though it is public.

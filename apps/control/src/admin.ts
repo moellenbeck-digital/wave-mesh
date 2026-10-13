@@ -11,7 +11,7 @@
  */
 import { basename } from "node:path";
 import { systemLocale } from "@wave/i18n/system";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { describeEnforcement, describeReach, enforcementText } from "./acl/describe.ts";
 import { compilePolicy } from "./acl/evaluate.ts";
 import { aclSubjects, getPolicy, invalidTags, removePolicy, setPolicy, setTags } from "./acl/store.ts";
@@ -20,8 +20,10 @@ import { adminMessages } from "./admin-messages.ts";
 import { audit, listAudit, shellActor } from "./audit.ts";
 import { setPassword } from "./auth/password.ts";
 import { disableTwoFactor, hasTwoFactor } from "./auth/two-factor.ts";
+import { ensureSeatFor, SeatLimitError } from "./billing/seats.ts";
+import { billingStateOf } from "./billing/subscriptions.ts";
 import { createDb } from "./db/client.ts";
-import { certificateOrders, nodes, users } from "./db/schema.ts";
+import { certificateOrders, nodes, users, waveMembers } from "./db/schema.ts";
 import {
   buildProvider,
   findDnsCredential,
@@ -601,6 +603,11 @@ async function main(): Promise<never> {
 
   if (command === "delete-wave") {
     const target = await wave(rest[0]);
+    // A booked wave goes when its subscription does: deleted here, Stripe
+    // would go on charging for a wave that is gone, and the site would never
+    // hear of it again.
+    const billed = await billingStateOf(db, target.id);
+    if (billed && billed !== "ended") return done(1, m.billedNotDeletable(target.name, billed));
     const devices = await listNodes(db, target.id);
     const members = await listMembers(db, target.id);
     // Said before it is asked, not after: the number of machines that will
@@ -680,7 +687,24 @@ async function main(): Promise<never> {
     if (!found) {
       return done(1, m.noAccountHint(email));
     }
-    const result = await addMember(db, target.id, found.id, asRole(role));
+    // Held to the booking like an invitation: more seats are bought on the
+    // site, not granted on the shell. Someone already in takes no new seat.
+    let result: Awaited<ReturnType<typeof addMember>>;
+    try {
+      result = await db.transaction(async (tx) => {
+        const t = tx as unknown as typeof db;
+        const already = await t
+          .select({ userId: waveMembers.userId })
+          .from(waveMembers)
+          .where(and(eq(waveMembers.waveId, target.id), eq(waveMembers.userId, found.id)))
+          .limit(1);
+        if (already.length === 0) await ensureSeatFor(t, target.id, email);
+        return addMember(t, target.id, found.id, asRole(role));
+      });
+    } catch (error) {
+      if (error instanceof SeatLimitError) return done(1, m.noSeatLeft(target.name, error.seats));
+      throw error;
+    }
     return done(
       0,
       result.added
@@ -719,14 +743,22 @@ async function main(): Promise<never> {
     const owner = target.ownerEmail ? await account(target.ownerEmail) : null;
     if (!owner) return done(1, m.noOwnerToInviteFor(target.name));
 
-    const invite = await createInvite(db, {
-      waveId: target.id,
-      waveName: target.name,
-      email,
-      role: asRole(role),
-      invitedByUserId: owner.id,
-      baseUrl: config.baseUrl,
-    });
+    let invite: Awaited<ReturnType<typeof createInvite>>;
+    try {
+      invite = await createInvite(db, {
+        waveId: target.id,
+        waveName: target.name,
+        email,
+        role: asRole(role),
+        invitedByUserId: owner.id,
+        baseUrl: config.baseUrl,
+      });
+    } catch (error) {
+      // The operator is held to the booking like everyone else: more seats
+      // are bought on the site, not granted on the shell.
+      if (error instanceof SeatLimitError) return done(1, m.noSeatLeft(target.name, error.seats));
+      throw error;
+    }
     console.log(m.sendLink(invite.email, invite.expiresAt.toISOString()));
     return done(0, invite.url);
   }

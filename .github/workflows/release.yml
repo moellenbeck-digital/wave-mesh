@@ -178,6 +178,12 @@ jobs:
       # the policy goes. Every unit test reads a netmap or a rule set as text.
       - name: A wave's policy limits peers and ports
         run: ./test/e2e/acl.sh
+      # The billing API the site calls for Stripe, against real tunnels: a
+      # paused wave empties every netmap and admits nobody, resuming brings the
+      # mesh back without re-approvals, and an ended one is swept with its
+      # devices cut off. The unit tests read netmaps; this one pings.
+      - name: A billed wave is paused, resumed, held to its seats and swept
+        run: ./test/e2e/billing.sh
       # The mobile core, against a real TUN. The only place the single-interface
       # model is exercised at all: one tunnel carrying two waves, one UDP port,
       # one resolver with no socket. It has already earned the slot -- three

@@ -86,6 +86,26 @@ const en = {
   renameOwnOnly: "Only whoever brought a device in, or a manager of the wave, can rename it.",
   ownerCannotLeave: "The owner cannot leave the wave. Hand ownership over, or delete the wave.",
 
+  // --- billing ----------------------------------------------------------------
+  waveSuspended: "This wave is paused",
+  waveSuspendedBody: (wave: string) =>
+    `${wave} is paused because its subscription is not active. No device can be added until it is again.`,
+  noSeatLeft: "No seat left",
+  noSeatLeftBody: (seats: number) =>
+    `This wave is booked for ${seats} people, open invitations included. Book more, or withdraw an invitation.`,
+  setPasswordTitle: "Set your password",
+  setPasswordFor: (email: string) => `For ${email}. From now on you sign in with this address and password.`,
+  savePassword: "Save password",
+  setupGone: "This link is gone",
+  setupGoneBody: "It was used, replaced by a newer one, or has expired.",
+  setupHasAccess: "This account already has a way in",
+  setupHasAccessBody: "Sign in with your address as usual. The link is no longer needed and no longer works.",
+  setupForeignOrigin: "Not from this page",
+  setupForeignOriginBody: "Open the link from your email again and set the password there.",
+  billedNotDeletable: "This wave is still booked",
+  billedNotDeletableBody: (days: number) =>
+    `A wave with a running subscription is not deleted here: cancel the subscription, and the wave is deleted ${days} days after it ends.`,
+
   // --- invitations ----------------------------------------------------------
   invited: (email: string, wave: string) => `${email} is invited to ${wave}`,
   sendLink: (until: string) => `Send them this link. It works once and expires ${until}.`,
@@ -187,6 +207,27 @@ const de: typeof en = {
   renameOwnOnly: "Umbenennen kann ein Gerät nur, wer es hinzugefügt hat, oder wer den Wave verwaltet.",
   ownerCannotLeave:
     "Der Eigentümer kann den Wave nicht verlassen. Übergib die Eigentümerschaft oder lösche den Wave.",
+
+  waveSuspended: "Dieser Wave ist pausiert",
+  waveSuspendedBody: (wave) =>
+    `${wave} ist pausiert, weil sein Abo nicht aktiv ist. Bis es das wieder ist, kommt kein Gerät hinzu.`,
+  noSeatLeft: "Kein Platz mehr frei",
+  noSeatLeftBody: (seats) =>
+    `Dieser Wave ist für ${seats} Personen gebucht, offene Einladungen mitgezählt. Buch mehr dazu oder zieh eine Einladung zurück.`,
+  setPasswordTitle: "Lege dein Passwort fest",
+  setPasswordFor: (email) =>
+    `Für ${email}. Ab jetzt meldest du dich mit dieser Adresse und diesem Passwort an.`,
+  savePassword: "Passwort speichern",
+  setupGone: "Diesen Link gibt es nicht mehr",
+  setupGoneBody: "Er wurde schon benutzt, durch einen neueren ersetzt oder ist abgelaufen.",
+  setupHasAccess: "Dieses Konto hat schon einen Zugang",
+  setupHasAccessBody:
+    "Melde dich wie gewohnt mit deiner Adresse an. Den Link brauchst du nicht mehr, er funktioniert auch nicht mehr.",
+  setupForeignOrigin: "Nicht von dieser Seite",
+  setupForeignOriginBody: "Öffne den Link aus deiner E-Mail noch einmal und leg das Passwort dort fest.",
+  billedNotDeletable: "Dieser Wave ist noch gebucht",
+  billedNotDeletableBody: (days) =>
+    `Einen Wave mit laufendem Abo löschst du nicht hier: Kündige das Abo, dann wird der Wave ${days} Tage nach dem Ende gelöscht.`,
 
   invited: (email, wave) => `${email} ist in ${wave} eingeladen`,
   sendLink: (until) => `Schick diesen Link weiter. Er funktioniert einmal und gilt bis ${until}.`,

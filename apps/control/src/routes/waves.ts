@@ -11,6 +11,8 @@ import { audit, listAudit, userActor } from "../audit.ts";
 import { setPassword } from "../auth/password.ts";
 import type { SessionUser } from "../auth/session.ts";
 import { createSession, setSessionCookie } from "../auth/session.ts";
+import { SeatLimitError } from "../billing/seats.ts";
+import { billingStateOf } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { users, waves } from "../db/schema.ts";
 import type { Config } from "../env.ts";
@@ -273,14 +275,22 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
 
     const rows = await db.select({ name: waves.name }).from(waves).where(eq(waves.id, waveId)).limit(1);
     const waveName = rows[0]?.name ?? waveId;
-    const invite = await createInvite(db, {
-      waveId,
-      waveName,
-      email,
-      role,
-      invitedByUserId: auth.user.id,
-      baseUrl: config.baseUrl,
-    });
+    let invite: Awaited<ReturnType<typeof createInvite>>;
+    try {
+      invite = await createInvite(db, {
+        waveId,
+        waveName,
+        email,
+        role,
+        invitedByUserId: auth.user.id,
+        baseUrl: config.baseUrl,
+      });
+    } catch (error) {
+      if (error instanceof SeatLimitError) {
+        return page(c, (m) => [m.noSeatLeft, m.noSeatLeftBody(error.seats)], 409);
+      }
+      throw error;
+    }
     await audit(db, waveId, userActor(auth.user), {
       action: "invite.create",
       target: email,
@@ -607,6 +617,17 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     if (String(form.get("name") ?? "").trim() !== wave.name) {
       return page(c, (m) => [m.notItsName, m.typeToConfirm(wave.name)], 400);
     }
+
+    // A booked wave goes when its subscription does: deleted here, Stripe
+    // would go on charging for a wave that is gone, and the site would never
+    // hear of it again. Cancelling ends it, and the sweep deletes it after.
+    const billed = await billingStateOf(db, waveId);
+    if (billed && billed !== "ended")
+      return page(
+        c,
+        (m) => [m.billedNotDeletable, m.billedNotDeletableBody(config.billing?.retentionDays ?? 30)],
+        409,
+      );
 
     const deleted = await deleteWave(db, waveId);
     if (!deleted) return page(c, (m) => [m.unknownWave, m.nothingToDelete], 404);

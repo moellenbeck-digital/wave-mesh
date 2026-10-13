@@ -1,5 +1,6 @@
 import type { AclPolicy, Candidate, ServiceScheme } from "@wave/proto";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -527,6 +528,73 @@ export const certificateOrders = pgTable(
   (t) => [
     index("certificate_orders_node_idx").on(t.nodeId),
     index("certificate_orders_wave_idx").on(t.waveId),
+  ],
+);
+
+/**
+ * A wave someone pays for (Stripe, through wave-mesh.org). Only billed waves
+ * have a row here; a self-hosted wave never does, and nothing below applies to
+ * it.
+ *
+ * The subscription id is the key the site speaks in: Stripe repeats events and
+ * delivers them out of order, so every call names the subscription and states
+ * what the wave should be, rather than describing a change. Saying the same
+ * thing twice is then the same as saying it once.
+ */
+export const waveBilling = pgTable(
+  "wave_billing",
+  {
+    waveId: text("wave_id")
+      .primaryKey()
+      .references(() => waves.id, { onDelete: "cascade" }),
+    subscriptionId: text("subscription_id").notNull(),
+    /** How many people the wave may hold: members plus open invitations. */
+    seats: integer("seats").notNull(),
+    /** "suspended" and "ended" keep every row and stop the mesh; see netmap/build.ts. */
+    state: text("state", { enum: ["active", "suspended", "ended"] }).notNull(),
+    /** Set once a subscription has ended; the sweep deletes the wave after it. */
+    deleteAfter: timestamp("delete_after", { withTimezone: true }),
+    /**
+     * When the site read the state it last sent (ms, from Stripe's clock or the
+     * site's). Two events handled at once can land in either order; an update
+     * older than this one is a stale read and is not applied.
+     */
+    stateAsOf: bigint("state_as_of", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("wave_billing_subscription_idx").on(t.subscriptionId)],
+);
+
+/**
+ * A link that lets an account set its first password, sent to its address.
+ *
+ * Stored as SHA-256 like invitation tokens. Following it proves the mailbox,
+ * which is why redeeming it is what marks the address verified -- nothing
+ * before it did.
+ */
+export const passwordSetups = pgTable(
+  "password_setups",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    /**
+     * What asked for the link -- for billing, the Stripe checkout session.
+     * The same key gets the same link back while it is unused, so a webhook
+     * delivered twice mails one link instead of revoking the first.
+     */
+    key: text("key"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("password_setups_token_idx").on(t.tokenHash),
+    index("password_setups_user_idx").on(t.userId),
   ],
 );
 

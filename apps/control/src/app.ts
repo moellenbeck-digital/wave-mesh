@@ -16,6 +16,7 @@ import {
   type SessionUser,
   setSessionCookie,
 } from "./auth/session.ts";
+import { sweepEndedWaves } from "./billing/subscriptions.ts";
 import { CertificateService } from "./certs/issue.ts";
 import type { Database } from "./db/client.ts";
 import { waveMembers, waves } from "./db/schema.ts";
@@ -25,6 +26,7 @@ import { isWithin } from "./net/addressing.ts";
 import { peerAddress } from "./net/peer.ts";
 import type { SigningKey } from "./netmap/build.ts";
 import { accountRoutes } from "./routes/account.ts";
+import { billingRoutes } from "./routes/billing.ts";
 import { certRoutes } from "./routes/cert.ts";
 import { controlWebsocket, NetmapHub } from "./routes/control-ws.ts";
 import { DeviceFeed, deviceFeedRoutes } from "./routes/device-feed.ts";
@@ -133,6 +135,20 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
   app.route("/", serviceRoutes({ db, hub, nonces }));
   app.route("/", updateRoutes({ db, releases: updates, nonces }));
   app.route("/", waveRoutes({ db, config, hub }));
+  app.route("/", billingRoutes({ db, config, hub }));
+
+  /**
+   * Deletes the waves whose subscription ended past the retention, and cuts
+   * their devices off the way the owner's delete button does. index.ts runs it
+   * on a timer; a test calls it with the clock it wants.
+   */
+  const sweepBilling = async (now: Date = new Date()): Promise<number> => {
+    const deleted = await sweepEndedWaves(db, now);
+    for (const wave of deleted) {
+      for (const nodeId of wave.nodeIds) hub.disconnect(wave.waveId, nodeId, "node-removed");
+    }
+    return deleted.length;
+  };
 
   // Without a frontend this server is its own, deliberately plain, UI. With
   // one, "/" belongs to the frontend and falls through to the proxy below.
@@ -351,5 +367,5 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
     });
   }
 
-  return Object.assign(app, { websocket, hub, feed, releases: updates });
+  return Object.assign(app, { websocket, hub, feed, releases: updates, sweepBilling });
 }

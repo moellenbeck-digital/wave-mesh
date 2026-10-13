@@ -13,7 +13,7 @@ import { createApp } from "../src/app.ts";
 import { createProviders } from "../src/auth/providers.ts";
 import { CertificateService } from "../src/certs/issue.ts";
 import type { Database } from "../src/db/client.ts";
-import { certificateOrders, nodes } from "../src/db/schema.ts";
+import { certificateOrders, nodes, waveBilling } from "../src/db/schema.ts";
 import { storeDnsCredential } from "../src/dns/credentials.ts";
 import type { Config } from "../src/env.ts";
 import { type FakeCa, fakeCa } from "./fake-ca.ts";
@@ -326,6 +326,22 @@ describe("writing the record by hand", () => {
     // above all nothing was written into the zone.
     expect(ca.issued).toEqual([]);
     expect([...ca.zone.records.keys()]).toEqual([]);
+  });
+
+  test("a paused wave gets no answer about its order, and the order waits for it", async () => {
+    const { machine, node, name } = await setUp({ credential: "manual" });
+    const { body } = await orderFor(machine, [name]);
+    const orderId = body.orderId as string;
+    expect((await poll(machine, orderId)).status).toBe("waiting");
+
+    await db
+      .insert(waveBilling)
+      .values({ waveId: node.waveId, subscriptionId: "sub_c", seats: 3, state: "suspended" });
+    const paused = await signedRequest(machine, "GET", `/v1/cert/order/${orderId}`);
+    expect(paused.status).toBe(403);
+
+    await db.update(waveBilling).set({ state: "active" }).where(eq(waveBilling.waveId, node.waveId));
+    expect((await poll(machine, orderId)).status).toBe("waiting");
   });
 
   test("carries on by itself once the record is there", async () => {

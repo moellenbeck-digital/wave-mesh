@@ -7,6 +7,7 @@ import { html, raw } from "hono/html";
 import { z } from "zod";
 import { audit, userActor } from "../audit.ts";
 import type { SessionUser } from "../auth/session.ts";
+import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { authRequests, nodes, waveMembers, waveServices, waves } from "../db/schema.ts";
 import type { Config } from "../env.ts";
@@ -14,7 +15,7 @@ import { localeOf } from "../i18n.ts";
 import { newId } from "../ids.ts";
 import { allocateIpv4, ipv6ForIpv4, uniqueHostname } from "../net/addressing.ts";
 import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
-import { claimAuthKey } from "../waves/auth-keys.ts";
+import { authKeyWave, claimAuthKey } from "../waves/auth-keys.ts";
 import { type NetmapHub, publishEndpoints } from "./control-ws.ts";
 import { authenticateMachine } from "./machine-auth.ts";
 import { pageMessages } from "./messages.ts";
@@ -93,6 +94,10 @@ export function machineRoutes({ db, config, signingKey, hub, nonces }: MachineRo
     // Checked only after the known-machine case above, so a device that is
     // already in the wave never spends one by registering again.
     if (request.authKey) {
+      const target = await authKeyWave(db, request.authKey);
+      if (target && (await isSuspended(db, target))) {
+        return c.json({ error: "this wave is paused: its subscription is not active" }, 403);
+      }
       const claimed = await claimAuthKey(db, request.authKey);
       if (!claimed) return c.json({ error: "this pre-auth key cannot be used" }, 403);
 
@@ -274,6 +279,12 @@ export function machineRoutes({ db, config, signingKey, hub, nonces }: MachineRo
     const approved = await approveRequest(db, user.id, request, picked);
     if (approved.kind === "none") return c.redirect(toWaveForm(request.id), 303);
     if (approved.kind === "choose") return askForWave(c, request, approved.waves);
+    if (approved.kind === "suspended") {
+      // A page in the plain style, with the web app in front too: this is
+      // where the browser lands, and the request stays pending for later.
+      const m = pageMessages(localeOf(c));
+      return c.html(html`<h1>${m.waveSuspended}</h1><p>${m.waveSuspendedBody(approved.waveName)}</p>`, 403);
+    }
     await audit(db, approved.waveId, userActor(user), {
       action: "device.approve",
       target: request.hostname,
@@ -383,7 +394,9 @@ export type Approval =
   | { kind: "approved"; waveId: string; waveName: string; ipv4: string }
   /** The user is in several waves, so the device cannot be placed for them. */
   | { kind: "choose"; waves: { id: string; name: string }[] }
-  | { kind: "none" };
+  | { kind: "none" }
+  /** The wave is paused for billing; nobody new comes in until it is live again. */
+  | { kind: "suspended"; waveName: string };
 
 /**
  * Creates the node in the wave the user picked and marks the request authorized.
@@ -427,6 +440,10 @@ async function approveRequest(
   // An unknown id is asked again rather than answered with the first wave: a
   // stale form must not put the device somewhere nobody chose.
   if (!wave) return { kind: "choose", waves: candidates.map((c) => ({ id: c.id, name: c.name })) };
+  // Before an address is drawn: a device added to a paused wave would sit in
+  // it with a place and no peers, and come alive on its own the day the
+  // subscription does -- an approval nobody gave for that day.
+  if (await isSuspended(db, wave.id)) return { kind: "suspended", waveName: wave.name };
 
   const nodeId = await createNode(db, { wave, userId, device: request });
   await db.update(authRequests).set({ status: "authorized", nodeId }).where(eq(authRequests.id, request.id));
