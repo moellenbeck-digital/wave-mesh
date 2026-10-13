@@ -6,7 +6,15 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-### Neue Funktionen
+*Noch nichts seit v0.10.0.*
+
+---
+
+## ✅ Stable v0.10.0 (13.10.2026)
+
+*Enthält alles aus v0.10.0-develop.1.*
+
+### Neue Funktionen (gegenüber v0.9.0)
 
 - **Waves verkaufen, Teil Control-Server:** Eine Verwaltungs-API unter
   `/api/billing/*`, über die wave-mesh.org nach einer Zahlung mit Stripe einen
@@ -28,7 +36,21 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
     bestellt war. Ein beendetes Abo nennt das Datum der Löschung.
   - Hat sich der Eigentümer schon mit Google angemeldet, bevor er den Link aus
     der Mail nutzt, zieht der bezahlte Wave in dieses Konto um, statt dass der
-    Link verfällt.
+    Link verfällt. *(neu in diesem Release)*
+
+### Fehlerbehebungen (gegenüber v0.9.0)
+
+- **Ein Telefon auf Mobilfunk weckt seinen Wave nicht mehr bei jedem
+  Aufwachen.** Hinter dem NAT des Mobilfunkanbieters bekam es nach jedem
+  Schlaf einen neuen Port und veröffentlichte ihn sofort — jedes Mal eine
+  neue Netzkarte für alle Geräte im Wave, 73-mal in 18 Stunden. Ein neuer
+  Port geht jetzt erst hinaus, wenn er sich über eine halbe Minute hält.
+  Gilt für die Apps, den Desktop-Client und den Connector. *(seit develop.1)*
+- **Der Control-Server trennt schlafende Telefone nicht mehr jede Minute**
+  (Deployment `deployment/server/overlays/prod`): der Proxy davor lässt eine
+  stille Verbindung jetzt eine Stunde offen statt 60 Sekunden. Wer einen
+  eigenen nginx-Ingress vor `/v1/control` betreibt, setzt
+  `proxy-read-timeout` und `proxy-send-timeout` ebenso. *(seit develop.1)*
 
 ---
 
