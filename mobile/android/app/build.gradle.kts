@@ -25,6 +25,7 @@ android {
     }
 
     sourceSets["main"].java.srcDirs("src/main/kotlin")
+    sourceSets["test"].java.srcDirs("src/test/kotlin")
 
     buildFeatures {
         compose = true
@@ -53,6 +54,14 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
+    // The core set only; the few symbols beyond it are drawn in WaveIcons.
+    implementation("androidx.compose.material:material-icons-core")
+    // The approval page opens in a Custom Tab, which shares the browser's sign-in.
+    implementation("androidx.browser:browser:1.9.0")
     // The enrolment keys go here and nowhere else.
     implementation("androidx.security:security-crypto:1.1.0")
+
+    testImplementation("junit:junit:4.13.2")
+    // Android's own org.json is a stub under unit tests.
+    testImplementation("org.json:json:20250517")
 }

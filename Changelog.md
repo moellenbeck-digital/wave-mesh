@@ -32,6 +32,101 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.10.0-develop.1 (13.10.2026)
+
+### Fehlerbehebungen
+
+- **Ein Telefon auf Mobilfunk weckt seinen Wave nicht mehr bei jedem
+  Aufwachen.** Hinter dem NAT des Mobilfunkanbieters bekam es nach jedem
+  Schlaf einen neuen Port und veröffentlichte ihn sofort — jedes Mal eine
+  neue Netzkarte für alle Geräte im Wave, 73-mal in 18 Stunden. Ein neuer
+  Port geht jetzt erst hinaus, wenn er sich über eine halbe Minute hält.
+  Gilt für die Apps, den Desktop-Client und den Connector.
+- **Der Control-Server trennt schlafende Telefone nicht mehr jede Minute**
+  (Deployment `deployment/server/overlays/prod`): der Proxy davor lässt eine
+  stille Verbindung jetzt eine Stunde offen statt 60 Sekunden. Wer einen
+  eigenen nginx-Ingress vor `/v1/control` betreibt, setzt
+  `proxy-read-timeout` und `proxy-send-timeout` ebenso.
+
+---
+
+## ✅ Stable v0.9.0 (11.10.2026)
+
+*Enthält alles aus v0.9.0-develop.1 bis v0.9.0-develop.3.*
+
+### Neue Funktionen (gegenüber v0.8.0)
+
+- **Die Android-App sieht aus und verhält sich wie die iPhone-App**: dieselben
+  Abschnitte und Texte, Anmelden ohne vorheriges Verbinden, Freigabe im
+  Browser, Waves pausieren, prüfen und verlassen, Protokoll teilen, Beitritt
+  per QR-Code und „Automatisch verbinden“ nach einem Neustart. *(seit develop.3)*
+- **Aus dem Cluster in den Wave: der Connector beantwortet die Namen selbst.**
+  Ein Dienst, der im Wave dazukommt, ist nach Sekunden auflösbar; der Eintrag
+  in CoreDNS muss nie mehr angefasst werden. Wer die Egress-Komponente schon
+  nutzt, stellt ihn einmal um (siehe `coredns.example.yaml`). *(seit develop.1)*
+
+### Fehlerbehebungen (gegenüber v0.8.0)
+
+- **Die iPhone-App hält das Telefon nicht mehr ständig wach** — es wachte Tag
+  und Nacht alle fünf bis sechs Sekunden auf, jetzt etwa zehnmal seltener.
+  *(seit develop.2)*
+- **Ein Connector im Cluster schiebt dem Wave nicht mehr jede Minute eine neue
+  Netzkarte zu**, die jedes Telefon weckte. *(seit develop.2)*
+- **Die Android-App stürzte nach der Freigabe nicht mehr ab**, behält nach dem
+  Verlassen des letzten Waves ihre Namensauflösung, steht nach dem Verbinden
+  nicht mehr eine halbe Minute still und zeigt Fehler beim Anmelden an.
+  *(seit develop.3)*
+- **Der Update-Dialog unter macOS zeigt Umlaute richtig** — statt „verf√ºgbar“
+  steht dort wieder „verfügbar“. *(neu in diesem Release)*
+- **Neue Karten im Zugriffsgraphen landen an einem freien Platz** statt unter
+  einer bestehenden. *(seit develop.1)*
+
+---
+
+## 🔬 Development v0.9.0-develop.3 (11.10.2026)
+
+### Neue Funktionen
+
+- **Die Android-App sieht aus und verhält sich wie die iPhone-App.** Dieselben
+  Abschnitte und Texte, auf Deutsch und Englisch, hell und dunkel. Anmelden
+  startet den Tunnel von selbst, die Freigabeseite öffnet sich im Browser und
+  verschwindet nach der Freigabe wieder. Jeder Wave lässt sich pausieren,
+  prüfen („Verbindung prüfen“) und mit Rückfrage verlassen; Dienste öffnen sich
+  mit einem Tippen, Namen und Adressen lassen sich kopieren. Dazu ein eigener
+  Gerätename, ein teilbares Protokoll, Beitritt per QR-Code und „Automatisch
+  verbinden“, das den Tunnel nach einem Neustart zurückbringt.
+
+### Fehlerbehebungen
+
+- **Die Android-App stürzte direkt nach der Freigabe ab**, sobald sie die erste
+  Netzkarte übernahm.
+- **Nach dem Verlassen des letzten Waves löste das Android-Telefon keine Namen
+  mehr auf.**
+- **Nach jedem Verbinden stand der Tunnel unter Android eine halbe Minute**, weil
+  er beim Start den Port wechselte.
+- **Fehler beim Anmelden blieben unter Android unsichtbar**, und „Anmelden“
+  ohne vorheriges „Verbinden“ tat nichts.
+
+---
+
+## 🔬 Development v0.9.0-develop.2 (11.10.2026)
+
+### Fehlerbehebungen
+
+- **Die iPhone-App hält das Telefon nicht mehr ständig wach.** Nach jedem
+  Aufwachen fragte der Tunnel seine Server, ob die Verbindungen noch stehen —
+  und die Antworten weckten das Telefon gleich wieder. So wachte es Tag und
+  Nacht alle fünf bis sechs Sekunden auf. Jetzt fragt es höchstens einmal pro
+  Minute; im ersten Protokoll danach wachte es etwa zehnmal seltener auf.
+- **Weniger Unruhe im ganzen Wave durch einen Connector im Cluster.** Ein
+  Connector hinter dem NAT eines Kubernetes-Clusters meldete jede Minute eine
+  neue Adresse, die niemand je erreicht hat, und jede Meldung schob allen
+  Geräten im Wave eine neue Netzkarte zu — jedes Telefon wurde davon geweckt.
+  Eine solche Adresse wird erst gemeldet, wenn sie sich bestätigt; bei einem
+  NAT, das jedes Mal eine neue vergibt, bleibt es ruhig.
+
+---
+
 ## 🔬 Development v0.9.0-develop.1 (11.10.2026)
 
 ### Neue Funktionen

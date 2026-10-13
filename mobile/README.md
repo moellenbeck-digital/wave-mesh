@@ -91,6 +91,18 @@ Was daran festliegt:
 - **Android bekommt bei jedem `establish()` einen neuen Deskriptor** und
   schließt den alten. Der Kern muss ihn also austauschen können
   (`Core.ReplaceTunnel`); iOS behält seinen Packet Flow und ruft das nie.
+  **Übergeben wird er mit `detachFd()`, nie bloß verliehen:** der Kern schließt
+  den alten selbst, wenn er tauscht. Schloss Kotlin ihn danach noch einmal,
+  brach Android den Prozess ab (fdsan, seit Android 11) — die App starb an der
+  ersten Netzkarte, direkt nach der Freigabe (Emulator, 11.10.2026).
+- **Ohne Wave braucht der Tunnel trotzdem eine Adresse.** Android verweigert
+  Einstellungen ohne eine; dann blieben Routen und Resolver des eben
+  verlassenen Waves stehen, und das Telefon verlor jede Namensauflösung.
+  `applySettings()` nimmt dann den Platzhalter, ohne Route und ohne DNS.
+- **Der erste `onAvailable` ist kein Netzwechsel.** Android meldet das
+  bestehende Netz sofort beim Registrieren; als Wechsel gelesen zog jeder Start
+  auf einen neuen UDP-Port um, und der Tunnel stand eine halbe Minute. Wie der
+  erste Pfad-Update unter iOS sagt er nur, wo wir sind.
 - **Android setzt DNS geräteweit.** `VpnService.Builder.addDnsServer()` kennt
   kein `matchDomains` wie iOS. Die Invariante „nie den System-Resolver
   übernehmen" ist dort nicht haltbar, und aus dem sonst optionalen Weiterreichen
@@ -226,6 +238,20 @@ Fest und nie mehr änderbar, sobald die App im Store ist:
 | Gemeinsam | App-Gruppe `group.org.wavemesh.app` | — |
 | Mindestens | iOS 17, iPhone und iPad | Android 10 (API 29), Ziel API 36 |
 
+**Android folgt der iOS-App**, im Verhalten und im Aussehen: dieselben
+Abschnitte, dieselben Texte (aus `Localizable.xcstrings`, mit „Android“ statt
+„iOS“), dieselben Abläufe — Anmelden startet den Tunnel selbst, die
+Freigabeseite öffnet sich von allein (Custom Tab statt
+`ASWebAuthenticationSession`, aus demselben Grund: er teilt die Anmeldung des
+Browsers) und geht nach der Freigabe wieder, ein Wave lässt sich pausieren,
+prüfen und verlassen, das Protokoll teilen, ein QR-Code (`wavemesh://join`)
+fragt vor dem Beitritt. Gezeichnet wird die gruppierte Liste von iOS in
+Compose (`Theme.kt`), mit den Systemfarben von iOS in hell und dunkel. Wer an
+einer der beiden Apps etwas an Verhalten, Text oder Gestalt ändert, zieht die
+andere nach. Was es nur auf einer Seite gibt, hat dort seinen Grund: On-Demand
+heißt unter Android ein Neustart-Empfänger (`BootReceiver`), MetricKit ein
+Blick auf `ApplicationExitInfo` beim Start — beides landet im Protokoll.
+
 Beide Apps zeigen vor der ersten Verbindung einmal, was mit Daten geschieht —
 App Review verlangt das von VPN-Apps (Richtlinie 5.4), Google Play ähnlich für
 `VpnService`. Erst danach legt iOS die VPN-Konfiguration an bzw. fragt Android
@@ -237,6 +263,7 @@ eine neue Nummer, damit er erneut erscheint.
 
 ```bash
 cd mobile/core && go test ./wavesettings ./waveengine   # die Form von Einstellungen und Status, als Datei
+cd mobile/android && ./gradlew :app:testDebugUnitTest   # liest dieselben Dateien, dazu Gerätename und QR-Link
 cd mobile/ios && xcodegen generate && \
   xcodebuild -scheme WaveTunnelTests -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```

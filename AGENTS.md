@@ -902,8 +902,11 @@ Was daran festliegt:
   die FFI des Trays: ein modaler Dialog im Tray-Thread hielte Icon und
   Steuersocket an, solange er dasteht, und ein Angebot steht womöglich
   stundenlang. Der Text geht **über die Umgebung** hinein, nie ins Skript —
-  er trägt eine Version, die von einem Server kam. Welche Version installiert
-  wird, entscheidet auch hier der Daemon; der Dialog sagt nur „jetzt".
+  er trägt eine Version, die von einem Server kam. Unter macOS liest das Skript
+  sie mit `do shell script`, **nicht mit `system attribute`**: Letzteres
+  dekodiert die Umgebung als MacRoman, und jeder deutsche Dialog sagte
+  „verf√ºgbar" (11.10.2026). Welche Version installiert wird, entscheidet auch
+  hier der Daemon; der Dialog sagt nur „jetzt".
   Geprüft ist unter Linux, dass der Benachrichtigungsdienst die Aktionen
   annimmt; macOS und Windows nur als Befehlszeilen.
 - **Der Dialog trägt immer das wave-Zeichen**, nie ein Systemsymbol — er
@@ -1863,6 +1866,13 @@ Was daran festliegt:
   noch im LAN brauchbar. Was bleibt, sind
   ältere Clients, bis sie aktualisiert sind, und der Herzschlag zum Relay
   (15 s, je Gerät an das Relay, nicht an Peers).
+- **Die Android-App folgt der iOS-App**, in Verhalten, Texten und Gestalt
+  (`mobile/README.md`). Drei Fallen, alle am 11.10.2026 im Emulator gefunden:
+  der Deskriptor geht mit `detachFd()` an den Kern, sonst schließen ihn zwei
+  und fdsan beendet die App an der ersten Netzkarte; ohne Wave bekommt der
+  Tunnel den Platzhalter, sonst nimmt das Verlassen des letzten Waves dem
+  Telefon das DNS; und der erste `onAvailable` ist kein Netzwechsel, sonst
+  wechselt jeder Start den Port.
 - **Android tauscht bei jedem `establish()` den Deskriptor**, iOS behält seinen
   Packet Flow. `VpnService.Builder` gibt einen neuen zurück und schließt den
   alten — ein Kern, der noch den ersten liest, sieht einen Tunnel, der einfach
@@ -2167,6 +2177,25 @@ Schlüssel `disclosureAccepted.v1` eine neue Nummer.
   hält je Art höchstens acht (`boundCandidates()`, beim Speichern *und* beim
   Bauen der Netzkarte — Letzteres für Zeilen und Clients von davor). Der
   Go-Kern tut dasselbe.
+  **Ein einmal gesehener Port wartet, solange auf seiner IP ein anderer
+  steht** (`currentReflexive()`/`CurrentReflexive()`), bis eine zweite Runde
+  ihn bestätigt. Die Schranken oben begrenzten die Liste, aber sie drehte sich
+  weiter: hinter dem SNAT des k3s-Pods brachte jede STUN-Runde einen neuen
+  Port, die Liste war jede Minute eine andere, und jede Änderung ist eine
+  Netzkarte für den ganzen Wave. Am 11.10.2026 waren das 60 von 68
+  Netzkarten in einer Stunde, über 24 000 in zwanzig Tagen — jede weckte jedes
+  Telefon im Wave, für Ports, die nie jemand erreicht hat. Ein NAT, das seine
+  Zuordnung hält, bestätigt den Port eine Minute später; eine erste Adresse
+  steht allein und geht sofort hinaus. „Allein", nicht „zuerst": sonst rückte
+  beim Ablaufen des ältesten Ports der nächstälteste nach, und die Liste drehte
+  sich wieder.
+  **Bestätigt heißt: über mindestens 30 s gesehen** (`REFLEXIVE_CONFIRM_MS`/
+  `ReflexiveConfirm`), nicht zweimal gemeldet. Auch das Pong eines Peers
+  meldet unsere Adresse, und die Pongs einer Prüfrunde kommen in derselben
+  Sekunde. Gezählt bestätigten sie einen Port sofort: ein iPhone auf
+  Mobilfunk, dessen CGNAT-Zuordnung nach jedem Schlaf weg ist, veröffentlichte
+  so bei fast jedem Aufwachen einen neuen — 73-mal in 18 Stunden am
+  12.10.2026, jedes Mal eine Netzkarte für den Wave.
   **Und der Takt läuft ab dem letzten Ping, nicht ab dem letzten Pong**
   (`probeDue()`/`ProbeDue()`). Ab dem Pong gerechnet war ein Kandidat, der nie
   antwortet, bei *jedem* Tick fällig — viermal pro Sekunde, für immer, auch

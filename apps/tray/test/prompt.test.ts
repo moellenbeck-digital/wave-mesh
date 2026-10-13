@@ -71,9 +71,7 @@ describe("the icon", () => {
 
   test("replaces the stock symbol on macOS, which stays the fallback", () => {
     // osascript shows no dialog at all when the icon file is missing.
-    expect(macosDialog(icon).at(-1)).toContain(
-      'with icon (POSIX file (system attribute "WAVE_PROMPT_ICON"))',
-    );
+    expect(macosDialog(icon).at(-1)).toContain('with icon (POSIX file (env("WAVE_PROMPT_ICON")))');
     expect(macosDialog(null).at(-1)).toContain("with icon note");
   });
 
@@ -95,6 +93,18 @@ describe("the dialogs on macOS and Windows", () => {
       expect(script).toContain("WAVE_PROMPT_TITLE");
       expect(script).not.toContain("0.2.0");
     }
+  });
+
+  // AppleScript's `system attribute` reads the environment as MacRoman: every
+  // German dialog said "verf√ºgbar". Asked of the real osascript, without
+  // showing anything -- the handler the dialog uses, and one line that returns
+  // what it read.
+  test.skipIf(process.platform !== "darwin")("read their text as UTF-8 on macOS", () => {
+    const body = "wave 0.9.0 ist verfügbar (dieses Gerät).\n\nSpäter – „jetzt“ $HOME `id`";
+    const argv = [...macosDialog(null).slice(0, -1), 'return env("WAVE_PROMPT_BODY")'];
+    const run = Bun.spawnSync(argv, { env: { ...process.env, WAVE_PROMPT_BODY: body } });
+    expect(run.stdout.toString().replace(/\n$/, "")).toBe(body);
+    expect(macosDialog(null).join(" ")).not.toContain("system attribute");
   });
 
   test("read the answer the way each one gives it", () => {
