@@ -24,6 +24,7 @@ import { DEFAULT_MTU, resolveInterfaceName, up } from "./engine.ts";
 import { platformLink } from "./link-platform.ts";
 import { locale, setLocale, t } from "./messages.ts";
 import { paint, renderStatus, shouldWatch } from "./render.ts";
+import { isAbort } from "./retry.ts";
 import {
   ambiguity,
   defaultStatePath,
@@ -83,6 +84,15 @@ const log = (message: string) => {
   for (const line of message.split("\n")) if (line.trim()) events.push(line);
   while (events.length > 5) events.shift();
 };
+
+/**
+ * How long `up` and `login` wait on the daemon. Enrolment waits for a person
+ * at a browser and for a control server that may not be up yet, and neither
+ * has an end of its own: Ctrl-C is how a person ends it. A shorter timeout
+ * here would report "the daemon did not answer" over a daemon that is busy
+ * doing exactly what it was asked. (The largest delay a timer takes.)
+ */
+const ENROL_WAIT_MS = 2 ** 31 - 1;
 
 /** "host:port,host:port" -- hostnames must already be resolved to addresses. */
 function parseStunServers(value: string): { ip: string; port: number }[] {
@@ -193,7 +203,7 @@ async function followDaemon(daemon: DaemonClient, controlUrl?: string): Promise<
   // Not awaited: enrolment waits for a human, and the stream is what shows the
   // link and then the connection. Only a refusal ends the wait early.
   const refused = new Promise<string>((resolve) => {
-    void daemon.request({ command: "up", controlUrl }, 15 * 60 * 1000).then((response) => {
+    void daemon.request({ command: "up", controlUrl }, ENROL_WAIT_MS).then((response) => {
       if (response.type === "error") resolve(said(response));
     });
   });
@@ -236,18 +246,37 @@ async function pickProfile(statePath: string, wanted?: string): Promise<Profile 
  * one being joined now.
  */
 async function runHere(controlUrl: string, authKey?: string): Promise<number> {
-  const tunnel = await up({
-    statePath: values.state,
-    controlUrl,
-    authKey,
-    socketPath: values.socket,
-    interfaceName: values.interface,
-    listenPort: values.port ? Number(values.port) : undefined,
-    mtu: Number(values.mtu),
-    stunServers: parseStunServers(values.stun),
-    dns: !values["no-dns"],
-    log,
-  });
+  // Enrolment retries a control server that is not there for as long as it
+  // takes, so Ctrl-C has to be able to end it. Once, though: a second one
+  // falls through to the default, for a start that is past the point where
+  // it can be taken back.
+  const cancel = new AbortController();
+  const interrupt = () => cancel.abort();
+  process.once("SIGINT", interrupt);
+  process.once("SIGTERM", interrupt);
+  let tunnel: Awaited<ReturnType<typeof up>>;
+  try {
+    tunnel = await up({
+      statePath: values.state,
+      controlUrl,
+      authKey,
+      signal: cancel.signal,
+      socketPath: values.socket,
+      interfaceName: values.interface,
+      listenPort: values.port ? Number(values.port) : undefined,
+      mtu: Number(values.mtu),
+      stunServers: parseStunServers(values.stun),
+      dns: !values["no-dns"],
+      log,
+    });
+  } catch (error) {
+    if (!isAbort(error)) throw error;
+    if (process.stdout.isTTY) process.stdout.write("\n");
+    return 0;
+  } finally {
+    process.off("SIGINT", interrupt);
+    process.off("SIGTERM", interrupt);
+  }
 
   live = true;
   const repaint = async () =>
@@ -422,7 +451,7 @@ async function main(): Promise<number> {
         authKey: values["auth-key"] || undefined,
         newWave: values["new-wave"] || undefined,
       },
-      15 * 60 * 1000,
+      ENROL_WAIT_MS,
     );
     stream?.close();
     daemon.close();

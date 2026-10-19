@@ -1,5 +1,5 @@
 import { intlTag } from "@wave/i18n";
-import { type ProfileStatus, pathWords, type Status, waveLabel } from "@wave/ipc";
+import { type ProfileStatus, pathWords, readNotice, type Status, waveLabel } from "@wave/ipc";
 import { locale, t } from "./messages.ts";
 
 /**
@@ -54,13 +54,16 @@ function describeHandshake(seconds: number | null): string {
 /** What the tunnel is doing when it is not simply up. */
 function describeState(snapshot: ProfileStatus): string {
   const m = t();
+  // Set while the control server cannot be reached and enrolment keeps trying.
+  const waiting = snapshot.notice ? readNotice(snapshot, locale()) : null;
   if (snapshot.state === "waiting-for-approval" && snapshot.authUrl) {
-    return `${yellow(m.waitingForApproval)} ${m.openLink}\n\n    ${snapshot.authUrl}`;
+    const link = `${yellow(m.waitingForApproval)} ${m.openLink}\n\n    ${snapshot.authUrl}`;
+    return waiting ? `${link}\n\n${yellow(waiting)}` : link;
   }
   // The message is the error as it happened, from the network or the system;
   // it stays in its own words (see @wave/ipc notice.ts).
   if (snapshot.state === "failed") return `\x1b[31m${snapshot.message ?? m.failed}\x1b[0m`;
-  if (snapshot.state === "starting") return yellow(m.starting);
+  if (snapshot.state === "starting") return yellow(waiting ?? m.starting);
   return dim(snapshot.message ?? m.notConnected);
 }
 

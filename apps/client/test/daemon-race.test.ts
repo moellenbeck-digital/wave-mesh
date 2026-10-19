@@ -10,6 +10,14 @@ import { join } from "node:path";
  */
 const attempts: string[] = [];
 let release: (() => void) | null = null;
+/** What a test makes the next `up` do instead of waiting for approval. */
+let script: ((options: UpOptions) => Promise<void>) | null = null;
+
+interface UpOptions {
+  controlUrl: string;
+  signal?: AbortSignal;
+  onControlWait?: (wait: { reason: string; delayMs: number } | null) => void;
+}
 
 /**
  * The real module first, because `mock.module` replaces it for the *whole test
@@ -23,11 +31,14 @@ const engine = await import("../src/engine.ts");
 
 mock.module("../src/engine.ts", () => ({
   ...engine,
-  up: async (options: { controlUrl: string }) => {
+  up: async (options: UpOptions) => {
     attempts.push(options.controlUrl);
-    await new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    if (script) await script(options);
+    else {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
     return {
       state: { controlUrl: options.controlUrl },
       linkName: "wave0",
@@ -68,5 +79,140 @@ describe("two callers wanting the same wave up", () => {
     expect(status.profiles[0]?.state).toBe("up");
     // The second caller's timeout used to land here and call a live wave failed.
     expect(status.profiles[0]?.message).toBeNull();
+  });
+});
+
+/**
+ * A control server that is down is not this wave's failure. The engine says it
+ * is waiting (`onControlWait`) and keeps trying; what the daemon owes is to
+ * show that, to stay "starting", and to end the wait when told to.
+ */
+describe("a control server that cannot be reached", () => {
+  const neverEnds = (options: UpOptions) =>
+    new Promise<void>((_, reject) => {
+      options.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    });
+
+  async function daemonWith(...urls: string[]) {
+    const statePath = join(await mkdtemp(join(tmpdir(), "wave-wait-")), "state.json");
+    for (const url of urls) await ensureProfile(statePath, url);
+    const daemon = new Daemon({ statePath, log: () => {}, link: { remove: async () => {} } as never });
+    return daemon;
+  }
+
+  test("stays starting, with the English sentence and the code, and not failed", async () => {
+    const daemon = await daemonWith("http://down.example");
+    let report: UpOptions["onControlWait"];
+    script = async (options) => {
+      report = options.onControlWait;
+      options.onControlWait?.({ reason: "connection refused", delayMs: 500 });
+      await neverEnds(options);
+    };
+    try {
+      await daemon.up();
+
+      const waiting = (await daemon.status()).profiles[0];
+      expect(waiting?.state).toBe("starting");
+      // An older client reads only `message`, and the journal gets the same words.
+      expect(waiting?.message).toBe("waiting for the control server … (connection refused)");
+      expect(waiting?.notice).toEqual({
+        code: "waiting-for-control",
+        params: { reason: "connection refused" },
+      });
+
+      // The server is back: the line goes, and the wave is not failed by it.
+      report?.(null);
+      const back = (await daemon.status()).profiles[0];
+      expect(back?.state).toBe("starting");
+      expect(back?.message).toBeNull();
+      expect(back?.notice ?? null).toBeNull();
+    } finally {
+      await daemon.down();
+      script = null;
+    }
+  });
+
+  test("`down` ends the wait: the signal fires and the wave is stopped, not failed", async () => {
+    const daemon = await daemonWith("http://down.example");
+    let signal: AbortSignal | undefined;
+    script = async (options) => {
+      signal = options.signal;
+      options.onControlWait?.({ reason: "connection refused", delayMs: 500 });
+      await neverEnds(options);
+    };
+    try {
+      await daemon.up();
+      expect(signal?.aborted).toBe(false);
+
+      await daemon.down();
+      await Bun.sleep(20);
+
+      expect(signal?.aborted).toBe(true);
+      const stopped = (await daemon.status()).profiles[0];
+      expect(stopped?.state).toBe("stopped");
+      expect(stopped?.message).toBeNull();
+      expect(stopped?.notice ?? null).toBeNull();
+    } finally {
+      script = null;
+    }
+  });
+
+  test("stopping the daemon ends it too, so no timer keeps the process alive", async () => {
+    const daemon = await daemonWith("http://down.example");
+    let signal: AbortSignal | undefined;
+    script = async (options) => {
+      signal = options.signal;
+      options.onControlWait?.({ reason: "connection refused", delayMs: 500 });
+      await neverEnds(options);
+    };
+    try {
+      await daemon.up();
+      await daemon.stop();
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      script = null;
+    }
+  });
+
+  test("does not hold up the waves at servers that are up", async () => {
+    const daemon = await daemonWith("http://down.example", "http://fine.example");
+    script = async (options) => {
+      if (options.controlUrl === "http://down.example") {
+        options.onControlWait?.({ reason: "connection refused", delayMs: 500 });
+        await neverEnds(options);
+      }
+    };
+    try {
+      // Returns although the first wave is still waiting for its server.
+      await daemon.up();
+
+      const states = Object.fromEntries(
+        (await daemon.status()).profiles.map((profile) => [profile.controlUrl, profile.state]),
+      );
+      expect(states).toEqual({ "http://down.example": "starting", "http://fine.example": "up" });
+    } finally {
+      await daemon.down();
+      script = null;
+    }
+  });
+
+  test("a failure that is not a connection problem after the wait still fails the wave", async () => {
+    const daemon = await daemonWith("http://down.example");
+    script = async (options) => {
+      options.onControlWait?.({ reason: "connection refused", delayMs: 500 });
+      throw new Error("POST /v1/machine/register failed: 403 no");
+    };
+    try {
+      await daemon.up();
+      await Bun.sleep(20);
+
+      const failed = (await daemon.status()).profiles[0];
+      expect(failed?.state).toBe("failed");
+      expect(failed?.message).toContain("403");
+      // The waiting line is over: what is left is the reason it failed.
+      expect(failed?.notice ?? null).toBeNull();
+    } finally {
+      script = null;
+    }
   });
 });

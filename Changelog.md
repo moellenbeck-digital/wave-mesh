@@ -6,7 +6,21 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.10.0.*
+### Fehlerbehebungen
+
+- **Beim ersten Verbinden wartet der Client auf den Control-Server, statt
+  abzubrechen:** Ist der Server beim Start oder bei `wave login`/`wave up`
+  nicht erreichbar (Verbindung verweigert, Zeitüberschreitung, Netz nicht da,
+  Server startet gerade neu), versucht der Client es mit wachsenden Pausen
+  (0,5 bis 30 Sekunden) so lange erneut, bis die Verbindung steht oder du
+  abbrichst. Das gilt für `wave up`, `wave login` und den Dienst sowie für die
+  iOS- und die Android-App. Im Terminal steht dabei, warum und wann der nächste
+  Versuch kommt; der Dienst zeigt „wartet auf den Control-Server“ statt
+  „fehlgeschlagen“, und `wave down` beendet das Warten. Eine falsche Adresse,
+  eine Ablehnung des Servers und Zertifikatsfehler werden weiter sofort
+  gemeldet. Bei einem Login, den du gerade eingegeben hast, gilt ein
+  unbekannter Servername ebenfalls weiter sofort als Fehler. In den Apps gibt
+  es das Abbrechen jetzt auch, solange noch verbunden wird.
 
 ---
 

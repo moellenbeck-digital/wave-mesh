@@ -164,6 +164,13 @@ export const ProfileStatus = z.object({
   /** Set while the daemon waits for someone to open the enrolment link. */
   authUrl: z.string().nullable().default(null),
   message: z.string().nullable().default(null),
+  /**
+   * `message` as a code to be said in the reader's language; see notice.ts.
+   * Only set while the daemon waits for a control server it cannot reach --
+   * a tray or CLI that does not know the field shows the English `message`.
+   * Optional rather than defaulted, so a status built by hand stays valid.
+   */
+  notice: Notice.nullish(),
   interfaceName: z.string().nullable().default(null),
   addresses: z.array(z.string()).default([]),
   /**
@@ -354,6 +361,7 @@ export function profileStatusFromSnapshot(
     state: TunnelState;
     authUrl?: string | null;
     message?: string | null;
+    notice?: Notice | null;
     events?: string[];
   },
 ): ProfileStatus {
@@ -364,6 +372,7 @@ export function profileStatusFromSnapshot(
     state: extra.state,
     authUrl: extra.authUrl ?? null,
     message: extra.message ?? null,
+    notice: extra.notice ?? null,
     events: extra.events ?? [],
   };
   if (!snapshot) return ProfileStatus.parse(base);

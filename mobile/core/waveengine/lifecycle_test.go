@@ -31,10 +31,19 @@ func unreachableControlURL(t *testing.T) string {
 	return "http://" + address
 }
 
+// A server that cannot be reached is no longer an error to a login but a wait,
+// so these tests give up the way a person does: by ending the context.
+func givingUpSoon(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func TestAFailedFirstLoginLeavesNoEnrolmentBehind(t *testing.T) {
 	host := &fakeHost{}
-	engine := New(Options{Host: host})
-	err := engine.Login(context.Background(), unreachableControlURL(t), "")
+	engine := New(Options{Host: host, RetryMin: 10 * time.Millisecond})
+	err := engine.Login(givingUpSoon(t), unreachableControlURL(t), "")
 	if err == nil {
 		t.Fatal("a login to nobody succeeded")
 	}
@@ -58,8 +67,8 @@ func TestAFailedLoginKeepsAnEnrolmentThatWasApprovedBefore(t *testing.T) {
 		t.Fatal(err)
 	}
 	profile.NetmapPublicKey = testKey(t)
-	engine := New(Options{Host: host, State: State{Version: StateVersion, Profiles: []Profile{profile}}})
-	if err := engine.Login(context.Background(), controlURL, ""); err == nil {
+	engine := New(Options{Host: host, RetryMin: 10 * time.Millisecond, State: State{Version: StateVersion, Profiles: []Profile{profile}}})
+	if err := engine.Login(givingUpSoon(t), controlURL, ""); err == nil {
 		t.Fatal("a login to nobody succeeded")
 	}
 	if len(engine.state.Profiles) != 1 {
@@ -403,8 +412,8 @@ func TestTwoWavesAtOneServerStayApart(t *testing.T) {
 // to add to.
 func TestAddingAWaveWhereThereIsNoneIsALogin(t *testing.T) {
 	host := &fakeHost{}
-	engine := New(Options{Host: host})
-	if err := engine.AddWave(context.Background(), unreachableControlURL(t), ""); err == nil {
+	engine := New(Options{Host: host, RetryMin: 10 * time.Millisecond})
+	if err := engine.AddWave(givingUpSoon(t), unreachableControlURL(t), ""); err == nil {
 		t.Fatal("joined nobody")
 	}
 	if len(engine.state.Profiles) != 0 {

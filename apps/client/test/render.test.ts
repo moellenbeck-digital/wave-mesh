@@ -228,3 +228,41 @@ describe("the services a machine fronts", () => {
     expect(text).not.toContain("↳");
   });
 });
+
+describe("a wave that is waiting for its control server", () => {
+  const waiting = (state: "starting" | "waiting-for-approval", authUrl: string | null = null) =>
+    ({
+      profiles: [
+        profileStatusFromSnapshot(undefined, {
+          controlUrl: "http://control.example",
+          state,
+          authUrl,
+          message: "waiting for the control server … (connection refused)",
+          notice: { code: "waiting-for-control", params: { reason: "connection refused" } },
+        }),
+      ],
+      events: [],
+    }) satisfies Status;
+
+  test("says so instead of Starting…, so the terminal shows the wait and does not look stuck", () => {
+    const text = plain(renderStatus(waiting("starting")));
+    expect(text).toContain("waiting for the control server … (connection refused)");
+    expect(text).not.toContain("Starting…");
+  });
+
+  test("keeps the approval link and adds the wait under it", () => {
+    const text = plain(renderStatus(waiting("waiting-for-approval", "https://control.example/authorize")));
+    expect(text).toContain("https://control.example/authorize");
+    expect(text).toContain("waiting for the control server");
+  });
+
+  test("a plain start still says Starting…", () => {
+    const status: Status = {
+      profiles: [
+        profileStatusFromSnapshot(undefined, { controlUrl: "http://control.example", state: "starting" }),
+      ],
+      events: [],
+    };
+    expect(plain(renderStatus(status))).toContain("Starting…");
+  });
+});
