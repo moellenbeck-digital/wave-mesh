@@ -14,7 +14,7 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --parallel=1 --max-concurrency=4",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "images:build": "docker compose build control relay",
