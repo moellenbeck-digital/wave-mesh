@@ -233,8 +233,11 @@ fun WaveScreen(
 private fun LoginProgress(model: WaveModel) {
     when (val phase = model.login) {
         WaveModel.LoginPhase.Idle -> Unit
+        // Cancellable here too: the core keeps trying a control server that is
+        // not there yet for as long as it takes, so this can be a long wait.
         is WaveModel.LoginPhase.Connecting -> Section {
             row { ProgressRow(stringResource(R.string.connecting_to, phase.address)) }
+            row { ButtonRow(stringResource(R.string.cancel), destructive = true) { model.cancelLogin() } }
         }
         // An address, or a wave's key ("https://…#a1b2") when one is logged
         // in again: the host is what a person recognises.

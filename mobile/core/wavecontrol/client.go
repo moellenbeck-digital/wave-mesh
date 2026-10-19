@@ -99,9 +99,24 @@ func (c *Client) request(ctx context.Context, method, path string, body any) ([]
 		if len(snippet) > 200 {
 			snippet = snippet[:200]
 		}
-		return nil, fmt.Errorf("%s %s failed: %d %s", method, path, response.StatusCode, snippet)
+		return nil, &StatusError{Method: method, Path: path, Status: response.StatusCode, Body: snippet}
 	}
 	return text, nil
+}
+
+// StatusError is an answer from the control server that is not a success. It
+// is a type of its own because what to do about it depends on the status: a
+// 503 is a server that is not ready, a 401 is a refusal, and Retriable tells
+// them apart.
+type StatusError struct {
+	Method string
+	Path   string
+	Status int
+	Body   string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("%s %s failed: %d %s", e.Method, e.Path, e.Status, e.Body)
 }
 
 // Register enrols this device. With a pre-auth key it is enrolled straight
@@ -166,10 +181,18 @@ func (c *Client) Logout(ctx context.Context) error {
 }
 
 // WaitForApproval polls until somebody opens the link, or the deadline passes.
-func (c *Client) WaitForApproval(ctx context.Context, pollSecret string, deadline time.Duration) (waveproto.PollResponse, error) {
+//
+// A poll that cannot reach the server is tried again as `retry` says, but the
+// deadline does not move for it: the request expires on the server whether or
+// not we could ask after it.
+func (c *Client) WaitForApproval(ctx context.Context, pollSecret string, deadline time.Duration, retry RetryOptions) (waveproto.PollResponse, error) {
 	stop := time.Now().Add(deadline)
+	timedOut := fmt.Errorf("timed out waiting for approval")
+	retry.Deadline, retry.DeadlineError = stop, timedOut
 	for time.Now().Before(stop) {
-		poll, err := c.Poll(ctx, pollSecret)
+		poll, err := Retrying(ctx, retry, func(ctx context.Context) (waveproto.PollResponse, error) {
+			return c.Poll(ctx, pollSecret)
+		})
 		if err != nil {
 			return poll, err
 		}
@@ -187,7 +210,7 @@ func (c *Client) WaitForApproval(ctx context.Context, pollSecret string, deadlin
 		case <-time.After(time.Second):
 		}
 	}
-	return waveproto.PollResponse{}, fmt.Errorf("timed out waiting for approval")
+	return waveproto.PollResponse{}, timedOut
 }
 
 // signedRequestHeader is what the socket needs too: the same scheme, over a

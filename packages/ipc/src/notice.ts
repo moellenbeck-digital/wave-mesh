@@ -40,6 +40,7 @@ const en = {
   "update-newest": (p: Params) => `${p.version} is the newest release on offer`,
   "update-installing": (p: Params) => `installing ${p.version}`,
   "update-failed": (p: Params) => `the update to ${p.version} failed: ${p.reason}`,
+  "waiting-for-control": (p: Params) => `waiting for the control server … (${p.reason})`,
 } satisfies Messages;
 
 const de: typeof en = {
@@ -61,6 +62,7 @@ const de: typeof en = {
   "update-newest": (p) => `${p.version} ist das neueste angebotene Release`,
   "update-installing": (p) => `installiere ${p.version}`,
   "update-failed": (p) => `das Update auf ${p.version} ist gescheitert: ${p.reason}`,
+  "waiting-for-control": (p) => `wartet auf den Control-Server … (${p.reason})`,
 };
 
 type Params = Record<string, string | undefined>;

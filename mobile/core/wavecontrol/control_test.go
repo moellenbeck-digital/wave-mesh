@@ -151,7 +151,7 @@ func TestEnrolmentRoundTrip(t *testing.T) {
 	server.approved = true
 	server.mu.Unlock()
 
-	poll, err := client.WaitForApproval(context.Background(), registration.PollSecret, 5*time.Second)
+	poll, err := client.WaitForApproval(context.Background(), registration.PollSecret, 5*time.Second, wavecontrol.RetryOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

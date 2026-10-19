@@ -76,33 +76,7 @@ export function fakeControl(
         });
       }
       if (url.pathname === "/v1/netmap" && options.netmapKey) {
-        const netmap = {
-          version: 1,
-          waveId: "w_1",
-          self: {
-            id: "n_1",
-            nodeKey: generateKeyPair("x25519").publicKey,
-            discoKey: generateKeyPair("x25519").publicKey,
-            hostname: "laptop",
-            dnsName: options.dnsName ?? "laptop.wave.example.com",
-            ipv4: "10.77.0.2",
-            ipv6: "fd7a:1:2::2",
-            allowedIps: ["10.77.0.2/32"],
-            candidates: [],
-            online: true,
-            keyExpiresAt: null,
-            addresses: ["10.77.0.2/32"],
-          },
-          peers: [],
-          dns: { suffix: "wave.example.com", resolverAddress: "10.77.0.2", routes: [], upstream: [] },
-          relays: [],
-          issuedAt: new Date().toISOString(),
-        };
-        return Response.json({
-          netmap,
-          signature: sign(options.netmapKey.privateKey, canonicalJson(netmap)),
-          keyId: options.netmapKey.publicKey,
-        });
+        return Response.json(signedNetmap(options.netmapKey, options.dnsName));
       }
       return new Response("not found", { status: 404 });
     },
@@ -111,4 +85,38 @@ export function fakeControl(
   control.url = `http://127.0.0.1:${server.port}`;
   control.stop = () => server.stop(true);
   return control as FakeControl;
+}
+
+/**
+ * A netmap for one device, signed the way the control server signs it. Shared
+ * with the enrolment tests, which need an answer that verifies.
+ */
+export function signedNetmap(netmapKey: ReturnType<typeof generateKeyPair>, dnsName?: string) {
+  const netmap = {
+    version: 1,
+    waveId: "w_1",
+    self: {
+      id: "n_1",
+      nodeKey: generateKeyPair("x25519").publicKey,
+      discoKey: generateKeyPair("x25519").publicKey,
+      hostname: "laptop",
+      dnsName: dnsName ?? "laptop.wave.example.com",
+      ipv4: "10.77.0.2",
+      ipv6: "fd7a:1:2::2",
+      allowedIps: ["10.77.0.2/32"],
+      candidates: [],
+      online: true,
+      keyExpiresAt: null,
+      addresses: ["10.77.0.2/32"],
+    },
+    peers: [],
+    dns: { suffix: "wave.example.com", resolverAddress: "10.77.0.2", routes: [], upstream: [] },
+    relays: [],
+    issuedAt: new Date().toISOString(),
+  };
+  return {
+    netmap,
+    signature: sign(netmapKey.privateKey, canonicalJson(netmap)),
+    keyId: netmapKey.publicKey,
+  };
 }

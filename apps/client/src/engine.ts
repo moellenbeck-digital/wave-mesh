@@ -11,6 +11,7 @@ import { nameFilePath, pidFilePath, RUN_DIR } from "./link-darwin.ts";
 import { platformLink } from "./link-platform.ts";
 import { pidFilePath as windowsPidFilePath, runDir as windowsRunDir } from "./link-windows.ts";
 import { desiredAddresses, desiredRoutes, planDeviceUpdate } from "./reconcile.ts";
+import { type RetryOptions, retrying, sleep } from "./retry.ts";
 import { ensureProfile, type Profile, profileKey, updateProfile } from "./state.ts";
 import { defaultSocketPath, uapiReady, WgControl } from "./wgctl.ts";
 import { findWireguardGo, missingMessage } from "./wireguard-go.ts";
@@ -46,6 +47,23 @@ export interface EngineOptions {
   onAuthUrl?: (url: string) => void;
   /** Enrols without a browser, for machines that have none (D11). */
   authKey?: string;
+  /**
+   * Ends enrolment, including the wait for a control server that is not there
+   * yet: that wait has no end of its own. The daemon's `down` and the CLI's
+   * Ctrl-C come through here.
+   */
+  signal?: AbortSignal;
+  /** Backoff bounds of that wait; exposed for tests, like the control socket's. */
+  minBackoffMs?: number;
+  maxBackoffMs?: number;
+  /** How often the approval is polled; exposed for tests. */
+  pollMs?: number;
+  /**
+   * Enrolment cannot reach the control server and is waiting to try again; null
+   * once it can. The daemon shows it, which keeps the wave "starting" rather
+   * than "failed".
+   */
+  onControlWait?: (wait: ControlWait | null) => void;
   /** Passed to the control socket; see ControlSocketOptions (D13). */
   hello?: ControlSocketOptions["hello"];
   onUpdate?: ControlSocketOptions["onUpdate"];
@@ -54,6 +72,12 @@ export interface EngineOptions {
 }
 
 const noop = () => {};
+
+/** Why enrolment is waiting for the control server, and for how long. */
+export interface ControlWait {
+  reason: string;
+  delayMs: number;
+}
 
 /**
  * Whether a running resolver still sits where the netmap says it should.
@@ -867,24 +891,62 @@ export class Tunnel {
   }
 }
 
+/** What enrolment needs of its caller to retry and to be stopped. */
+export type EnrolOptions = Pick<
+  EngineOptions,
+  "signal" | "minBackoffMs" | "maxBackoffMs" | "pollMs" | "onControlWait"
+>;
+
+/**
+ * The retry for one contact with the control server. A device that has
+ * enrolled at this address before knows it to be good, which is what lets a
+ * DNS failure be waited out instead of reported (see retry.ts).
+ */
+function retryFor(state: Profile, log: (message: string) => void, options: EnrolOptions): RetryOptions {
+  return {
+    signal: options.signal,
+    knownAddress: Boolean(state.netmapPublicKey),
+    minBackoffMs: options.minBackoffMs,
+    maxBackoffMs: options.maxBackoffMs,
+    onWait: (wait) => {
+      const reason = wait.reason.replace(/\s+/g, " ").trim();
+      log(`control server not reachable (${reason}) — retrying in ${wait.delayMs}ms`);
+      options.onControlWait?.({ reason, delayMs: wait.delayMs });
+    },
+    onRecovered: () => {
+      log("control server reachable again");
+      options.onControlWait?.(null);
+    },
+  };
+}
+
 async function waitForApproval(
+  state: Profile,
   client: ControlClient,
   registration: { authUrl: string; pollSecret: string },
   log: (message: string) => void,
-  onAuthUrl?: (url: string) => void,
+  onAuthUrl: ((url: string) => void) | undefined,
+  options: EnrolOptions,
 ) {
   onAuthUrl?.(registration.authUrl);
   log(`\nOpen this link to connect this device:\n\n    ${registration.authUrl}\n`);
   log("Waiting for the browser…");
   const deadline = Date.now() + 15 * 60 * 1000;
+  const timedOut = new Error("timed out waiting for approval");
   while (Date.now() < deadline) {
-    const poll = await client.poll(registration.pollSecret);
+    // A poll that cannot reach the server is waited out, but the 15 minutes
+    // keep running: the request expires on the server whether or not we could
+    // ask after it.
+    const poll = await retrying((signal) => client.poll(registration.pollSecret, signal), {
+      ...retryFor(state, log, options),
+      deadline: { at: deadline, error: timedOut },
+    });
     if (poll.status === "authorized") return poll;
     if (poll.status === "expired") throw new Error("enrolment request expired — run `wave up` again");
     // The browser approval is one click now, so poll often enough to feel instant.
-    await Bun.sleep(1000);
+    await sleep(options.pollMs ?? 1000, options.signal);
   }
-  throw new Error("timed out waiting for approval");
+  throw timedOut;
 }
 
 /** Registers if needed, waits for approval, and returns the first netmap. */
@@ -894,13 +956,19 @@ export async function enrol(
   log: (message: string) => void,
   onAuthUrl?: (url: string) => void,
   authKey?: string,
+  options: EnrolOptions = {},
 ): Promise<{ state: Profile; netmap: Netmap }> {
   const client = new ControlClient(state);
-  const registration = await client.register(authKey);
+  // Until the server answers there is nothing to enrol with, so this waits for
+  // as long as it takes -- or until `options.signal` says stop.
+  const registration = await retrying(
+    (signal) => client.register(authKey, signal),
+    retryFor(state, log, options),
+  );
   const authorized =
     registration.status === "authorized"
       ? registration
-      : await waitForApproval(client, registration, log, onAuthUrl);
+      : await waitForApproval(state, client, registration, log, onAuthUrl, options);
 
   if (state.netmapPublicKey && state.netmapPublicKey !== authorized.netmapPublicKey) {
     throw new Error(
@@ -939,7 +1007,14 @@ export async function up(options: EngineOptions): Promise<Tunnel> {
     // would bring up the first one's keys.
     key: options.profileKey,
   });
-  const { state, netmap } = await enrol(initial, options.statePath, log, options.onAuthUrl, options.authKey);
+  const { state, netmap } = await enrol(
+    initial,
+    options.statePath,
+    log,
+    options.onAuthUrl,
+    options.authKey,
+    options,
+  );
 
   // Everything below leaves something on the machine, so a failure below takes
   // it off again. A half-built tunnel is worse than none: wireguard-go keeps

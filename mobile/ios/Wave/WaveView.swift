@@ -242,6 +242,10 @@ struct WaveView: View {
                     Text("Connecting to \(address)…")
                 }
                 .accessibilityIdentifier("login.connecting")
+                // Cancellable here too: the core keeps trying a control server
+                // that is not there yet for as long as it takes.
+                Button("Cancel", role: .destructive) { model.cancelLogin() }
+                    .accessibilityIdentifier("login.cancel")
             }
         case .waitingForApproval(let address):
             // An address, or a wave's key ("https://…#a1b2") when one is

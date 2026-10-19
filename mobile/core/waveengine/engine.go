@@ -101,6 +101,10 @@ type Options struct {
 	// connection ("ios", "0.8.0"), which is what it shows next to the device.
 	Platform string
 	Version  string
+	// The bounds of the wait while the control server cannot be reached;
+	// zero takes the socket's (500 ms, 30 s). Only tests set them.
+	RetryMin time.Duration
+	RetryMax time.Duration
 }
 
 type wave struct {
@@ -127,6 +131,10 @@ type wave struct {
 	// When the netmap in use was issued, so an older one -- replayed, or a
 	// REST answer overtaken by the socket -- is not applied over it.
 	issued time.Time
+	// Ends what this wave still has in flight against the control server --
+	// the registration refresh, which retries until it gets through. Called
+	// when the wave goes down; set under the engine's lock.
+	cancel context.CancelFunc
 }
 
 // key is how a wave is filed everywhere in the core.
@@ -428,7 +436,13 @@ func (e *Engine) enrol(ctx context.Context, profile *Profile, authKey string) er
 	identity := identityOf(*profile, e.hostname())
 	client := wavecontrol.NewClient(identity, e.http)
 
-	registration, err := client.Register(ctx, authKey)
+	// Until the server answers there is nothing to enrol with, so this waits
+	// for as long as it takes -- or until ctx ends, which is how the person
+	// gives up (Core.CancelLogin).
+	retry := e.retryFor(*profile)
+	registration, err := wavecontrol.Retrying(ctx, retry, func(ctx context.Context) (waveproto.RegisterResponse, error) {
+		return client.Register(ctx, authKey)
+	})
 	if err != nil {
 		return err
 	}
@@ -438,7 +452,7 @@ func (e *Engine) enrol(ctx context.Context, profile *Profile, authKey string) er
 		if e.host != nil {
 			e.host.OpenAuthURL(registration.AuthURL)
 		}
-		poll, err := client.WaitForApproval(ctx, registration.PollSecret, 15*time.Minute)
+		poll, err := client.WaitForApproval(ctx, registration.PollSecret, 15*time.Minute, retry)
 		if err != nil {
 			return err
 		}
@@ -465,6 +479,27 @@ func (e *Engine) enrol(ctx context.Context, profile *Profile, authKey string) er
 	e.mu.Unlock()
 	e.saveState()
 	return nil
+}
+
+// retryFor is how a contact with this wave's control server is retried: the
+// rule, the bounds and the log line, the same for every wave and every call.
+//
+// An enrolment that was approved before knows its address to be good, which is
+// what lets a name that does not resolve be waited out instead of reported (see
+// wavecontrol.Retriable).
+func (e *Engine) retryFor(profile Profile) wavecontrol.RetryOptions {
+	label := labelOf(profile)
+	return wavecontrol.RetryOptions{
+		KnownAddress: profile.NetmapPublicKey != "",
+		MinBackoff:   e.options.RetryMin,
+		MaxBackoff:   e.options.RetryMax,
+		OnWait: func(err error, delay time.Duration) {
+			e.log("[%s] control server not reachable (%v) — retrying in %dms", label, err, delay.Milliseconds())
+		},
+		OnRecovered: func() {
+			e.log("[%s] control server reachable again", label)
+		},
+	}
 }
 
 // bringUp starts one wave: its control socket, its WireGuard device, and its
@@ -557,7 +592,11 @@ func (e *Engine) bringUp(profile Profile) error {
 			e.log("could not publish candidates: %v", err)
 		}
 	}()
-	go e.refreshRegistration(entry)
+	refreshContext, cancel := context.WithCancel(context.Background())
+	e.mu.Lock()
+	entry.cancel = cancel
+	e.mu.Unlock()
+	go e.refreshRegistration(refreshContext, entry)
 	return nil
 }
 
@@ -568,12 +607,21 @@ func (e *Engine) bringUp(profile Profile) error {
 // answer other than "authorized" means the server no longer knows this
 // device: it was removed while the phone was away, and the socket alone would
 // never say so.
-func (e *Engine) refreshRegistration(entry *wave) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	registration, err := entry.client.Register(ctx, "")
+//
+// Tried again for as long as the server cannot be reached -- a phone that
+// starts before its network does would otherwise give up once and never ask
+// again, and the expiry would run out unnoticed. ctx ends with the wave.
+func (e *Engine) refreshRegistration(ctx context.Context, entry *wave) {
+	registration, err := wavecontrol.Retrying(ctx, e.retryFor(entry.profile), func(ctx context.Context) (waveproto.RegisterResponse, error) {
+		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		return entry.client.Register(bounded, "")
+	})
 	if err != nil {
-		e.log("[%s] could not refresh the registration: %v", WaveLabel(entry.key()), err)
+		// The wave went down while this was waiting: nothing to report.
+		if ctx.Err() == nil {
+			e.log("[%s] could not refresh the registration: %v", WaveLabel(entry.key()), err)
+		}
 		return
 	}
 	if registration.Status != "authorized" {
@@ -687,6 +735,12 @@ func (e *Engine) Logout(ctx context.Context, controlURL string) error {
 // teardown stops one running wave: its sockets, its WireGuard device and its
 // place in the multiplexer. The enrolment itself is the caller's business.
 func (e *Engine) teardown(controlURL string, entry *wave) {
+	e.mu.Lock()
+	cancel := entry.cancel
+	e.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if entry.socket != nil {
 		entry.socket.Close()
 	}
@@ -1532,6 +1586,12 @@ func (e *Engine) Stop() {
 
 	close(e.stop)
 	for _, entry := range entries {
+		e.mu.Lock()
+		cancel := entry.cancel
+		e.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
 		if entry.socket != nil {
 			entry.socket.Close()
 		}

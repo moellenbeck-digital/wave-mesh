@@ -102,6 +102,12 @@ interface Runtime {
   state: TunnelState;
   authUrl: string | null;
   message: string | null;
+  /** `message` as a code, while the control server cannot be reached. */
+  notice: Notice | null;
+  /** Ends the attempt above -- the wait for the control server included. */
+  cancel?: AbortController;
+  /** Woken when the attempt starts waiting for the control server. */
+  onWaiting: Array<() => void>;
   events: string[];
 }
 
@@ -154,6 +160,8 @@ export class Daemon {
           state: "stopped",
           authUrl: null,
           message: null,
+          notice: null,
+          onWaiting: [],
           events: [],
         });
       }
@@ -178,6 +186,7 @@ export class Daemon {
           state: runtime.state,
           authUrl: runtime.authUrl,
           message: runtime.message,
+          notice: runtime.notice,
           events: [...runtime.events],
         }),
       );
@@ -227,7 +236,21 @@ export class Daemon {
     }
     // Sequentially: two enrolments starting at once would race for the same
     // interface number, and the second would want a link the first just took.
-    for (const profile of wanted) await this.upOne(profile);
+    // But not behind a control server that is down: that wait has no end, and
+    // the waves at servers that are up must not stand in line for it.
+    for (const profile of wanted) {
+      const runtime = this.runtimes.get(profileKey(profile));
+      const attempt = this.upOne(profile);
+      await Promise.race([
+        attempt,
+        new Promise<void>((resolve) => {
+          // Already waiting is as good as becoming so: an attempt that was
+          // under way before this call has long since said it.
+          if (runtime?.notice) resolve();
+          else runtime?.onWaiting.push(resolve);
+        }),
+      ]);
+    }
     return null;
   }
 
@@ -275,12 +298,26 @@ export class Daemon {
   private async startOne(runtime: Runtime, profile: Profile, authKey?: string): Promise<void> {
     runtime.state = "starting";
     runtime.message = null;
+    runtime.notice = null;
+    const cancel = new AbortController();
+    runtime.cancel = cancel;
     void this.publish();
 
     try {
       const tunnel = await bringUp({
         ...this.options,
         authKey,
+        signal: cancel.signal,
+        // Still "starting", not "failed": the server being down is not this
+        // wave's fault and does not end the attempt. The sentence in `message`
+        // stays English for an older client; see notice.ts.
+        onControlWait: (wait) => {
+          const waiting = wait && notice("waiting-for-control", { reason: wait.reason });
+          runtime.notice = waiting;
+          runtime.message = waiting && englishText(waiting);
+          if (waiting) for (const wake of runtime.onWaiting.splice(0)) wake();
+          void this.publish();
+        },
         controlUrl: profile.controlUrl,
         profileKey: profileKey(profile),
         interfaceName: profile.interfaceName,
@@ -311,13 +348,29 @@ export class Daemon {
         throw new Error(describeConflict(profile.label ?? profile.controlUrl, conflict));
       }
 
-      runtime.tunnel = tunnel;
-      runtime.authUrl = null;
-      runtime.state = "up";
+      // `down` came while the tunnel was being built: it has already said
+      // "stopped", so the tunnel must not appear behind its back.
+      if (cancel.signal.aborted) await this.stopTunnel(tunnel);
+      else {
+        runtime.tunnel = tunnel;
+        runtime.authUrl = null;
+        runtime.state = "up";
+      }
     } catch (error) {
-      runtime.state = "failed";
-      runtime.message = error instanceof Error ? error.message : String(error);
-      this.log(`${profile.label ?? profileKey(profile)} could not come up: ${runtime.message}`);
+      // Stopped on purpose by `down`, which has set the state itself.
+      if (!cancel.signal.aborted) {
+        runtime.state = "failed";
+        runtime.message = error instanceof Error ? error.message : String(error);
+        this.log(`${profile.label ?? profileKey(profile)} could not come up: ${runtime.message}`);
+      }
+    } finally {
+      // Only the attempt that is still current: `down` may have been followed
+      // by an `up` that has its own controller and its own waiting line.
+      if (runtime.cancel === cancel) {
+        runtime.cancel = undefined;
+        runtime.notice = null;
+        runtime.onWaiting = [];
+      }
     }
     void this.publish();
   }
@@ -344,6 +397,13 @@ export class Daemon {
       runtime.tunnel = undefined;
       runtime.state = "stopped";
       runtime.authUrl = null;
+      // An enrolment still waiting -- for a human or for the control server --
+      // ends here; left running it would retry forever with nobody to see it.
+      if (runtime.cancel) {
+        runtime.cancel.abort();
+        runtime.message = null;
+        runtime.notice = null;
+      }
       if (tunnel) await this.stopTunnel(tunnel);
     }
     await this.publish();
@@ -659,6 +719,8 @@ export class Daemon {
     if (this.renewals) clearInterval(this.renewals);
     this.watchers.clear();
     this.server?.close();
+    // Before the tunnels: a retry timer left behind would keep the process alive.
+    for (const runtime of this.runtimes.values()) runtime.cancel?.abort();
     for (const runtime of this.runtimes.values()) await runtime.tunnel?.stop();
   }
 }

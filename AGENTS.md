@@ -2154,6 +2154,28 @@ Schlüssel `disclosureAccepted.v1` eine neue Nummer.
   Verlierer überschrieb mit seinem „timed out waiting for approval" den
   Zustand des Gewinners: ein Wave, der als `failed` gemeldet wird, während sein
   Interface Verkehr trägt. Am 15.09.2026 genau so beobachtet.
+- **Der erste Connect wartet, er bricht nicht ab.** Registrierung und
+  Approval-Polling (`enrol()` in `engine.ts`, `enrol()` und
+  `refreshRegistration()` im Go-Kern) wiederholen bei einem Verbindungsfehler
+  mit Backoff 500 ms bis 30 s, bis es klappt oder jemand abbricht. **Eine
+  Regel, zweimal geschrieben** (`apps/client/src/retry.ts`,
+  `mobile/core/wavecontrol/retry.go`): wiederholt wird bei Verbindung
+  verweigert/zurückgesetzt, Timeout, Netz oder Host nicht erreichbar, HTTP
+  502/503/504. Sofort gemeldet wird alles andere — andere HTTP-Antworten,
+  `expired`, ein anderer Netmap-Schlüssel als gepinnt, eine ungültige Signatur
+  und jeder x509-Fehler: das sind falsche Adresse, Ablehnung oder
+  Sicherheitsfehler, und ein Retry versteckte sie hinter einem Warten ohne
+  Ende. Ein Namensfehler (`no such host`) wird nur bei einer Enrolment
+  wiederholt, die dort schon einmal freigegeben war (`netmapPublicKey` gesetzt):
+  bei einem Login, den ein Mensch eben getippt hat, ist es meist ein Tippfehler.
+  Wer die Regel ändert, ändert beide Seiten.
+  Abgebrochen wird über ein `AbortSignal` (Daemon: `down`/`stop`, CLI: Ctrl-C)
+  bzw. den Context (`Core.CancelLogin`) — ein Retry ohne Abbruch hielte einen
+  Timer am Leben, den niemand mehr sieht. Die 15 Minuten des Approvals laufen
+  dabei weiter; ein Verbindungsfehler setzt sie nicht zurück. Im Daemon bleibt
+  der Zustand `starting` (nicht `failed`), `message` trägt den englischen
+  Satz, `notice` (`waiting-for-control`) denselben als Code; `up()` wartet
+  nicht hinter einem Server, der nicht antwortet, auf den nächsten Wave.
 - **Der Startversatz muss unter der RTT zum Peer bleiben.** Deshalb steht der
   Punch-Aufruf in `Tunnel.apply()` vor der WireGuard- und Routen-Arbeit.
 - **Keine langsame Arbeit im Nachrichtenpfad der Control-WebSocket.** STUN dort

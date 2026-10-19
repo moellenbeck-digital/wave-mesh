@@ -9,17 +9,28 @@ import {
   ServiceSyncResponse,
   SignedNetmap,
 } from "@wave/proto";
+import { ATTEMPT_TIMEOUT_MS, HttpError } from "./retry.ts";
 import type { NodeState } from "./state.ts";
 
 export class ControlClient {
   constructor(private readonly state: NodeState) {}
 
-  private async request(method: string, path: string, body?: unknown, timeoutMs?: number): Promise<unknown> {
+  private async request(
+    method: string,
+    path: string,
+    body?: unknown,
+    timeoutMs?: number,
+    cancel?: AbortSignal,
+  ): Promise<unknown> {
     const payload = body === undefined ? "" : JSON.stringify(body);
+    const signals = [
+      ...(timeoutMs === undefined ? [] : [AbortSignal.timeout(timeoutMs)]),
+      ...(cancel ? [cancel] : []),
+    ];
     const res = await fetch(new URL(path, this.state.controlUrl), {
       method,
       body: method === "GET" ? undefined : payload,
-      signal: timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
+      signal: signals.length === 0 ? undefined : AbortSignal.any(signals),
       headers: {
         "content-type": "application/json",
         authorization: buildAuthorizationHeader({
@@ -33,7 +44,8 @@ export class ControlClient {
     });
 
     const text = await res.text();
-    if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status} ${text.slice(0, 200)}`);
+    if (!res.ok)
+      throw new HttpError(res.status, `${method} ${path} failed: ${res.status} ${text.slice(0, 200)}`);
     return text ? JSON.parse(text) : {};
   }
 
@@ -41,22 +53,33 @@ export class ControlClient {
    * Registers this device. With a pre-auth key it is enrolled straight away --
    * the key is an approval given in advance, for machines that have no browser
    * and nobody to sit at one (D11).
+   *
+   * Bounded per attempt, and `cancel` ends one in flight: enrolment retries
+   * this (retry.ts) and has to be able to stop.
    */
-  async register(authKey?: string) {
+  async register(authKey?: string, cancel?: AbortSignal) {
     return RegisterResponse.parse(
-      await this.request("POST", "/v1/machine/register", {
-        machineKey: this.state.machineKey.publicKey,
-        nodeKey: this.state.nodeKey.publicKey,
-        discoKey: this.state.discoKey.publicKey,
-        hostname: hostname(),
-        os: currentOs(),
-        ...(authKey ? { authKey } : {}),
-      }),
+      await this.request(
+        "POST",
+        "/v1/machine/register",
+        {
+          machineKey: this.state.machineKey.publicKey,
+          nodeKey: this.state.nodeKey.publicKey,
+          discoKey: this.state.discoKey.publicKey,
+          hostname: hostname(),
+          os: currentOs(),
+          ...(authKey ? { authKey } : {}),
+        },
+        ATTEMPT_TIMEOUT_MS,
+        cancel,
+      ),
     );
   }
 
-  async poll(pollSecret: string) {
-    return PollResponse.parse(await this.request("POST", "/v1/machine/poll", { pollSecret }));
+  async poll(pollSecret: string, cancel?: AbortSignal) {
+    return PollResponse.parse(
+      await this.request("POST", "/v1/machine/poll", { pollSecret }, ATTEMPT_TIMEOUT_MS, cancel),
+    );
   }
 
   async netmap(): Promise<SignedNetmap> {
