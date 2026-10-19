@@ -232,6 +232,11 @@ eingehenden Port, und der interne Ingress-Controller nur eine ClusterIP.
 **Im Cluster gefahren ist das noch nicht** — die Regeln und der Operator sind
 gegen Fakes getestet, nicht gegen echtes Kubernetes.
 
+## Entwicklung / Dev-Team
+
+Tickets für wave-mesh laufen über das GitHub-Projekt 7. Das Testsystem ist der
+Namespace `wave-mesh-test`; dort wird geprüft, bevor eine Änderung ausgerollt wird.
+
 ## Lizenz
 
 © 2026 Robin Lenz. Lizenziert unter der [Elastic License 2.0](LICENSE) (ELv2).
