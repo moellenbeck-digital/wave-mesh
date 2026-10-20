@@ -6,6 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+*Noch nichts seit v0.11.0-develop.1.*
+
+---
+
+## 🔬 Development v0.11.0-develop.1 (20.10.2026)
+
 ### Fehlerbehebungen
 
 - **Beim ersten Verbinden wartet der Client auf den Control-Server, statt
