@@ -211,6 +211,23 @@ func TestAMissingNameIsRetriedOnlyForAnAddressKnownToBeGood(t *testing.T) {
 	}
 }
 
+// The desktop's `getaddrinfo ETIMEOUT`: the resolver did not answer in time.
+// In Go that is a DNSError that is a timeout, for a known address or not.
+func TestAResolverThatTimesOutIsRetriedForEveryAddress(t *testing.T) {
+	for _, lookup := range []*net.DNSError{
+		{Err: "i/o timeout", Name: "control.example", IsTimeout: true},
+		{Err: "server misbehaving", Name: "control.example", IsTemporary: true},
+		{Err: "connection refused", Name: "control.example"},
+	} {
+		err := &url.Error{Op: "Post", URL: "https://control.example", Err: &net.OpError{Op: "dial", Err: lookup}}
+		for _, known := range []bool{false, true} {
+			if !wavecontrol.Retriable(err, known) {
+				t.Errorf("%v was not retried (known address: %v)", lookup, known)
+			}
+		}
+	}
+}
+
 func TestEveryConnectionProblemIsRetriable(t *testing.T) {
 	for _, err := range []error{
 		&net.OpError{Op: "dial", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)},

@@ -60,6 +60,31 @@ describe("which failures are waited out", () => {
     expect(wait(missing(), true)).toBe(true);
   });
 
+  test("a resolver that times out or fails is retried, whether or not the address is known", () => {
+    // The Linux report: c-ares says ETIMEOUT (one T, one O), not ETIMEDOUT.
+    const timedOut = bunError("ETIMEOUT", "getaddrinfo ETIMEOUT control.example");
+    expect(wait(timedOut, false)).toBe(true);
+    expect(wait(timedOut, true)).toBe(true);
+    for (const code of ["EAI_AGAIN", "ESERVFAIL", "EREFUSED", "ECONNREFUSED", "EBADRESP", "ECANCELLED"]) {
+      expect(wait(bunError(code, `getaddrinfo ${code} control.example`), false)).toBe(true);
+      expect(wait(bunError(code, `getaddrinfo ${code} control.example`), true)).toBe(true);
+    }
+  });
+
+  test("a resolver failure is recognised by its text when the code is missing", () => {
+    for (const code of ["ETIMEOUT", "EAI_AGAIN", "ESERVFAIL", "EREFUSED", "EBADRESP", "ECANCELLED"]) {
+      expect(wait(new Error(`getaddrinfo ${code} control.example`), false)).toBe(true);
+    }
+  });
+
+  test("a missing name stays the only DNS answer that depends on the address", () => {
+    for (const code of ["ENOTFOUND", "EAI_NONAME", "EAI_NODATA"]) {
+      const error = bunError(code, `getaddrinfo ${code} control.example`);
+      expect(wait(error, false)).toBe(false);
+      expect(wait(error, true)).toBe(true);
+    }
+  });
+
   test("a certificate error is never retried, known address or not", () => {
     expect(wait(untrusted(), false)).toBe(false);
     expect(wait(untrusted(), true)).toBe(false);
@@ -106,6 +131,16 @@ describe("retrying", () => {
   test("the bounds are the control socket's: 500 ms to 30 s", () => {
     expect(MIN_BACKOFF_MS).toBe(500);
     expect(MAX_BACKOFF_MS).toBe(30_000);
+  });
+
+  test("a DNS timeout is waited out for an address never enrolled at", async () => {
+    let tries = 0;
+    const result = await retrying(async () => {
+      if (++tries < 3) throw bunError("ETIMEOUT", "getaddrinfo ETIMEOUT control.example");
+      return "in";
+    }, fast);
+    expect(result).toBe("in");
+    expect(tries).toBe(3);
   });
 
   test("a failure that is not a connection problem ends it at the first try", async () => {

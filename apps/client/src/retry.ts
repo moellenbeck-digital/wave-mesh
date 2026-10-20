@@ -6,7 +6,7 @@
  * connection while registering or polling for approval threw all the way up,
  * and a daemon that starts before the network does ended up "failed" for good.
  *
- * The same rule lives in the Go core (mobile/core/waveengine/retry.go); a
+ * The same rule lives in the Go core (mobile/core/wavecontrol/retry.go); a
  * change to which errors count as "the server is not there yet" is a change
  * to both.
  */
@@ -55,12 +55,33 @@ const CONNECTION_CODES = new Set([
   "UND_ERR_SOCKET",
 ]);
 
-/** A name that does not resolve: a typo, or a resolver that is not up yet. */
-const DNS_CODES = new Set(["ENOTFOUND", "EAI_AGAIN", "EAI_NODATA", "EAI_NONAME"]);
+/**
+ * A name the resolver says does not exist: a typo, or -- for an address that
+ * worked before -- a network that is not up yet. The only DNS answer that
+ * depends on `knownAddress`.
+ */
+const NAME_NOT_FOUND_CODES = new Set(["ENOTFOUND", "EAI_NODATA", "EAI_NONAME"]);
+
+/**
+ * The resolver itself did not answer: c-ares spells a timeout ETIMEOUT (not
+ * ETIMEDOUT), and the rest are a resolver that refuses, fails or gives up.
+ * That is the network and not the address, so it is waited out whether or not
+ * this device has enrolled there before.
+ */
+const RESOLVER_CODES = new Set([
+  "ETIMEOUT",
+  "EAI_AGAIN",
+  "ESERVFAIL",
+  "EREFUSED",
+  "ECONNREFUSED",
+  "EBADRESP",
+  "ECANCELLED",
+]);
 
 const CONNECTION_TEXT =
   /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|connection refused|connection reset|socket connection was closed|Unable to connect/i;
-const DNS_TEXT = /ENOTFOUND|EAI_AGAIN|no such host/i;
+const NAME_NOT_FOUND_TEXT = /ENOTFOUND|EAI_NODATA|EAI_NONAME|no such host/i;
+const RESOLVER_TEXT = /getaddrinfo (ETIMEOUT|EAI_AGAIN|ESERVFAIL|EREFUSED|ECONNREFUSED|EBADRESP|ECANCELLED)/i;
 const CERTIFICATE_TEXT = /certificate|x509/i;
 const CERTIFICATE_CODE = /CERT|TLS|SSL|SELF_SIGNED|VERIFY|ALTNAME/i;
 
@@ -70,15 +91,18 @@ export type Verdict = { retry: true; reason: string } | { retry: false };
  * Whether an error from reaching the control server is worth another try.
  *
  * Retried: connection refused or reset, timeout, network or host unreachable,
- * HTTP 502/503/504. Reported at once: every other HTTP answer (a wrong
+ * a resolver that times out or fails (`getaddrinfo ETIMEOUT`, EAI_AGAIN,
+ * ESERVFAIL, ...), HTTP 502/503/504. Reported at once: every other HTTP answer (a wrong
  * address, a refusal) and everything that is not a connection problem at all
  * (an expired request, a netmap that does not verify) -- retrying those would
  * hide the real reason behind a wait that never ends.
  *
  * `knownAddress` is whether this device has enrolled at that address before.
- * A DNS failure then is the network not being up yet, and is retried; for an
- * address a person has just typed it is most likely a typo, and is reported.
- * A certificate error is reported either way: waiting does not fix it.
+ * A name that does not exist (ENOTFOUND, EAI_NONAME, EAI_NODATA) then is the
+ * network not being up yet, and is retried; for an address a person has just
+ * typed it is most likely a typo, and is reported. A resolver that does not
+ * answer says nothing about the address and is retried either way. A
+ * certificate error is reported either way: waiting does not fix it.
  */
 export function classify(error: unknown, knownAddress: boolean): Verdict {
   if (error instanceof HttpError) {
@@ -92,8 +116,11 @@ export function classify(error: unknown, knownAddress: boolean): Verdict {
   // First, because Bun reports an untrusted certificate with a code that
   // looks like nothing else and a message that only says "certificate".
   if (CERTIFICATE_CODE.test(code) || CERTIFICATE_TEXT.test(error.message)) return { retry: false };
-  if (DNS_CODES.has(code) || DNS_TEXT.test(error.message)) {
+  if (NAME_NOT_FOUND_CODES.has(code) || NAME_NOT_FOUND_TEXT.test(error.message)) {
     return knownAddress ? { retry: true, reason: error.message } : { retry: false };
+  }
+  if (RESOLVER_CODES.has(code) || RESOLVER_TEXT.test(error.message)) {
+    return { retry: true, reason: error.message };
   }
   if (CONNECTION_CODES.has(code) || CONNECTION_TEXT.test(error.message)) {
     return { retry: true, reason: error.message };

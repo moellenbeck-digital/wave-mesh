@@ -6,7 +6,17 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.11.0-develop.1.*
+### Fehlerbehebungen
+
+- **Ein DNS-Timeout beim Verbinden bricht den Client nicht mehr ab:** Meldet
+  das Betriebssystem beim Auflösen des Servernamens `getaddrinfo ETIMEOUT`
+  (oder antwortet der Namensserver nicht, lehnt ab oder fällt aus), wartet der
+  Client jetzt mit wachsenden Pausen und versucht es erneut, bis die Verbindung
+  steht. Das gilt auch für ein Gerät, das sich noch nie angemeldet hat, und für
+  den Linux-Dienst beim Start, der auf „wartet auf den Control-Server“ bleibt,
+  statt „fehlgeschlagen“ zu zeigen. Ein unbekannter Servername bei einer eben
+  eingegebenen Adresse und Zertifikatsfehler werden weiter sofort gemeldet. Die
+  iOS- und die Android-App verhalten sich bei einem DNS-Timeout genauso.
 
 ---
 
