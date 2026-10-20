@@ -25,15 +25,17 @@ const (
 // errors count as "the server is not there yet" is a change to both.
 //
 // Retried: connection refused or reset, timeout, network or host unreachable,
-// HTTP 502, 503 and 504. Reported at once: every other answer (a wrong
+// a resolver that times out or fails (the desktop's `getaddrinfo ETIMEOUT`,
+// EAI_AGAIN, ESERVFAIL, ...), HTTP 502, 503 and 504. Reported at once: every other answer (a wrong
 // address, a refusal) and everything that is not a connection problem at all
 // -- retrying those would hide the real reason behind a wait that never ends.
 //
 // knownAddress is whether this device has enrolled at that address before. A
 // name that does not resolve is then the network not being up yet, and is
 // retried; for an address a person has just typed it is most likely a typo,
-// and is reported. A certificate error is reported either way: waiting does
-// not fix it.
+// and is reported. A resolver that does not answer says nothing about the
+// address and is retried either way. A certificate error is reported either
+// way: waiting does not fix it.
 func Retriable(err error, knownAddress bool) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return false
@@ -59,8 +61,9 @@ func Retriable(err error, knownAddress bool) bool {
 
 	var lookup *net.DNSError
 	if errors.As(err, &lookup) {
-		// "No such host" is the name; anything else is the resolver or the
-		// network under it, which is not a property of the address.
+		// "No such host" is the name; anything else (a timeout, SERVFAIL, a
+		// refusing resolver) is the resolver or the network under it, which is
+		// not a property of the address.
 		if lookup.IsNotFound {
 			return knownAddress
 		}

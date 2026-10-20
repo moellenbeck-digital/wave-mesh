@@ -188,6 +188,34 @@ describe("a name that does not resolve", () => {
   });
 });
 
+describe("a resolver that times out", () => {
+  // What a Linux client without a working resolver gets: c-ares says
+  // `getaddrinfo ETIMEOUT`, which is the network, not the address.
+  test("is waited out even for a login never enrolled at, and then gets through", async () => {
+    const realFetch = globalThis.fetch;
+    cleanup.push(() => {
+      globalThis.fetch = realFetch;
+    });
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      if (++calls <= 3) {
+        throw Object.assign(new TypeError("getaddrinfo ETIMEOUT control.example"), { code: "ETIMEOUT" });
+      }
+      return Response.json(authorized());
+    }) as unknown as typeof fetch;
+
+    const { profile, statePath } = await profileFor("https://control.example", false);
+    const lines: string[] = [];
+
+    const result = await enrol(profile, statePath, (line) => lines.push(line), undefined, undefined, fast);
+
+    expect(result.state.nodeId).toBe("n_1");
+    expect(calls).toBe(4);
+    expect(lines.filter((line) => line.startsWith("control server not reachable")).length).toBe(3);
+    expect(lines).toContain("control server reachable again");
+  });
+});
+
 describe("stopping", () => {
   test("the signal ends the wait for a server that never comes, without a timer left behind", async () => {
     const server = lateServer(() => Response.json(authorized()));
