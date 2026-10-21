@@ -21,10 +21,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["control.robin-lenz.de"]
+    - hosts: ["control.example.com"]
       secretName: wave-control-tls
   rules:
-    - host: control.robin-lenz.de
+    - host: control.example.com
       http:
         paths:
           # Ein Pfad, keine Aufteilung: /v1/control ist ein WebSocket, und den
@@ -52,10 +52,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["relay.robin-lenz.de"]
+    - hosts: ["relay.example.com"]
       secretName: wave-relay-tls
   rules:
-    - host: relay.robin-lenz.de
+    - host: relay.example.com
       http:
         paths:
           - path: /relay

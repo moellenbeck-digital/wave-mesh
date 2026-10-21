@@ -18,8 +18,8 @@ import {
  * device, against the keys it was built with. This server never signs
  * anything, and it can only pass on what is genuine.
  *
- * Why the releases come through here at all: the repository is private, and a
- * token belongs on one server, not on every device that can be lost or sold;
+ * Why the releases come through here at all: this feed currently uses a token,
+ * and a token belongs on one server, not on every device that can be lost or sold;
  * every device reaches its control server anyway, which github.com behind a
  * corporate proxy it may not; and the control socket is already open, so the
  * server can say "there is a new one" instead of every device polling GitHub.

@@ -68,7 +68,7 @@ const EnvSchema = z.object({
    * device opt into insiders; `insiders` alone puts every device there.
    */
   WAVE_UPDATE_CHANNELS: z.string().default("stable"),
-  /** Where the releases come from. The repository is private, hence the token. */
+  /** Where the releases come from. The current release feed requires a token. */
   WAVE_UPDATE_REPO: z.string().default("moellenbeck-digital/wave-mesh"),
   /**
    * A fine-grained token for that one repository, Contents: read and nothing

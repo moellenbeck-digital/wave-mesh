@@ -99,7 +99,13 @@ export function updateBlocker(options: {
     return notice("update-package-managed", { path });
   }
   const installed = options.installedPath ?? defaultBinaryPath(options.os);
-  if (path !== installed) {
+  let installedRealPath = installed;
+  try {
+    installedRealPath = realpathSync(installed);
+  } catch {
+    // The default installation may not exist yet; the comparison still blocks updates.
+  }
+  if (path !== installedRealPath) {
     return notice("update-not-installed-copy", { path, installed });
   }
   return null;

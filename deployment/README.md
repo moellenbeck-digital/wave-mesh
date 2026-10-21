@@ -22,11 +22,14 @@ deployment/
 Die Basis läuft absichtlich nicht für sich: sie hat kein Secret und keinen Tag
 am Image. Genommen wird immer ein Overlay — und ein eigenes zu kopieren ist der
 vorgesehene Weg, `dev` und `prod` sind Beispiele.
+Die Adressen unter `example.com` und `192.0.2.10` im Beispiel-Overlay sind
+Platzhalter. Vor dem Einsatz Domains, STUN-IP, Relay-Knoten, ACME-Kontakt,
+Namespace und Image-Tags anpassen.
 
 ## Zugang zur Registry
 
-`wave-mesh` ist ein privates Repository, also sind auch seine Images privat: ohne
-Zugangsdaten zieht das Kubelet anonym und bekommt 401. Jedes Overlay erzeugt
+Die Beispiel-Overlays gehen von privaten Images aus: ohne Zugangsdaten zieht
+das Kubelet anonym und bekommt 401. Jedes Overlay erzeugt
 sich deshalb ein `dockerconfigjson`-Secret namens `ghcr`, und jeder Pod, der ein
 Image von dort zieht, verweist darauf. Die Datei dazu entsteht aus einem
 **klassischen** GitHub-Token mit `read:packages` — ein fein granulares reicht
@@ -85,13 +88,9 @@ den Pod im Overlay heraus — der Block dafür steht auskommentiert in
 Für `prod` sind drei Dinge anzupassen, und sie hängen zusammen: die Namen in
 `ingress.yaml`, `WAVE_BASE_URL` (daraus entstehen Anmeldelinks, OAuth-Redirects
 und `secureCookies`) und die STUN-Adresse in `WAVE_RELAYS`. Letztere ist die
-öffentliche Adresse des LoadBalancers von `wave-relay-stun` und muss eine **IP**
-sein — `Bun.udpSocket().send()` nimmt keine Namen. Sie steht erst fest, wenn der
-Service eine bekommen hat:
-
-```bash
-kubectl -n wave-mesh get svc wave-relay-stun
-```
+öffentliche Adresse des Knotens, an den das Overlay den Relay per `nodeSelector`
+bindet, und muss eine **IP** sein — `Bun.udpSocket().send()` nimmt keine Namen.
+Die Platzhalteradresse `192.0.2.10` darf nicht im eingesetzten Overlay bleiben.
 
 ## Clusterseite
 
@@ -204,12 +203,6 @@ jeweils als Kommentar daneben:
 
 ## Ungeprüft
 
-Die Bäume bauen (`kubectl kustomize`), gefahren wurde noch keiner: hier gibt es
-keinen Cluster. Das ist derselbe Stand wie beim Connector selbst und beim
-Windows-Tray — benannt, nicht verschwiegen.
-
-Ein Ding hängt daran: **die Tags in den `images:`-Einträgen gibt es erst ab dem
-nächsten Release.** Alle vier Images baut der Release-Workflow seit dieser
-Änderung, veröffentlicht sind bisher aber nur `control` und `relay` — bis ein
-Tag durchgelaufen ist, zeigen `web` und `connector` auf etwas, das noch nicht
-in der Registry steht.
+Die Bäume bauen (`kubectl kustomize`), ein Lauf in einem fremden Cluster ist
+damit noch nicht belegt. In den Beispiel-Overlays muss
+`REPLACE_WITH_IMAGE_TAG` durch einen vorhandenen Release-Tag ersetzt werden.

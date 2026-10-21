@@ -5,23 +5,25 @@ Koordinationsserver, verbinden sich direkt per NAT-Hole-Punching und bekommen in
 Let's-Encrypt-Zertifikaten.
 
 **Status: frühe Entwicklung.** Der Architekturplan steht in
-[`docs/PLAN.md`](docs/PLAN.md), erreicht sind M0 (Bootstrap), M1 (Login),
-M2 (Node-Registrierung, Netmap, WireGuard-Konfiguration), M3 (NAT-Traversal
-per Hole Punching), M4 (Relay-Fallback), M5 (Namensauflösung), M6
-(Let's-Encrypt-Zertifikate auf Gerätenamen) und M11 (Dienste aus einem
-Kubernetes-Cluster, im Cluster noch ungefahren).
+[`docs/PLAN.md`](docs/PLAN.md). M0–M6 und M11 sind umgesetzt; M10 (Mobilgeräte)
+wartet noch auf den Lauf auf echter Hardware, M13 (Selbstaktualisierung) auf
+den ersten echten Release. Die Plattform-Backends für Windows sind noch nicht
+auf echter Hardware geprüft.
 
 ## Aufbau
 
 | Pfad | Inhalt |
 |---|---|
-| `apps/control` | Control-Server: OIDC-Login, Node-Registrierung, signierte Netmaps |
+| `apps/control` | Control-Server: Login, Waves, Node-Registrierung, signierte Netmaps |
 | `apps/relay` | STUN-Server und Relay für Verbindungen ohne direkten Pfad |
+| `apps/web` | Browser-Oberfläche für Anmeldung, Waves und Geräte |
+| `apps/client` | `wave` CLI, Daemon und Installation für Linux, macOS und Windows |
+| `apps/tray` | Status und Bedienung über das Tray-Icon |
+| `mobile/` | Go-Kern und dünne Hosts für iOS und Android |
 | `packages/magicsock` | UDP-Multiplexer vor WireGuard: Kandidaten, Probing, Pfadwahl |
 | `packages/disco` | authentifizierte Discovery-Pakete (X25519 + XChaCha20-Poly1305) |
 | `packages/dns` | DNS-Codec und Split-DNS-Resolver für die Namen des Waves |
-| `apps/client` | `wave` CLI: Enrolment, WireGuard-Konfiguration, Routen |
-| `apps/tray` | Tray-Icon (StatusNotifierItem über D-Bus), liest den Daemon |
+| `packages/i18n` | Sprachauswahl für Deutsch und Englisch |
 | `apps/connector` | Cluster-Seite: leitet Dienstadressen an den internen Ingress-Controller |
 | `apps/operator` | liest `Ingress`/`HTTPRoute` der Klasse `wave` und meldet die Namen |
 | `test/e2e` | Integrationstests: Tunnel im LAN, Hole Punching durch zwei NATs, Relay-Fallback bei symmetrischem NAT |
@@ -198,8 +200,9 @@ Der Tunnel lebt dann so lange wie der Prozess — der MagicSock besitzt den
 cd apps/client && bun build --compile --external x11 --target=bun-darwin-arm64 src/cli.ts --outfile ../../dist/wave-macos
 ```
 
-Zur Laufzeit braucht der Client `wireguard-go` im `PATH` oder über
-`WAVE_WIREGUARD_GO`.
+Bei einer Installation aus dem Release-Archiv nimmt `wave install` das
+beigelegte `wireguard-go`. Wer direkt aus dem Quellcode startet, stellt es im
+`PATH` bereit oder setzt `WAVE_WIREGUARD_GO`.
 
 ### Dienste aus einem Kubernetes-Cluster
 
@@ -232,14 +235,19 @@ eingehenden Port, und der interne Ingress-Controller nur eine ClusterIP.
 **Im Cluster gefahren ist das noch nicht** — die Regeln und der Operator sind
 gegen Fakes getestet, nicht gegen echtes Kubernetes.
 
-## Entwicklung / Dev-Team
+## Mitmachen und Probleme melden
 
-Tickets für wave-mesh laufen über das GitHub-Projekt 7. Das Testsystem ist der
-Namespace `wave-mesh-test`; dort wird geprüft, bevor eine Änderung ausgerollt wird.
+Fehler und Funktionswünsche gehören in die [GitHub-Issues](../../issues). Für
+Änderungen am Code stehen Ablauf und Prüfungen in [CONTRIBUTING.md](CONTRIBUTING.md).
+Sicherheitslücken bitte gemäß [SECURITY.md](SECURITY.md) melden, nicht als
+öffentliches Issue. Die Dokumentation liegt im Repository; ein Wiki wird nicht
+verwendet.
 
 ## Lizenz
 
 © 2026 Robin Lenz. Lizenziert unter der [Elastic License 2.0](LICENSE) (ELv2).
 Benutzen, verändern und weitergeben ist erlaubt, auch im eigenen Unternehmen.
 Nicht erlaubt ist, wave-mesh Dritten als gehosteten oder verwalteten Dienst
-anzubieten.
+anzubieten. Der Quellcode ist einsehbar, sobald das Repository veröffentlicht
+wird; ELv2 ist wegen dieser Nutzungseinschränkung **keine OSI-konforme
+Open-Source-Lizenz**.

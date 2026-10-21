@@ -24,14 +24,14 @@ resources:
 
 images:
   - name: ghcr.io/moellenbeck-digital/wave-mesh/connector
-    newTag: "0.9.0-develop.2"
+    newTag: "REPLACE_WITH_IMAGE_TAG"
 
 configMapGenerator:
   - name: wave-connector-config
     namespace: wave
     behavior: merge
     literals:
-      - WAVE_CONTROL_URL=https://control.robin-lenz.de
+      - WAVE_CONTROL_URL=https://control.example.com
       # Dieselbe Adresse wie im Patch unten, und das ist die einzige Stelle,
       # an der sie zweimal steht: der Connector braucht sie als Zahl für seine
       # nftables-Regel, der Service als festen Wert. Sie muss im Service-CIDR
@@ -90,8 +90,8 @@ secretGenerator:
     envs:
       - secret.env
 
-  # Der Zugang zur Registry. `wave-mesh` ist ein privates Repository, also sind
-  # auch seine Images privat. Die Datei daneben entsteht aus einem klassischen
+  # Der Zugang zu privaten Images in der Registry. Die Sichtbarkeit der
+  # Images wird unabhängig von der des Quellcode-Repositories festgelegt. Die Datei daneben entsteht aus einem klassischen
   # GitHub-Token mit `read:packages` -- ein fein granulares reicht für die
   # Container-Registry nicht:
   #

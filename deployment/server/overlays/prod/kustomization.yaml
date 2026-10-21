@@ -10,12 +10,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# wave-net, nicht wave-mesh: unter diesem Namen läuft der Wave dort seit
-# seinem ersten Deployment, mit seiner Datenbank und seinen Zertifikaten. Ein
-# anderer Namespace hier hieße nicht "umziehen", sondern einen zweiten, leeren
-# Stapel daneben bauen. Ein Umzug ist ein eigener Schritt: Postgres sichern und
-# zurückspielen, die Zertifikate neu ausstellen, den alten abbauen.
-namespace: wave-net
+# Beispiel-Namespace. Beim ersten Deploy wählen und danach nicht ohne Migration
+# ändern: Datenbank und Zertifikate hängen am bestehenden Namespace.
+namespace: wave-example
 
 resources:
   - ../../base
@@ -26,17 +23,17 @@ images:
   # und nicht die Nebenwirkung eines Neustarts. Die mitlaufenden Tags (X.Y, X,
   # latest, insiders, develop) gibt es dafür trotzdem -- siehe CLAUDE.md.
   - name: ghcr.io/moellenbeck-digital/wave-mesh/control
-    newTag: "0.7.0-develop.2"
+    newTag: "REPLACE_WITH_IMAGE_TAG"
   - name: ghcr.io/moellenbeck-digital/wave-mesh/web
-    newTag: "0.7.0-develop.2"
+    newTag: "REPLACE_WITH_IMAGE_TAG"
   - name: ghcr.io/moellenbeck-digital/wave-mesh/relay
-    newTag: "0.7.0"
+    newTag: "REPLACE_WITH_IMAGE_TAG"
 
 configMapGenerator:
   - name: wave-control-config
     behavior: merge
     literals:
-      - WAVE_BASE_URL=https://control.robin-lenz.de
+      - WAVE_BASE_URL=https://control.example.com
       # Der eigene Ausschnitt dieses Servers. Läuft ein zweiter Wave-Server
       # daneben, bekommt er einen anderen -- sonst bekäme ein Gerät in beiden
       # dieselben Adressen und verweigerte den zweiten (D5).
@@ -46,9 +43,9 @@ configMapGenerator:
       # öffentliche Adresse des Knotens, auf den der Relay unten festgenagelt
       # ist (nodeSelector unten); wandert der Pod, wandert sie mit.
       # Die WebSocket-Seite geht dagegen ganz normal über den Ingress.
-      - WAVE_RELAYS=[{"id":"hel1","region":"hel","url":"wss://relay.robin-lenz.de/relay","stun":{"ip":"65.108.214.173","port":3478}}]
+      - WAVE_RELAYS=[{"id":"relay-1","region":"example","url":"wss://relay.example.com/relay","stun":{"ip":"192.0.2.10","port":3478}}]
       # Wohin die CA ihre Ablaufwarnungen schickt. Ohne Zertifikate egal.
-      - WAVE_ACME_CONTACT=email@robin-lenz.de
+      - WAVE_ACME_CONTACT=admin@example.com
       # Die echte Ausstellung, bewusst gesetzt: ohne diese Zeile zeigt
       # WAVE_ACME_DIRECTORY auf Let's Encrypts Staging. Hier gilt das Rate
       # Limit der Domain -- ein Fehlversuch kostet eine Woche, und dieselben
@@ -67,8 +64,8 @@ secretGenerator:
     envs:
       - secret.env
 
-  # Der Zugang zur Registry. `wave-mesh` ist ein privates Repository, also sind
-  # auch seine Images privat. Die Datei daneben entsteht aus einem klassischen
+  # Der Zugang zu privaten Images in der Registry. Die Sichtbarkeit der
+  # Images wird unabhängig von der des Quellcode-Repositories festgelegt. Die Datei daneben entsteht aus einem klassischen
   # GitHub-Token mit `read:packages` -- ein fein granulares reicht für die
   # Container-Registry nicht:
   #
@@ -84,7 +81,7 @@ secretGenerator:
 patches:
   # STUN geht hier am Service vorbei, direkt auf den Knoten.
   #
-  # Der Grund ist Hetzner: ein Cloud-Load-Balancer trägt nur TCP, HTTP und
+  # Bei Hetzner trägt ein Cloud-Load-Balancer nur TCP, HTTP und
   # HTTPS -- kein UDP. Und einen zweiten LB neben dem des Ingress gibt es
   # nicht: teilen lässt sich einer nicht, der hcloud-CCM räumt beim Abgleich
   # weg, was nicht zu seinem Service gehört. Der Service aus der Basis stand
@@ -106,7 +103,7 @@ patches:
         template:
           spec:
             nodeSelector:
-              kubernetes.io/hostname: processcube-cloud-worker-2  # der Knoten mit der IP aus WAVE_RELAYS
+              kubernetes.io/hostname: relay-node.example.com  # der Knoten mit der IP aus WAVE_RELAYS
             containers:
               - name: relay
                 ports:

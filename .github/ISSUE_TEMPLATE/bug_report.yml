@@ -1,0 +1,40 @@
+name: Fehler melden
+description: Ein reproduzierbares Problem mit wave-mesh melden
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Bitte keine Schlüssel, Tokens oder personenbezogenen Daten einfügen. Sicherheitslücken vertraulich gemäß SECURITY.md melden."
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Ausgabe von `wave version`, falls zutreffend
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Plattform
+      description: Betriebssystem und Architektur oder Serverumgebung
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zum Nachstellen
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Beobachtetes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+    validations:
+      required: true

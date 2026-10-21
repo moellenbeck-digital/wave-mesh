@@ -1,0 +1,19 @@
+name: Funktion vorschlagen
+description: Einen Anwendungsfall oder eine Verbesserung vorschlagen
+title: "feature: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Anwendungsfall
+      description: Welches Problem möchtest du lösen?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Vorschlag
+      description: Wie könnte wave-mesh dabei helfen?
+    validations:
+      required: true

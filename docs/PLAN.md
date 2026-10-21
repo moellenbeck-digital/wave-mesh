@@ -815,13 +815,12 @@ in dem ein Gerät ist, darauf Code als root ausführen.
 
 Warum überhaupt über ihn und nicht direkt von GitHub:
 
-- **Das Repo ist privat.** Ohne Token gibt GitHub weder die Liste der Releases
-  noch ein einziges Asset heraus, und ein Token gehört nicht auf ein Gerät: es
-  läge auf jeder Maschine, die man je verkauft, verliert oder weitergibt, und
-  wer es herauszieht, liest damit das Repo — nicht nur die Releases, denn
-  GitHub kennt dafür keine engere Berechtigung als *Contents: read*. Der
-  Control-Server ist die eine Stelle, an der es liegen kann, genau wie
-  `WAVE_DNS_SECRET` und aus demselben Grund.
+- **Der aktuelle ReleaseFeed verwendet einen Token.** Für private Releases
+  braucht GitHub ihn auch zum Lesen. Er gehört nicht auf ein Gerät: dort läge
+  er auf jeder Maschine, die man je verkauft, verliert oder weitergibt. Der
+  Control-Server ist die eine Stelle, an der er liegen kann, genau wie
+  `WAVE_DNS_SECRET` und aus demselben Grund. Auch bei einem öffentlichen
+  Repository bleibt das vorerst die Implementierung.
 - **Den Control-Server erreicht jedes Gerät**, sonst hätte es keinen Tunnel.
   `github.com` erreicht es in einem Firmennetz mit Proxy oder in einem
   abgeschotteten Netz oft nicht.
@@ -875,8 +874,8 @@ daneben liegen.
    `Accept: application/octet-stream` und dem Token) und reicht den Body als
    Stream durch (`new Response(res.body)`), ohne ihn abzulegen — ein Cache wäre
    ein Volume für Hunderte MB, das niemand braucht, solange der Versatz die
-   Last verteilt. Die Download-URL der Release-Seite taugt dafür nicht: sie
-   nimmt bei einem privaten Repo keinen Token an.
+   Last verteilt. Bei privaten Releases taugt die Download-URL der Release-Seite
+   dafür nicht: sie nimmt keinen Token an.
 5. **Es prüft vor dem Entpacken** den SHA-256 gegen das Manifest, wie heute
    beim Wintun-Zip, und tauscht dann (siehe unten).
 

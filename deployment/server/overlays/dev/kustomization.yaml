@@ -57,8 +57,8 @@ secretGenerator:
     envs:
       - secret.env
 
-  # Der Zugang zur Registry. `wave-mesh` ist ein privates Repository, also sind
-  # auch seine Images privat. Die Datei daneben entsteht aus einem klassischen
+  # Der Zugang zu privaten Images in der Registry. Die Sichtbarkeit der
+  # Images wird unabhängig von der des Quellcode-Repositories festgelegt. Die Datei daneben entsteht aus einem klassischen
   # GitHub-Token mit `read:packages` -- ein fein granulares reicht für die
   # Container-Registry nicht:
   #
