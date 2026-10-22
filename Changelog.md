@@ -6,6 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+*Noch nichts seit v0.11.0-develop.3.*
+
+---
+
+## 🔬 Development v0.11.0-develop.3 (22.10.2026)
+
 ### Neue Funktionen
 
 - **Admins und Eigentümer ändern Rollen in der Mitgliederliste:** Bei jedem
