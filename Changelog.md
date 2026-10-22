@@ -6,7 +6,41 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.11.0-develop.3.*
+*Noch nichts seit v0.11.0.*
+
+---
+
+## ✅ Stable v0.11.0 (22.10.2026)
+
+*Enthält alles aus v0.11.0-develop.1 bis v0.11.0-develop.3.*
+
+### Neue Funktionen (gegenüber v0.10.0)
+
+- **Admins und Eigentümer ändern Rollen in der Mitgliederliste:** Bei jedem
+  Mitglied, dessen Rolle man ändern darf, steht jetzt eine Auswahl
+  „Mitglied“/„Administrator“ mit „Speichern“. Der Eigentümer stellt jedes andere
+  Mitglied um, ein Administrator befördert Mitglieder zu Administratoren; einen
+  anderen Administrator herabstufen darf nur der Eigentümer. Die Rolle des
+  Eigentümers und die eigene Rolle bleiben unverändert. Die neue Rolle gilt
+  sofort auch für Regeln mit `role:` in der Zugriffsrichtlinie, und die Änderung
+  steht im Audit-Log (`member.role`). *(seit develop.3)*
+
+### Fehlerbehebungen (gegenüber v0.10.0)
+
+- **Der Client bricht beim Verbinden nicht mehr ab, wenn der Control-Server
+  nicht erreichbar ist:** Ist der Server beim Start oder bei `wave login`/
+  `wave up` nicht erreichbar (Verbindung verweigert, Zeitüberschreitung, Netz
+  nicht da, Server startet gerade neu) oder meldet das Betriebssystem beim
+  Auflösen des Servernamens `getaddrinfo ETIMEOUT`, versucht der Client es mit
+  wachsenden Pausen (0,5 bis 30 Sekunden) so lange erneut, bis die Verbindung
+  steht oder du abbrichst. Das gilt für `wave up`, `wave login` und den Dienst
+  sowie für die iOS- und die Android-App. Im Terminal steht dabei, warum und
+  wann der nächste Versuch kommt; der Dienst zeigt „wartet auf den
+  Control-Server“ statt „fehlgeschlagen“, und `wave down` beendet das Warten.
+  Eine falsche Adresse, eine Ablehnung des Servers, Zertifikatsfehler und bei
+  einem eben eingegebenen Login ein unbekannter Servername werden weiter sofort
+  gemeldet. In den Apps gibt es das Abbrechen jetzt auch, solange noch
+  verbunden wird. *(seit develop.1, DNS-Timeout seit develop.2)*
 
 ---
 
