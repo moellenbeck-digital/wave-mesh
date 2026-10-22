@@ -37,6 +37,10 @@ const config: NextConfig = {
         destination: `${control}/waves/:id/members/:userId/remove`,
       },
       {
+        source: "/waves/:id/members/:userId/role",
+        destination: `${control}/waves/:id/members/:userId/role`,
+      },
+      {
         source: "/waves/:id/nodes/:nodeId/remove",
         destination: `${control}/waves/:id/nodes/:nodeId/remove`,
       },

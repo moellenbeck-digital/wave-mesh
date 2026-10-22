@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { buildAuthorizationHeader, generateKeyPair } from "@wave/crypto";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/app.ts";
+import { listAudit } from "../src/audit.ts";
 import { createProviders } from "../src/auth/providers.ts";
 import type { Database } from "../src/db/client.ts";
-import { nodes } from "../src/db/schema.ts";
+import { nodes, waves } from "../src/db/schema.ts";
 import { buildNetmap } from "../src/netmap/build.ts";
 import { createInvite, revokeInvite } from "../src/waves/invites.ts";
 import {
@@ -372,6 +373,155 @@ describe("taking a member back out", () => {
     });
     expect(revoked.status).toBe(303);
     expect((await members(wave.id, owner)).body?.invites).toEqual([]);
+  });
+});
+
+describe("changing a member's role", () => {
+  /** An owner and two others who joined by invitation, each with the role asked for. */
+  async function setup() {
+    const owner = await signUp("robin@example.com");
+    const wave = await waveOf(owner);
+    const ownerId = await userIdOf(owner);
+    const join = async (email: string, role: "admin" | "member") => {
+      const token = await invite(wave.id, email, ownerId, role);
+      const jar = await login(email);
+      await app.request(`/invite/${token}`, { headers: { cookie: jar.header() } });
+      return { jar, id: await userIdOf(jar) };
+    };
+    const ada = await join("ada@example.com", "admin");
+    const grace = await join("grace@example.com", "member");
+    return { owner, ownerId, wave, ada, grace };
+  }
+
+  const setRole = (waveId: string, userId: string, jar: CookieJar, role: string) =>
+    app.request(`/waves/${waveId}/members/${userId}/role`, {
+      method: "POST",
+      body: new URLSearchParams({ role }),
+      headers: { cookie: jar.header() },
+    });
+
+  const roles = async (waveId: string, jar: CookieJar) =>
+    Object.fromEntries(
+      ((await members(waveId, jar)).body?.members ?? []).map((m) => [m.email, m.role] as const),
+    );
+
+  const netmapVersionOf = async (waveId: string) =>
+    (await db.select({ v: waves.netmapVersion }).from(waves).where(eq(waves.id, waveId)))[0]?.v ?? 0;
+
+  test("the owner takes an admin down to member and lifts a member up", async () => {
+    const { owner, wave, ada, grace } = await setup();
+    const before = await netmapVersionOf(wave.id);
+
+    const down = await setRole(wave.id, ada.id, owner, "member");
+    expect(down.status).toBe(303);
+    expect(down.headers.get("location")).toBe("/");
+    const up = await setRole(wave.id, grace.id, owner, "admin");
+    expect(up.status).toBe(303);
+
+    expect(await roles(wave.id, owner)).toEqual({
+      "robin@example.com": "owner",
+      "ada@example.com": "member",
+      "grace@example.com": "admin",
+    });
+    // The role is what `role:` in the policy matches: the nodes need a new netmap.
+    expect(await netmapVersionOf(wave.id)).toBe(before + 2);
+  });
+
+  test("an admin promotes a member", async () => {
+    const { owner, wave, ada, grace } = await setup();
+    const res = await setRole(wave.id, grace.id, ada.jar, "admin");
+    expect(res.status).toBe(303);
+    expect((await roles(wave.id, owner))["grace@example.com"]).toBe("admin");
+  });
+
+  test("an admin cannot touch another admin", async () => {
+    const { owner, wave, ada, grace } = await setup();
+    await setRole(wave.id, grace.id, owner, "admin");
+
+    const down = await setRole(wave.id, grace.id, ada.jar, "member");
+    expect(down.status).toBe(403);
+    // Not even to the role they already have: the refusal comes first.
+    expect((await setRole(wave.id, grace.id, ada.jar, "admin")).status).toBe(403);
+    expect((await roles(wave.id, owner))["grace@example.com"]).toBe("admin");
+  });
+
+  test("a plain member may change nothing", async () => {
+    const { owner, wave, ada, grace } = await setup();
+    expect((await setRole(wave.id, ada.id, grace.jar, "member")).status).toBe(403);
+    expect((await setRole(wave.id, grace.id, grace.jar, "admin")).status).toBe(403);
+    expect(await roles(wave.id, owner)).toEqual({
+      "robin@example.com": "owner",
+      "ada@example.com": "admin",
+      "grace@example.com": "member",
+    });
+  });
+
+  test("the owner's role cannot be changed, nor handed out", async () => {
+    const { owner, ownerId, wave, ada } = await setup();
+    expect((await setRole(wave.id, ownerId, ada.jar, "member")).status).toBe(403);
+    expect((await setRole(wave.id, ada.id, owner, "owner")).status).toBe(400);
+    expect((await roles(wave.id, owner))["robin@example.com"]).toBe("owner");
+    expect((await roles(wave.id, owner))["ada@example.com"]).toBe("admin");
+  });
+
+  test("nobody changes their own role, the owner included", async () => {
+    const { owner, ownerId, wave, ada } = await setup();
+    expect((await setRole(wave.id, ada.id, ada.jar, "member")).status).toBe(403);
+    expect((await setRole(wave.id, ownerId, owner, "member")).status).toBe(403);
+    expect(await roles(wave.id, owner)).toMatchObject({
+      "robin@example.com": "owner",
+      "ada@example.com": "admin",
+    });
+  });
+
+  test("a role that does not exist is a bad request", async () => {
+    const { owner, wave, grace } = await setup();
+    expect((await setRole(wave.id, grace.id, owner, "root")).status).toBe(400);
+    expect((await setRole(wave.id, grace.id, owner, "")).status).toBe(400);
+    expect((await roles(wave.id, owner))["grace@example.com"]).toBe("member");
+  });
+
+  test("somebody who is not in the wave is unknown", async () => {
+    const { owner, wave } = await setup();
+    expect((await setRole(wave.id, "u_nobody", owner, "admin")).status).toBe(404);
+
+    // And for a caller who is not in it either, the wave itself is unknown.
+    const mallory = await login("mallory@example.com");
+    expect((await setRole(wave.id, await userIdOf(owner), mallory, "member")).status).toBe(404);
+  });
+
+  test("the same role again changes nothing and leaves no trace", async () => {
+    const { owner, wave, ada, grace } = await setup();
+    const before = await netmapVersionOf(wave.id);
+
+    expect((await setRole(wave.id, grace.id, owner, "member")).status).toBe(303);
+    expect((await setRole(wave.id, ada.id, owner, "admin")).status).toBe(303);
+
+    expect(await netmapVersionOf(wave.id)).toBe(before);
+    expect((await listAudit(db, wave.id)).filter((row) => row.action === "member.role")).toEqual([]);
+  });
+
+  test("the change is audited with the old and the new role", async () => {
+    const { owner, wave, ada } = await setup();
+    await setRole(wave.id, ada.id, owner, "member");
+
+    const entries = (await listAudit(db, wave.id)).filter((row) => row.action === "member.role");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      actor: "robin@example.com",
+      target: ada.id,
+      detail: { from: "admin", to: "member" },
+    });
+  });
+
+  test("the members list tells the viewer which row is theirs", async () => {
+    const { owner, ownerId, wave, ada } = await setup();
+    const res = await app.request(`/api/waves/${wave.id}/members`, { headers: { cookie: owner.header() } });
+    expect(((await res.json()) as { userId: string }).userId).toBe(ownerId);
+    const asAda = await app.request(`/api/waves/${wave.id}/members`, {
+      headers: { cookie: ada.jar.header() },
+    });
+    expect(((await asAda.json()) as { userId: string }).userId).toBe(ada.id);
   });
 });
 

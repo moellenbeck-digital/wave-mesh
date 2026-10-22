@@ -164,6 +164,8 @@ const en = {
   withdraw: "Withdraw",
   inviteSomeone: "Invite someone",
   role: "Role",
+  roleOf: (who: string) => `Role of ${who}`,
+  saveRole: "Save",
   invite: "Invite",
   inviteHint:
     "The invitation is handed out as a link — no email is sent. Whoever is removed loses their devices in this wave.",
@@ -328,6 +330,8 @@ const de: typeof en = {
   withdraw: "Zurückziehen",
   inviteSomeone: "Jemanden einladen",
   role: "Rolle",
+  roleOf: (who) => `Rolle von ${who}`,
+  saveRole: "Speichern",
   invite: "Einladen",
   inviteHint:
     "Die Einladung wird als Link ausgegeben — es wird keine E-Mail verschickt. Wer entfernt wird, verliert seine Geräte in diesem Wave.",

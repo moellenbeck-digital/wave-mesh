@@ -1,6 +1,13 @@
 import type { Locale } from "@wave/i18n";
 import { appMessages } from "@/i18n/app";
-import { canManage, type Member, type Membership, type Wave, type WaveInvite } from "@/lib/control";
+import {
+  canManage,
+  type Member,
+  type Membership,
+  mayChangeRole,
+  type Wave,
+  type WaveInvite,
+} from "@/lib/control";
 import { formatDate, formatDay } from "@/lib/format";
 
 /**
@@ -12,14 +19,17 @@ function MemberRow({
   member,
   wave,
   mayRemove,
+  mayChangeRole,
   locale,
 }: {
   member: Member;
   wave: Wave;
   mayRemove: boolean;
+  mayChangeRole: boolean;
   locale: Locale;
 }) {
   const t = appMessages(locale);
+  const who = member.email ?? member.name ?? member.userId;
   return (
     <li className="grid grid-cols-1 gap-x-6 gap-y-2 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center">
       <div className="min-w-0">
@@ -31,7 +41,19 @@ function MemberRow({
         ) : null}
       </div>
 
-      <div className="text-caption text-slate">{t.roleName(member.role)}</div>
+      {mayChangeRole ? (
+        <form method="post" action={`/waves/${wave.id}/members/${member.userId}/role`} className="flex gap-2">
+          <select className="wc-input" name="role" defaultValue={member.role} aria-label={t.roleOf(who)}>
+            <option value="member">{t.roleName("member")}</option>
+            <option value="admin">{t.roleName("admin")}</option>
+          </select>
+          <button type="submit" className="wc-btn wc-btn-secondary">
+            {t.saveRole}
+          </button>
+        </form>
+      ) : (
+        <div className="text-caption text-slate">{t.roleName(member.role)}</div>
+      )}
 
       <div className="text-caption text-slate">{t.devices(member.nodeCount)}</div>
 
@@ -102,6 +124,8 @@ export function MemberList({
             mayRemove={
               manage && member.role !== "owner" && (membership.role === "owner" || member.role === "member")
             }
+            // The same rule as the control server's `changeRole`.
+            mayChangeRole={mayChangeRole(membership.role, membership.userId, member)}
           />
         ))}
         {membership.invites.map((invite) => (

@@ -26,7 +26,7 @@ import {
   normaliseEmail,
   revokeInvite,
 } from "../waves/invites.ts";
-import { canManage, listMembers, removeMember, roleOf } from "../waves/members.ts";
+import { canManage, changeRole, listMembers, removeMember, roleOf } from "../waves/members.ts";
 import { ownerOfNode, removeNode, renameNode } from "../waves/nodes.ts";
 import {
   createWave,
@@ -255,6 +255,8 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
 
     return c.json({
       role: auth.role,
+      // Whose row is the viewer's own: nobody changes their own role.
+      userId: auth.user.id,
       members: await listMembers(db, waveId),
       // Who has been asked and not answered is a manager's business.
       invites: canManage(auth.role ?? "member") ? await listInvites(db, waveId) : [],
@@ -342,6 +344,38 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     // Their devices are gone from the database; the ones still up learn it
     // with this push, which is what drops them from everyone's netmap.
     await hub?.broadcast(waveId);
+    return c.redirect("/", 303);
+  });
+
+  /**
+   * Makes a member an administrator or a plain member, from the browser.
+   * `owner` is not a value this takes: ownership is handed over in a step of
+   * its own.
+   */
+  app.post("/waves/:id/members/:userId/role", async (c) => {
+    const waveId = c.req.param("id");
+    const auth = await authorize(c, waveId, "manage");
+    if (auth instanceof Response) return auth;
+
+    const role = String((await c.req.formData()).get("role") ?? "");
+    if (role !== "admin" && role !== "member") return page(c, (m) => [m.invalidRole, m.invalidRoleBody], 400);
+
+    const userId = c.req.param("userId");
+    const result = await changeRole(db, waveId, auth.role ?? "member", auth.user.id, userId, role);
+    if (result === "not-a-member") return page(c, (m) => [m.notAMember, m.nothingToChange], 404);
+    if (result === "self") return page(c, (m) => [m.notAllowed, m.ownRoleStays], 403);
+    if (result === "owner") return page(c, (m) => [m.ownerStays, m.ownerRoleFixed], 403);
+    if (result === "forbidden") return page(c, (m) => [m.notAllowed, m.onlyOwnerChangesAdmins], 403);
+
+    if (result.changed) {
+      await audit(db, waveId, userActor(auth.user), {
+        action: "member.role",
+        target: userId,
+        detail: { from: result.from, to: result.to },
+      });
+      // `role:` in the policy follows the role, so the nodes get a new netmap.
+      await hub?.broadcast(waveId);
+    }
     return c.redirect("/", 303);
   });
 

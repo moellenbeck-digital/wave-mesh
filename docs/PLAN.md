@@ -1372,6 +1372,7 @@ GET  /api/waves/:id/members          Mitglieder + offene Einladungen
 POST /waves/:id/invites              {email, role} -> Link, einmal sichtbar
 POST /waves/:id/invites/:iid/revoke
 POST /waves/:id/members/:uid/remove  Mitglied + dessen Knoten
+POST /waves/:id/members/:uid/role    {role: admin|member}, Audit member.role
 GET  /api/invites/:token             was die Einladung anbietet (unauthentifiziert)
 GET  /invite/:token                  einlösen
 POST /invite/:token/claim            Passwort setzen und einlösen (nur ohne Konto)

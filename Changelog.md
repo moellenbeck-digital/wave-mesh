@@ -6,7 +6,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.11.0-develop.2.*
+### Neue Funktionen
+
+- **Admins und Eigentümer ändern Rollen in der Mitgliederliste:** Bei jedem
+  Mitglied, dessen Rolle man ändern darf, steht jetzt eine Auswahl
+  „Mitglied“/„Administrator“ mit „Speichern“. Der Eigentümer stellt jedes andere
+  Mitglied um, ein Administrator befördert Mitglieder zu Administratoren; einen
+  anderen Administrator herabstufen darf nur der Eigentümer. Die Rolle des
+  Eigentümers und die eigene Rolle bleiben unverändert. Die neue Rolle gilt
+  sofort auch für Regeln mit `role:` in der Zugriffsrichtlinie, und die Änderung
+  steht im Audit-Log (`member.role`).
 
 ---
 
