@@ -82,7 +82,7 @@ test.describe("Rollen ändern", () => {
 
   test.afterAll(async () => {
     try {
-      await deleteWave(owner.page, waveName);
+      if (owner) await deleteWave(owner.page, waveName);
     } finally {
       await Promise.all([owner?.ctx.close(), admin?.ctx.close(), member?.ctx.close()]);
     }

@@ -1,10 +1,11 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Oberflächentests gegen das Dev-System. Aufgerufen wird sie vom Werkzeug
  * `e2e-test ausfuehren <nr>`, das die Umgebung setzt:
  * APP_URL (Adresse), APP_USER/APP_PASSWORD (Konto des Eigentümers), APP_TICKET (Ticketnummer).
  * Jeder Fall trägt die Marke als Tag `@t<nr>`; ohne `--grep` filtert APP_TICKET.
+ * Das Projekt heißt `testsystem`: danach zählt `e2e-test` die gefundenen Fälle.
  */
 const ticket = process.env.APP_TICKET;
 
@@ -23,6 +24,7 @@ export default defineConfig({
     ["list"],
     ["html", { open: "never", outputFolder: `./testsystem-bericht/t${ticket ?? "alle"}` }],
   ],
+  projects: [{ name: "testsystem", use: { ...devices["Desktop Chrome"] } }],
   use: {
     baseURL: process.env.APP_URL,
     // Die Fälle prüfen Beschriftungen, deshalb eine feste Sprache.
