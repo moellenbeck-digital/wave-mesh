@@ -1093,8 +1093,10 @@ bun apps/control/src/admin.ts delete-wave   <wave>
 `<wave>` ist Name, Id oder die Adresse des Eigentümers — bei mehreren Treffern
 nennt `resolveWave()` sie, statt einen zu nehmen. Im Alltag reicht die
 Oberfläche: die Personenliste steht in der Wave-Karte neben den Geräten, mit
-Einladungsformular und je Zeile einem Knopf zum Entfernen — und die Geräteliste
-darüber trägt denselben Knopf, sichtbar nur für Eigentümer und Admins.
+Einladungsformular und je Zeile einem Knopf zum Entfernen sowie, wo der
+Betrachter es darf, einer Rollenauswahl mit „Speichern“ — und die Geräteliste
+darüber trägt denselben Knopf zum Entfernen, sichtbar nur für Eigentümer und
+Admins.
 
 Was daran nicht verhandelbar ist:
 
@@ -1145,6 +1147,24 @@ Was daran nicht verhandelbar ist:
   auf jedem fremden WireGuard-Interface. `removeMember()` löscht deshalb die
   Knoten des Mitglieds in diesem Wave, zählt `netmapVersion` hoch und der
   Handler schiebt danach — erst das entfernt ihn aus den Netzkarten der anderen.
+- **Die Rolle wechselt zwischen `admin` und `member`, nach denselben Regeln wie
+  Einladen und Entfernen.** `changeRole()` hinter
+  `POST /waves/:id/members/:userId/role` (Formfeld `role`, alles außer `admin`
+  und `member` ist 400 — `owner` lässt sich weder ändern noch vergeben, die
+  Übergabe bleibt ein eigener Schritt). Der Eigentümer stellt jedes andere
+  Mitglied um; ein Admin befördert nur ein `member` und fasst keinen anderen
+  Admin an — auch nicht auf die Rolle, die er schon hat, die Verweigerung
+  kommt vor dem „nichts zu tun“. Die eigene Rolle ändert niemand, der
+  Eigentümer eingeschlossen. Dieselbe Rolle noch einmal ist kein Fehler und
+  schreibt weder Audit noch Netmap-Version. Eine echte Änderung zählt
+  `netmapVersion` hoch und der Handler schiebt danach, denn die Rolle fließt
+  über `aclSubjects()` in `role:` der Policy — erst der Push bringt die neue
+  Erreichbarkeit auf die Geräte. Audit: `member.role` mit Ziel `userId` und
+  `detail { from, to }`. Die Oberfläche zeigt die Auswahl nur, wo
+  `mayChangeRole()` (`apps/web/src/lib/control.ts`) wahr ist; die Regel steht
+  dort ein zweites Mal und muss mit `changeRole()` gleich bleiben, geschützt
+  wird aber nur im Backend. Dafür liefert `/api/waves/:id/members` die eigene
+  `userId` mit.
 - **Ein einzelnes Gerät geht auch allein hinaus.** `removeNode()` ist der
   kleinere der beiden Schnitte, und wer Mitglieder verwalten darf, darf ihn
   führen: für die Maschine, die verloren, verkauft oder irgendwo stehen
@@ -1516,7 +1536,7 @@ Was daran festliegt:
   und ist die Firewall für ein Profil aus, meldet der Client „nicht
   durchgesetzt“ statt Regeln, die nicht greifen.
 - **Das Audit-Log schreibt jede Änderung an einem Wave** (`audit_log`): Policy,
-  Tags, Mitglieder, Einladungen, Geräte (Freigabe, Anmeldung per Schlüssel,
+  Tags, Mitglieder (auch Rollenwechsel, `member.role`), Einladungen, Geräte (Freigabe, Anmeldung per Schlüssel,
   Entfernen), Domain, Name, und alles, was `wave-admin` ändert. `audit()` wirft
   nie — die Änderung ist schon geschehen, und sie danach als gescheitert zu
   melden, wäre falsch; ein verlorener Eintrag steht auf stderr. In `wave-admin`

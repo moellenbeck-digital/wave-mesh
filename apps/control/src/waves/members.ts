@@ -153,3 +153,54 @@ export async function removeMember(
 
   return { removedNodes: removed.length };
 }
+
+export type RoleChangeRefusal = "not-a-member" | "owner" | "self" | "forbidden";
+
+export interface RoleChange {
+  /** False when the member already had this role: nothing was written. */
+  changed: boolean;
+  from: Role;
+  to: "admin" | "member";
+}
+
+/**
+ * Makes a member an administrator or a plain member.
+ *
+ * The same rules as inviting and removing: the owner may move anyone but
+ * themself between the two roles, an admin may only promote a member -- like
+ * the invitation, which can hand out `admin` -- and only the owner takes an
+ * administrator back down, like `removeMember`. `owner` is neither a role that
+ * can be changed nor one that can be handed out here.
+ *
+ * The role is what `role:` in the policy matches, so a real change bumps the
+ * netmap version; the caller pushes it to the nodes.
+ */
+export async function changeRole(
+  db: Database,
+  waveId: string,
+  actorRole: Role,
+  actorId: string,
+  userId: string,
+  role: "admin" | "member",
+): Promise<RoleChange | RoleChangeRefusal> {
+  const target = await roleOf(db, waveId, userId);
+  if (!target) return "not-a-member";
+  // Nobody sets their own role, the owner included.
+  if (userId === actorId) return "self";
+  if (target === "owner") return "owner";
+  // Before the no-op check: whoever may not touch an admin learns that, rather
+  // than that nothing happened.
+  if (actorRole !== "owner" && target !== "member") return "forbidden";
+  if (target === role) return { changed: false, from: target, to: role };
+
+  await db
+    .update(waveMembers)
+    .set({ role })
+    .where(and(eq(waveMembers.waveId, waveId), eq(waveMembers.userId, userId)));
+  await db
+    .update(waves)
+    .set({ netmapVersion: sql`${waves.netmapVersion} + 1` })
+    .where(eq(waves.id, waveId));
+
+  return { changed: true, from: target, to: role };
+}

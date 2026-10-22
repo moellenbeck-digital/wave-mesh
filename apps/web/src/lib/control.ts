@@ -23,6 +23,22 @@ export interface Wave {
 /** Who may invite, remove a member and remove a device. Members may only look. */
 export const canManage = (role: Wave["role"]): boolean => role === "owner" || role === "admin";
 
+/**
+ * Whether the viewer may switch this member between administrator and member.
+ * The same rule as `changeRole` in the control server: never the owner's row or
+ * the viewer's own, and only the owner changes another administrator.
+ */
+export const mayChangeRole = (
+  viewerRole: Wave["role"],
+  viewerId: string | undefined,
+  member: { userId: string; role: Wave["role"] },
+): boolean =>
+  canManage(viewerRole) &&
+  viewerId !== undefined &&
+  member.userId !== viewerId &&
+  member.role !== "owner" &&
+  (viewerRole === "owner" || member.role === "member");
+
 /** An invitation waiting for this account's address, without its token. */
 export interface WaitingInvite {
   wave: string;
@@ -60,6 +76,11 @@ export interface WaveInvite {
 export interface Membership {
   /** The caller's own role, which decides whether anything can be changed. */
   role: Wave["role"];
+  /**
+   * The caller's own account, to tell their row from the others. Optional
+   * because an older control server does not send it.
+   */
+  userId?: string;
   members: Member[];
   invites: WaveInvite[];
 }
