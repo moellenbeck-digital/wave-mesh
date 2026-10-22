@@ -1,0 +1,4 @@
+node_modules
+testsystem-artefakte
+testsystem-bericht
+.e2e-test-schnell.config.ts
