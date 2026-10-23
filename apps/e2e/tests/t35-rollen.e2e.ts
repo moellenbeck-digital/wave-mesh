@@ -166,24 +166,25 @@ test.describe("Rollen ändern", () => {
     await expect(memberRow(card(admin.page), memberMail)).toContainText("Administrator");
   });
 
-  test("K5 Admin kann einen anderen Admin nicht umstellen: keine Auswahl, direkter POST liefert 403", {
+  test("K5 Admin darf einen anderen Admin herabstufen (seit #41): Auswahl sichtbar, direkter POST wirkt", {
     tag: "@t35",
   }, async () => {
+    // Bis #41 durfte das nur der Eigentümer (Auswahl fehlte, POST lieferte 403); jetzt dürfen es alle, die verwalten.
     const c = await open(admin);
     const row = memberRow(c, memberMail);
     await expect(row).toContainText("Administrator");
-    await expect(select(row)).toHaveCount(0);
-    await expect(row.getByRole("button", { name: "Save" })).toHaveCount(0);
+    await expect(select(row)).toHaveCount(1);
+    await expect(row.getByRole("button", { name: "Save" })).toBeVisible();
 
     const response = await admin.ctx.request.post(`/waves/${id}/members/${memberId}/role`, {
       form: { role: "member" },
       maxRedirects: 0,
     });
-    expect(response.status()).toBe(403);
+    expect(response.status()).toBe(303);
 
-    // Die Rolle hat sich nicht geändert (Sicht des Eigentümers).
+    // Die Rolle hat sich geändert (Sicht des Eigentümers).
     await open(owner);
-    await expect(select(memberRow(card(owner.page), memberMail))).toHaveValue("admin");
+    await expect(select(memberRow(card(owner.page), memberMail))).toHaveValue("member");
   });
 
   test("K8 Ungültige Rolle (owner, foo) per direktem POST liefert 400 und ändert nichts", {
