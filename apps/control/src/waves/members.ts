@@ -154,7 +154,7 @@ export async function removeMember(
   return { removedNodes: removed.length };
 }
 
-export type RoleChangeRefusal = "not-a-member" | "owner" | "self" | "forbidden";
+export type RoleChangeRefusal = "not-a-member" | "owner" | "self";
 
 export interface RoleChange {
   /** False when the member already had this role: nothing was written. */
@@ -166,11 +166,11 @@ export interface RoleChange {
 /**
  * Makes a member an administrator or a plain member.
  *
- * The same rules as inviting and removing: the owner may move anyone but
- * themself between the two roles, an admin may only promote a member -- like
- * the invitation, which can hand out `admin` -- and only the owner takes an
- * administrator back down, like `removeMember`. `owner` is neither a role that
- * can be changed nor one that can be handed out here.
+ * Whoever manages the wave -- the caller has checked that, a plain member never
+ * gets here -- may move any other member between the two roles, an admin
+ * another admin included. Removing an administrator stays with the owner, see
+ * `removeMember`. Nobody sets their own role, and `owner` is neither a role
+ * that can be changed nor one that can be handed out here.
  *
  * The role is what `role:` in the policy matches, so a real change bumps the
  * netmap version; the caller pushes it to the nodes.
@@ -178,7 +178,6 @@ export interface RoleChange {
 export async function changeRole(
   db: Database,
   waveId: string,
-  actorRole: Role,
   actorId: string,
   userId: string,
   role: "admin" | "member",
@@ -188,9 +187,6 @@ export async function changeRole(
   // Nobody sets their own role, the owner included.
   if (userId === actorId) return "self";
   if (target === "owner") return "owner";
-  // Before the no-op check: whoever may not touch an admin learns that, rather
-  // than that nothing happened.
-  if (actorRole !== "owner" && target !== "member") return "forbidden";
   if (target === role) return { changed: false, from: target, to: role };
 
   await db

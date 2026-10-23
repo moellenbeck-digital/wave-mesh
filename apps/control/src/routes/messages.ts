@@ -82,7 +82,6 @@ const en = {
   invalidRoleBody: "A member can be made an administrator or a plain member.",
   ownRoleStays: "Nobody changes their own role.",
   ownerRoleFixed: "The owner's role cannot be changed. Ownership is handed over in a step of its own.",
-  onlyOwnerChangesAdmins: "Only the owner can change the role of another administrator.",
   onlyOwnerDeletes: "Only the wave's owner can delete it.",
   noSuchDevice: "No such device",
   notInThisWave: "It is not in this wave.",
@@ -209,7 +208,6 @@ const de: typeof en = {
   ownRoleStays: "Niemand ändert seine eigene Rolle.",
   ownerRoleFixed:
     "Die Rolle des Eigentümers lässt sich nicht ändern. Die Eigentümerschaft wird in einem eigenen Schritt übergeben.",
-  onlyOwnerChangesAdmins: "Nur der Eigentümer kann die Rolle eines anderen Admins ändern.",
   onlyOwnerDeletes: "Nur der Eigentümer des Waves kann ihn löschen.",
   noSuchDevice: "Gerät nicht gefunden",
   notInThisWave: "Es ist nicht in diesem Wave.",

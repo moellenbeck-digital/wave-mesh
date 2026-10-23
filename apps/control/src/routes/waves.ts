@@ -361,11 +361,10 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     if (role !== "admin" && role !== "member") return page(c, (m) => [m.invalidRole, m.invalidRoleBody], 400);
 
     const userId = c.req.param("userId");
-    const result = await changeRole(db, waveId, auth.role ?? "member", auth.user.id, userId, role);
+    const result = await changeRole(db, waveId, auth.user.id, userId, role);
     if (result === "not-a-member") return page(c, (m) => [m.notAMember, m.nothingToChange], 404);
     if (result === "self") return page(c, (m) => [m.notAllowed, m.ownRoleStays], 403);
     if (result === "owner") return page(c, (m) => [m.ownerStays, m.ownerRoleFixed], 403);
-    if (result === "forbidden") return page(c, (m) => [m.notAllowed, m.onlyOwnerChangesAdmins], 403);
 
     if (result.changed) {
       await audit(db, waveId, userActor(auth.user), {

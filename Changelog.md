@@ -6,7 +6,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.11.0.*
+### Neue Funktionen
+
+- **Administratoren stufen andere Administratoren in der Mitgliederliste
+  herab:** Die Rollenauswahl „Mitglied“/„Administrator“ erscheint jetzt für
+  Eigentümer und Administratoren bei jedem anderen Mitglied außer dem
+  Eigentümer, auch bei Administratoren. Bisher durfte das nur der Eigentümer.
+  Die eigene Rolle und die des Eigentümers bleiben unverändert, reine Mitglieder
+  sehen keine Auswahl, und die Änderung steht weiter im Audit-Log
+  (`member.role`). Andere Administratoren aus dem Wave entfernen darf weiterhin
+  nur der Eigentümer.
 
 ---
 
