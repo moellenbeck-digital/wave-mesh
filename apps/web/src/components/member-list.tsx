@@ -120,7 +120,8 @@ export function MemberList({
             wave={wave}
             locale={locale}
             // The owner stays: a wave without one could not be administered.
-            // And only the owner decides about the other administrators.
+            // And only the owner decides about the other administrators: that is
+            // `removeMember`, where changing a role is open to every admin.
             mayRemove={
               manage && member.role !== "owner" && (membership.role === "owner" || member.role === "member")
             }

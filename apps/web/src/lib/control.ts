@@ -26,18 +26,14 @@ export const canManage = (role: Wave["role"]): boolean => role === "owner" || ro
 /**
  * Whether the viewer may switch this member between administrator and member.
  * The same rule as `changeRole` in the control server: never the owner's row or
- * the viewer's own, and only the owner changes another administrator.
+ * the viewer's own. Any other member, an administrator too, by whoever manages.
  */
 export const mayChangeRole = (
   viewerRole: Wave["role"],
   viewerId: string | undefined,
   member: { userId: string; role: Wave["role"] },
 ): boolean =>
-  canManage(viewerRole) &&
-  viewerId !== undefined &&
-  member.userId !== viewerId &&
-  member.role !== "owner" &&
-  (viewerRole === "owner" || member.role === "member");
+  canManage(viewerRole) && viewerId !== undefined && member.userId !== viewerId && member.role !== "owner";
 
 /** An invitation waiting for this account's address, without its token. */
 export interface WaitingInvite {

@@ -1187,7 +1187,9 @@ Was daran nicht verhandelbar ist:
     ist auch die einzige Stelle, an der es auffallen kann.
 - **Der Eigentümer bleibt.** Ein Wave ohne ihn wäre nicht administrierbar; die
   Übergabe ist ein eigener Schritt und fehlt noch. Ein `admin` darf Mitglieder
-  entfernen, über andere Admins entscheidet nur der Eigentümer.
+  entfernen, andere Admins entfernt nur der Eigentümer. Die Rolle eines anderen
+  Mitglieds ändern dürfen Owner und jeder Admin, auch zwischen Admin und
+  Mitglied in beide Richtungen (`changeRole`).
 - **Den Wave löschen darf nur der Eigentümer, und nur mit getipptem Namen.**
   Jeder andere Schnitt ist umkehrbar — wer entfernt wurde, wird wieder
   aufgenommen. Dieser nicht: jedes Gerät verliert seine Anmeldung, die Adressen

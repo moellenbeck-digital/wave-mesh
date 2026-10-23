@@ -434,15 +434,44 @@ describe("changing a member's role", () => {
     expect((await roles(wave.id, owner))["grace@example.com"]).toBe("admin");
   });
 
-  test("an admin cannot touch another admin", async () => {
+  test("an admin takes another admin down to member and up again", async () => {
     const { owner, wave, ada, grace } = await setup();
     await setRole(wave.id, grace.id, owner, "admin");
+    const before = await netmapVersionOf(wave.id);
 
     const down = await setRole(wave.id, grace.id, ada.jar, "member");
-    expect(down.status).toBe(403);
-    // Not even to the role they already have: the refusal comes first.
-    expect((await setRole(wave.id, grace.id, ada.jar, "admin")).status).toBe(403);
+    expect(down.status).toBe(303);
+    expect((await roles(wave.id, owner))["grace@example.com"]).toBe("member");
+    expect((await setRole(wave.id, grace.id, ada.jar, "admin")).status).toBe(303);
     expect((await roles(wave.id, owner))["grace@example.com"]).toBe("admin");
+    expect(await netmapVersionOf(wave.id)).toBe(before + 2);
+
+    const entries = (await listAudit(db, wave.id)).filter(
+      (row) => row.action === "member.role" && row.actor === "ada@example.com",
+    );
+    expect(entries.map((row) => row.detail)).toEqual(
+      expect.arrayContaining([
+        { from: "admin", to: "member" },
+        { from: "member", to: "admin" },
+      ]),
+    );
+  });
+
+  test("an admin cannot change the owner's role or their own", async () => {
+    const { owner, ownerId, wave, ada } = await setup();
+    expect((await setRole(wave.id, ownerId, ada.jar, "member")).status).toBe(403);
+    expect((await setRole(wave.id, ownerId, ada.jar, "admin")).status).toBe(403);
+    expect((await setRole(wave.id, ada.id, ada.jar, "member")).status).toBe(403);
+    expect(await roles(wave.id, owner)).toMatchObject({
+      "robin@example.com": "owner",
+      "ada@example.com": "admin",
+    });
+  });
+
+  test("an admin cannot hand out the owner role", async () => {
+    const { owner, wave, ada, grace } = await setup();
+    expect((await setRole(wave.id, grace.id, ada.jar, "owner")).status).toBe(400);
+    expect((await roles(wave.id, owner))["grace@example.com"]).toBe("member");
   });
 
   test("a plain member may change nothing", async () => {
