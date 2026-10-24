@@ -6,7 +6,36 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.12.0-develop.2.*
+*Noch nichts seit v0.12.0.*
+
+---
+
+## ✅ Stable v0.12.0 (24.10.2026)
+
+*Enthält alles aus v0.12.0-develop.1 bis v0.12.0-develop.2.*
+
+### Neue Funktionen (gegenüber v0.11.0)
+
+- **Administratoren stufen andere Administratoren herab:** Die Rollenauswahl
+  „Mitglied“/„Administrator“ steht für Eigentümer und Administratoren jetzt bei
+  jedem anderen Mitglied außer dem Eigentümer. Bisher durfte nur der Eigentümer
+  einen Administrator herabstufen. Andere Administratoren aus dem Wave
+  entfernen darf weiterhin nur der Eigentümer. *(seit develop.1)*
+- **`wave-admin create-wave <email> <name> [domain]`:** Der Betreiber legt
+  einen Wave für ein bestehendes Konto ausdrücklich von der Shell aus an, auf
+  jedem Server. Ohne Domain gibt es den Platzhalter `<name>.wave.internal`.
+  Ein so angelegter Wave hat kein Abo, also keine Platzgrenze und keine Pause.
+
+### Fehlerbehebungen (gegenüber v0.11.0)
+
+- **Auf einem Server mit Abrechnung legt niemand mehr selbst einen Wave an:**
+  Bisher konnte dort jedes angemeldete Konto ohne Abo einen eigenen Wave
+  aufmachen, auch wer gerade von einem gebuchten Platz entfernt worden war.
+  Ein Wave entsteht dort jetzt nur noch über ein Abo oder durch den Betreiber.
+  Die Seite „Wave anlegen“ erklärt das, statt ein Formular zu zeigen, und die
+  Übersicht bietet den Knopf nicht mehr an. `wave-admin set-password` legt dort
+  keinen Wave mehr nebenbei an. Auf einem selbst betriebenen Server ändert sich
+  nichts.
 
 ---
 
