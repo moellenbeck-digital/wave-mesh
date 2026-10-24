@@ -38,7 +38,16 @@ import { createInvite, listInvites, looksLikeEmail, normaliseEmail, revokeInvite
 import { type FoundWave, isAmbiguous, resolveWave } from "./waves/lookup.ts";
 import { addMember, listMembers, removeMember } from "./waves/members.ts";
 import { findNode, listNodes, removeNode, setWildcardAllowed } from "./waves/nodes.ts";
-import { DEFAULT_DNS_BASE, deleteWave, ensureWaveForUser, setWaveDomain } from "./waves/provision.ts";
+import {
+  createWave,
+  DEFAULT_DNS_BASE,
+  deleteWave,
+  ensureWaveForUser,
+  mayCreateWaves,
+  normaliseDnsSuffix,
+  normaliseWaveName,
+  setWaveDomain,
+} from "./waves/provision.ts";
 import { listServices, removeService, serviceUrl } from "./waves/services.ts";
 
 /**
@@ -132,6 +141,7 @@ async function readCredential(kind: AutomaticKind, suffix: string): Promise<stri
 const COMMANDS = [
   "set-password",
   "disable-2fa",
+  "create-wave",
   "set-domain",
   "members",
   "add-member",
@@ -166,6 +176,7 @@ const COMMANDS = [
  * added cannot forget it. `delete-wave` is not here: its log goes with it.
  */
 const CHANGES = new Set([
+  "create-wave",
   "set-domain",
   "add-member",
   "remove-member",
@@ -199,6 +210,7 @@ const invocation = Bun.main.endsWith(".ts") ? "bun src/admin.ts" : basename(proc
 const usage = `${m.usageTitle}
   ${invocation} set-password  <email>
   ${invocation} disable-2fa   <email>
+  ${invocation} create-wave   <email> <name> [domain]
   ${invocation} set-domain    <wave> <domain>
   ${invocation} members       <wave>
   ${invocation} add-member    <wave> <email> [admin|member]
@@ -590,6 +602,35 @@ async function main(): Promise<never> {
     return done(0);
   }
 
+  if (command === "create-wave") {
+    // The deliberate way to a wave, and on a server that sells them the only
+    // one besides a subscription: set-password does not make one there, so a
+    // new password for someone removed from a booked seat is not a free wave.
+    // A wave made here has no billing row -- no seat limit, no pause, no
+    // sweep -- exactly like one on a server nobody bills.
+    const [email, rawName, rawDomain] = rest;
+    if (!email || !rawName) return done(1, usage);
+    const owner = await account(email);
+    if (!owner) return done(1, m.noAccountHint(email));
+    let name: string;
+    let dnsSuffix: string;
+    try {
+      name = normaliseWaveName(rawName);
+      dnsSuffix = normaliseDnsSuffix(rawDomain ?? `${name}.${DEFAULT_DNS_BASE}`);
+    } catch (err) {
+      return done(1, err instanceof Error ? err.message : String(err));
+    }
+    const created = await createWave(db, {
+      userId: owner.id,
+      name,
+      dnsSuffix,
+      container: config.ipv4Container,
+    });
+    if ("conflict" in created) return done(1, m.suffixTaken(dnsSuffix));
+    await wave(created.waveId);
+    return done(0, m.waveCreated(name, created.waveId, dnsSuffix, email));
+  }
+
   if (command === "set-domain") {
     const [selector, domain] = rest;
     if (!domain) return done(1, usage);
@@ -800,6 +841,9 @@ async function main(): Promise<never> {
   }
 
   const { userId, created } = await setPassword(db, email, password);
+  // Where waves are sold, a new password is no way to a free one: resetting it
+  // for someone removed from a booked seat would otherwise hand them a wave.
+  if (!mayCreateWaves(config)) return done(0, m.accountSaved(created, email, userId, m.waveBooked));
   const provisioned = await ensureWaveForUser(db, userId, email, config.ipv4Container);
   const waveNote = provisioned.deferred
     ? m.waveDeferred

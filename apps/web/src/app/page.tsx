@@ -20,6 +20,7 @@ export default async function DashboardPage({
   const locale = await getLocale();
   const t = appMessages(locale);
   const invite = me.invites[0];
+  const canCreate = me.canCreateWave !== false;
 
   const waves = await Promise.all(
     me.waves.map(async (wave) => ({
@@ -56,11 +57,17 @@ export default async function DashboardPage({
               })}
             </p>
           ) : (
-            <p className="mx-auto mt-3 max-w-md text-body-sm text-slate">{t.noWaveText}</p>
+            <p className="mx-auto mt-3 max-w-md text-body-sm text-slate">
+              {canCreate ? t.noWaveText : t.noWaveBooked}
+            </p>
           )}
-          <a href="/waves/new" className="wc-btn wc-btn-primary mt-6">
-            {t.createWave}
-          </a>
+          {/* Wo Waves verkauft werden, gibt es kein Formular -- ein Knopf
+              dorthin führte nur zur Absage. */}
+          {canCreate ? (
+            <a href="/waves/new" className="wc-btn wc-btn-primary mt-6">
+              {t.createWave}
+            </a>
+          ) : null}
         </section>
       ) : (
         /* Die Karten bleiben serverseitig -- gelebt wird nur die Geräteliste

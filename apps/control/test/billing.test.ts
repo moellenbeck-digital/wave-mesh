@@ -19,7 +19,7 @@ import {
 import { buildNetmap } from "../src/netmap/build.ts";
 import { createAuthKey } from "../src/waves/auth-keys.ts";
 import { createInvite } from "../src/waves/invites.ts";
-import { addMember } from "../src/waves/members.ts";
+import { addMember, removeMember } from "../src/waves/members.ts";
 import { approveDevice, CookieJar, createTestDb, testConfig, testSigningKey } from "./helpers.ts";
 
 /**
@@ -806,5 +806,57 @@ describe("a booked wave", () => {
     await db.update(waveBilling).set({ state: "suspended" }).where(eq(waveBilling.subscriptionId, "sub_2"));
     expect(await app.sweepBilling(new Date(Date.now() + 365 * 24 * 3600 * 1000))).toBe(1);
     expect((await db.select({ name: waves.name }).from(waves)).map((w) => w.name)).toEqual(["two"]);
+  });
+});
+
+describe("waves where they are sold", () => {
+  const createWave = (jar: CookieJar) =>
+    app.request("/waves", {
+      method: "POST",
+      body: new URLSearchParams({ name: "free", suffix: "free.wave.internal" }),
+      headers: { cookie: jar.header() },
+    });
+
+  const waveCount = async (): Promise<number> => (await db.select({ id: waves.id }).from(waves)).length;
+
+  test("someone removed from a booked seat does not get one of their own", async () => {
+    const { waveId } = await buy();
+    const jar = await signInWithProvider("ben@acme.example");
+    const ben = (await db.select({ id: users.id }).from(users).where(eq(users.email, "ben@acme.example")))[0];
+    await addMember(db, waveId, ben?.id ?? "", "member");
+    await removeMember(db, waveId, "owner", ben?.id ?? "");
+
+    const res = await createWave(jar);
+    expect(res.status).toBe(403);
+    expect(await waveCount()).toBe(1);
+  });
+
+  test("nor does anyone still on one", async () => {
+    await buy();
+    const jar = await signInWithProvider("anna@acme.example");
+    expect((await createWave(jar)).status).toBe(403);
+    expect(await waveCount()).toBe(1);
+  });
+
+  test("the form and /api/me say why instead of offering one", async () => {
+    const jar = await signInWithProvider("ben@acme.example");
+    const form = await app.request("/waves/new", { headers: { cookie: jar.header() } });
+    expect(form.status).toBe(200);
+    expect(await form.text()).not.toContain('action="/waves"');
+
+    const me = (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
+      canCreateWave: boolean;
+    };
+    expect(me.canCreateWave).toBe(false);
+  });
+
+  test("on a server without billing nothing changes", async () => {
+    app = makeApp({});
+    const jar = await signInWithProvider("ben@acme.example");
+    expect((await createWave(jar)).status).toBe(303);
+    const me = (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
+      canCreateWave: boolean;
+    };
+    expect(me.canCreateWave).toBe(true);
   });
 });

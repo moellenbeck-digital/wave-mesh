@@ -49,6 +49,11 @@ export interface Me {
   invites: WaitingInvite[];
   /** What the create form starts with, so neither field is ever empty. */
   suggestion: { name: string; dnsSuffix: string };
+  /**
+   * False where waves are sold and only a subscription makes one. Missing from
+   * an older server, which never refused -- so absent counts as true.
+   */
+  canCreateWave?: boolean;
 }
 
 export interface Member {

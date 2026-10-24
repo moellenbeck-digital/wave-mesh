@@ -57,6 +57,11 @@ const en = {
   keepSuggestion: `Keep the suggestion if you have no domain of your own. A public certificate needs one you
             own — you can change this later, which renames every device in the wave.`,
   createWave: "Create wave",
+  invitationOnlyHtml: (wave: string) =>
+    `An invitation into <strong>${e(wave)}</strong> is waiting for you. Open the link it came with.`,
+  noWaveCreation: "Waves come with a subscription",
+  noWaveCreationBody:
+    "On this server a wave is booked, not created. Ask the owner of a wave to invite you, or book one of your own.",
   invalidInput: (kind: "domain" | "wave-name", input: string) =>
     kind === "domain" ? `not a domain name: ${input}` : `not a wave name: ${input}`,
   invalid: "Invalid.",
@@ -181,6 +186,11 @@ const de: typeof en = {
   keepSuggestion: `Behalte den Vorschlag, wenn du keine eigene Domain hast. Ein öffentliches Zertifikat braucht
             eine, die dir gehört — ändern kannst du das später, dabei wird jedes Gerät im Wave umbenannt.`,
   createWave: "Wave anlegen",
+  invitationOnlyHtml: (wave) =>
+    `Eine Einladung in <strong>${e(wave)}</strong> wartet auf dich. Öffne den Link, mit dem sie kam.`,
+  noWaveCreation: "Waves gibt es mit einem Abo",
+  noWaveCreationBody:
+    "Auf diesem Server wird ein Wave gebucht, nicht angelegt. Lass dich vom Eigentümer eines Waves einladen oder buche einen eigenen.",
   invalidInput: (kind, input) =>
     kind === "domain" ? `kein gültiger Domainname: ${input}` : `kein gültiger Wave-Name: ${input}`,
   invalid: "Ungültig.",

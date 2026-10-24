@@ -188,6 +188,13 @@ reach "" "$B_IP" "A could not reach B in the live wave"
 reach nodeb "$A_IP" "B could not reach A in the live wave"
 ok "A ($A_IP) <-> B ($B_IP)"
 
+# Where waves are sold, an account gets one through a subscription only -- not
+# through the form every self-hosted server offers.
+code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -X POST "$CONTROL/waves" \
+  --data-urlencode "name=free" --data-urlencode "suffix=free.wave.internal")
+[[ "$code" == 403 ]] || fail "an account on a billing server created a wave of its own ($code)"
+ok "no wave of one's own on a billing server (403)"
+
 step "suspended: the mesh stops, the devices stay"
 mark a
 subscription suspended 2

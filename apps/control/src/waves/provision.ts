@@ -147,10 +147,33 @@ export function normaliseWaveName(input: string): string {
 export type WaveSetup =
   | { state: "ready"; waveId: string }
   | { state: "invited"; wave: string }
-  | { state: "needed" };
+  | { state: "needed" }
+  | { state: "closed" };
 
-/** The address comes from the session, so this costs no lookup of its own. */
-export async function waveSetup(db: Database, userId: string, email: string | null): Promise<WaveSetup> {
+/**
+ * Whether an account may start a wave of its own on this server.
+ *
+ * Not where waves are sold. There a wave is what a subscription buys, and
+ * every account in the system got there through one: a payer, or someone
+ * invited onto a booked seat. Left open, the person removed from that seat --
+ * or anyone still on it -- could create a wave the next minute, with the same
+ * devices and none of the bill. So with billing configured the only way to a
+ * wave is the billing API; on a server someone runs for themselves nothing
+ * changes.
+ */
+export const mayCreateWaves = (config: { billing?: unknown }): boolean => !config.billing;
+
+/**
+ * The address comes from the session, so this costs no lookup of its own.
+ * `closed` is `needed` on a server where nobody can create one: the form has
+ * nothing to offer then, only the reason.
+ */
+export async function waveSetup(
+  db: Database,
+  userId: string,
+  email: string | null,
+  canCreate = true,
+): Promise<WaveSetup> {
   const member = await db
     .select({ waveId: waveMembers.waveId })
     .from(waveMembers)
@@ -162,7 +185,7 @@ export async function waveSetup(db: Database, userId: string, email: string | nu
 
   const waiting = (await invitesFor(db, email))[0];
   if (waiting) return { state: "invited", wave: waiting.waveName };
-  return { state: "needed" };
+  return canCreate ? { state: "needed" } : { state: "closed" };
 }
 
 /** A refusal the person who typed it can fix, as opposed to a thrown error. */

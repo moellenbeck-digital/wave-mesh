@@ -29,6 +29,26 @@ export default async function NewWavePage({
   const waiting = me.invites[0];
   const t = appMessages(await getLocale());
 
+  // Wo Waves verkauft werden, entsteht einer nur über das Abo. Statt eines
+  // Formulars, dessen Absenden der Server ohnehin ablehnt, steht hier warum --
+  // auch für den, den Login und Gerätefreigabe hierher schicken.
+  if (me.canCreateWave === false) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <h1 className="animate-fade-in font-display text-display-sm text-navy">{t.noWaveBookedTitle}</h1>
+        {waiting ? (
+          <p className="wc-alert-success mt-6" role="status">
+            {rich(t.newInviteWaiting, {
+              wave: <strong className="font-medium">{waiting.wave}</strong>,
+              by: waiting.invitedBy ? t.invitedBy(waiting.invitedBy) : null,
+            })}
+          </p>
+        ) : null}
+        <p className="mt-3 text-body-sm text-slate">{t.noWaveBooked}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-lg">
       <div className="mb-10">

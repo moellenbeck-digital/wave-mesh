@@ -42,7 +42,7 @@ import { ReleaseFeed } from "./updates/releases.ts";
 import { listDevices } from "./waves/devices.ts";
 import { invitesFor } from "./waves/invites.ts";
 import { wavesOf } from "./waves/members.ts";
-import { suggestWave, waveSetup } from "./waves/provision.ts";
+import { mayCreateWaves, suggestWave, waveSetup } from "./waves/provision.ts";
 
 const STATE_COOKIE = "wave_oauth_state";
 const NEXT_COOKIE = "wave_oauth_next";
@@ -201,6 +201,9 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
       // What the create form starts with, so the frontend never has to invent
       // a name or guess what the placeholder domain is called.
       suggestion: suggestWave(user.email ?? user.name),
+      // False where waves are sold: the frontend then explains instead of
+      // offering a form whose POST would be refused anyway.
+      canCreateWave: mayCreateWaves(config),
     });
   });
 
@@ -302,7 +305,7 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
     }
 
     const { userId } = await resolveUser(db, claims);
-    const setup = await waveSetup(db, userId, claims.email);
+    const setup = await waveSetup(db, userId, claims.email, mayCreateWaves(config));
 
     const { token, expiresAt } = await createSession(db, userId, {
       userAgent: c.req.header("user-agent") ?? null,
@@ -318,7 +321,8 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
     // exactly what the invitation rule exists to prevent -- so a first login
     // lands on the form, carrying whatever it was on its way to. Without the
     // detour that destination could not work anyway: approving a device needs
-    // a wave to put it in.
+    // a wave to put it in. Where nobody may create one (`closed`), the same
+    // page says so instead of showing the form.
     if (setup.state !== "ready") {
       const query = next ? `?next=${encodeURIComponent(next)}` : "";
       return c.redirect(`/waves/new${query}`);

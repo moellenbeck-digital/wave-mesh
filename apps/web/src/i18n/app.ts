@@ -56,6 +56,9 @@ const en = {
   noWaveText:
     "No network has been set up for this account yet. A wave is not created on its own — you choose the domain the device names live under when you create it.",
   createWave: "Create wave",
+  noWaveBooked:
+    "On this server a wave is booked, not created. Ask the owner of a wave to invite you, or book one of your own.",
+  noWaveBookedTitle: "Waves come with a subscription",
 
   // ---- login ----
   loginLead: "Your account is where you manage the devices in your wave.",
@@ -226,6 +229,9 @@ const de: typeof en = {
   noWaveText:
     "Für dieses Konto ist noch kein Netz eingerichtet. Ein Wave entsteht nicht von selbst — die Domain, unter der die Gerätenamen hängen, wählst du beim Anlegen.",
   createWave: "Wave anlegen",
+  noWaveBooked:
+    "Auf diesem Server wird ein Wave gebucht, nicht angelegt. Lass dich vom Eigentümer eines Waves einladen oder buche einen eigenen.",
+  noWaveBookedTitle: "Waves gibt es mit einem Abo",
 
   loginLead: "Mit deinem Konto verwaltest du die Geräte in deinem Wave.",
   loginInvalid: "E-Mail oder Passwort stimmt nicht.",

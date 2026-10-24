@@ -153,6 +153,9 @@ ionos take one token; inwx takes an account and asks for its parts, or reads
     `Two-factor sign-in is off for ${email}; the password alone signs in again, and the recovery codes are void.`,
   twoFactorWasOff: (email: string) => `${email} had no two-factor sign-in.`,
   waveDeferred: "no wave: an invitation is waiting for this address",
+  waveBooked: "no wave: on this server waves come from a subscription (create-wave makes one by hand)",
+  waveCreated: (name: string, id: string, suffix: string, email: string) =>
+    `Created ${name} (${id}) under ${suffix}, owned by ${email}. It has no subscription: no seat limit, no pause.`,
   waveNote: (id: string, created: boolean) => `wave ${id}${created ? " created" : ""}`,
   accountSaved: (created: boolean, email: string, userId: string, note: string) =>
     `${created ? "Created" : "Updated"} ${email} (${userId}); ${note}.`,
@@ -290,6 +293,9 @@ ionos nehmen einen Token; inwx nimmt ein Konto und fragt nach seinen Teilen, ode
     `Die Zwei-Faktor-Anmeldung für ${email} ist aus; das Passwort allein meldet wieder an, die Wiederherstellungscodes sind ungültig.`,
   twoFactorWasOff: (email) => `${email} hatte keine Zwei-Faktor-Anmeldung.`,
   waveDeferred: "kein Wave: für diese Adresse wartet eine Einladung",
+  waveBooked: "kein Wave: auf diesem Server kommen Waves aus einem Abo (create-wave legt einen von Hand an)",
+  waveCreated: (name, id, suffix, email) =>
+    `${name} (${id}) unter ${suffix} angelegt, Eigentümer ${email}. Ohne Abo: keine Platzgrenze, keine Pause.`,
   waveNote: (id, created) => `Wave ${id}${created ? " angelegt" : ""}`,
   accountSaved: (created, email, userId, note) =>
     `${email} (${userId}) ${created ? "angelegt" : "aktualisiert"}; ${note}.`,

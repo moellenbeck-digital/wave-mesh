@@ -479,7 +479,8 @@ Was daran festliegt:
   den Link aus dem Terminal noch einmal öffnen.
 - **`ensureWaveForUser()` bleibt für den Weg ohne Browser.**
   `admin.ts set-password` kann niemanden fragen und nimmt deshalb weiter den
-  Platzhalter. Eine wartende Einladung hält es dort nach wie vor zurück; das
+  Platzhalter — außer auf einem Server mit Abrechnung, dort legt nur
+  `create-wave` von Hand einen an (siehe „Abrechnung“). Eine wartende Einladung hält es dort nach wie vor zurück; das
   Formular dagegen zeigt die Einladung an und legt trotzdem an, wenn jemand
   darauf besteht — die Regel schützt vor *automatischen* Waves, nicht vor
   gewollten.
@@ -1079,6 +1080,7 @@ Hineingekommen wird auf zwei Wegen, und beide enden in derselben Tabelle:
 
 ```bash
 # Operator auf der Shell des Servers
+bun apps/control/src/admin.ts create-wave   <email> <name> [domain]
 bun apps/control/src/admin.ts members       <wave>
 bun apps/control/src/admin.ts add-member    <wave> <email> [admin|member]
 bun apps/control/src/admin.ts remove-member <wave> <email>
@@ -1358,6 +1360,19 @@ Was daran festliegt:
   das Präfix mit derselben schlichten 404 wie jeder unbekannte Pfad, und mit
   Token geht ein unbekannter Pfad darunter nicht an den Proxy — samt
   `Authorization`-Header.
+- **Wo Waves verkauft werden, legt niemand selbst einen an.** Ist
+  `WAVE_BILLING_TOKEN` gesetzt, verweigert `POST /waves` mit 403, `/waves/new`
+  zeigt statt des Formulars den Grund, `/api/me` sagt `canCreateWave: false`
+  und `wave-admin set-password` legt keinen Platzhalter-Wave an
+  (`mayCreateWaves()` in `waves/provision.ts`, die eine Stelle). Sonst konnte
+  jedes Konto — wer auf einem gebuchten Platz sitzt, und erst recht, wer davon
+  entfernt wurde — sich nebenher einen Wave aufmachen, mit denselben Geräten
+  und ohne Rechnung. Ein Wave entsteht dort über die Abrechnungs-API — oder
+  ausdrücklich durch den Operator mit `wave-admin create-wave <email> <name>
+  [domain]`, auf jedem Server. Ausdrücklich deshalb, weil `set-password` ihn
+  nebenbei anlegte: ein neues Passwort für jemanden, der von einem gebuchten
+  Platz entfernt wurde, wäre sonst still ein Gratis-Wave. Ein so angelegter
+  Wave hat keine Abrechnungszeile, also keine Platzgrenze und keine Pause.
 - **Ein selbst betriebener Wave hat keine Abrechnungszeile**, und für ihn gilt
   nichts davon: keine Grenze, keine Pause, kein Löschen.
 - **Der Token wird als Hash verglichen**, damit der Vergleich für jede Länge

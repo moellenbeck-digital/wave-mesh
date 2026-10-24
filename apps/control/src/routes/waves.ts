@@ -32,6 +32,7 @@ import {
   createWave,
   deleteWave,
   InvalidInputError,
+  mayCreateWaves,
   normaliseDnsSuffix,
   normaliseWaveName,
   renameWave,
@@ -67,6 +68,7 @@ type Vars = { user: SessionUser | null };
  */
 export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
   const app = new Hono<{ Variables: Vars }>();
+  const canCreate = mayCreateWaves(config);
 
   /** The words of this request's language, for pages and JSON errors alike. */
   const say = (c: Context) => pageMessages(localeOf(c));
@@ -130,10 +132,17 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       const user = c.get("user");
       if (!user) return c.redirect(`/?next=${encodeURIComponent("/waves/new")}`);
 
-      const setup = await waveSetup(db, user.id, user.email);
+      const setup = await waveSetup(db, user.id, user.email, canCreate);
+      const m = say(c);
+      if (!canCreate) {
+        const waiting =
+          setup.state === "invited" ? html`<p>${raw(m.invitationOnlyHtml(setup.wave))}</p>` : "";
+        return c.html(html`<h1>${m.noWaveCreation}</h1>
+          ${waiting}
+          <p>${m.noWaveCreationBody}</p>`);
+      }
       const suggestion = suggestWave(user.email ?? user.name);
       const next = safeNext(c.req.query("next"));
-      const m = say(c);
       const waiting =
         setup.state === "invited"
           ? html`<p>
@@ -161,6 +170,8 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
   app.post("/waves", async (c) => {
     const user = c.get("user");
     if (!user) return c.json({ error: say(c).apiUnauthenticated }, 401);
+    // The form is not offered here, but a POST needs no form.
+    if (!canCreate) return page(c, (m) => [m.noWaveCreation, m.noWaveCreationBody], 403);
 
     const form = await c.req.formData();
     let name: string;
