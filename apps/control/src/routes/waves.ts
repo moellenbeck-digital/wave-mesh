@@ -328,12 +328,15 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
 
-    // Already gone is the state that was asked for, so it is not an error.
-    await revokeInvite(db, waveId, { id: c.req.param("inviteId") });
-    await audit(db, waveId, userActor(auth.user), {
-      action: "invite.revoke",
-      target: c.req.param("inviteId"),
-    });
+    // Already gone is the state that was asked for, so it is not an error --
+    // but it is no entry in the log either: an id that names nothing here (gone,
+    // or another wave's) would otherwise read as a withdrawal that never was.
+    if (await revokeInvite(db, waveId, { id: c.req.param("inviteId") })) {
+      await audit(db, waveId, userActor(auth.user), {
+        action: "invite.revoke",
+        target: c.req.param("inviteId"),
+      });
+    }
     return c.redirect("/", 303);
   });
 

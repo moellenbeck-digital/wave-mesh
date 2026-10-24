@@ -5,7 +5,7 @@ import { createApp } from "../src/app.ts";
 import { listAudit } from "../src/audit.ts";
 import { createProviders } from "../src/auth/providers.ts";
 import type { Database } from "../src/db/client.ts";
-import { nodes, waves } from "../src/db/schema.ts";
+import { aclPolicies, auditLog, nodes, waveInvites, waveMembers, waves } from "../src/db/schema.ts";
 import { buildNetmap } from "../src/netmap/build.ts";
 import { createInvite, revokeInvite } from "../src/waves/invites.ts";
 import {
@@ -715,5 +715,98 @@ describe("a device when the account is in several waves", () => {
     });
     expect(added.status).toBe(200);
     expect(await nodesOf(own.id, owner)).toEqual(["laptop"]);
+  });
+});
+
+describe("a manager of one wave in another", () => {
+  /**
+   * Being owner or admin is a role *in* a wave, never a rank on the server.
+   * Every route below is one an owner may take in their own wave; here each is
+   * aimed at someone else's, directly and through the owner's own URL with a
+   * foreign device or member, and none of them may leave a mark there. One
+   * list, so the next route added is one line here and not a gap.
+   */
+  test("can change nothing there, and add no one", async () => {
+    const robin = await signUp("robin@example.com");
+    const own = await waveOf(robin);
+    const mallory = await signUp("mallory@example.com");
+    const theirs = await waveOf(mallory);
+    await enrol("theirs", mallory);
+    const theirNode = await nodeId("theirs");
+    const malloryId = await userIdOf(mallory);
+    const ada = await login("ada@example.com");
+    const adaId = await userIdOf(ada);
+    await db.insert(waveMembers).values({ waveId: theirs.id, userId: adaId, role: "member" });
+    const inviteToken = await invite(theirs.id, "eve@example.com", malloryId);
+    const theirInvite = (
+      await db.select({ id: waveInvites.id }).from(waveInvites).where(eq(waveInvites.waveId, theirs.id))
+    )[0]?.id;
+    expect(inviteToken).toBeTruthy();
+
+    const snapshot = async () => ({
+      wave: await db.select().from(waves).where(eq(waves.id, theirs.id)),
+      members: await db.select().from(waveMembers).where(eq(waveMembers.waveId, theirs.id)),
+      invites: await db.select().from(waveInvites).where(eq(waveInvites.waveId, theirs.id)),
+      nodes: await db.select().from(nodes).where(eq(nodes.waveId, theirs.id)),
+      acl: await db.select().from(aclPolicies).where(eq(aclPolicies.waveId, theirs.id)),
+      audit: await db.select().from(auditLog).where(eq(auditLog.waveId, theirs.id)),
+    });
+    const before = await snapshot();
+
+    const form = (body: Record<string, string>) => ({
+      method: "POST",
+      body: new URLSearchParams(body),
+      headers: { cookie: robin.header() },
+    });
+    const json = (method: string, body?: unknown) => ({
+      method,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      headers: { cookie: robin.header(), "content-type": "application/json" },
+    });
+    const policy = { acls: [{ src: ["*"], dst: ["*"] }] };
+    const attempts: [string, RequestInit][] = [
+      [`/waves/${theirs.id}/name`, form({ name: "taken" })],
+      [`/waves/${theirs.id}/domain`, form({ domain: "taken.wave.internal" })],
+      [`/waves/${theirs.id}/invites`, form({ email: "friend@example.com", role: "admin" })],
+      [`/waves/${theirs.id}/invites/${theirInvite}/revoke`, form({})],
+      [`/waves/${theirs.id}/members/${adaId}/remove`, form({})],
+      [`/waves/${theirs.id}/members/${adaId}/role`, form({ role: "admin" })],
+      [`/waves/${theirs.id}/nodes/${theirNode}/name`, form({ name: "renamed" })],
+      [`/waves/${theirs.id}/nodes/${theirNode}/remove`, form({})],
+      [`/waves/${theirs.id}/delete`, form({ confirm: theirs.name })],
+      [`/api/waves/${theirs.id}/members`, json("GET")],
+      [`/api/waves/${theirs.id}/nodes`, json("GET")],
+      [`/api/waves/${theirs.id}/acl`, json("GET")],
+      [`/api/waves/${theirs.id}/acl`, json("PUT", policy)],
+      [`/api/waves/${theirs.id}/acl`, json("DELETE")],
+      [`/api/waves/${theirs.id}/acl/preview`, json("POST", { policy })],
+      [`/api/waves/${theirs.id}/audit`, json("GET")],
+      [`/api/waves/${theirs.id}/nodes/${theirNode}/tags`, json("PUT", { tags: ["tag:mine"] })],
+      // Through the caller's own wave, naming what belongs to the other one.
+      [`/waves/${own.id}/members/${adaId}/remove`, form({})],
+      [`/waves/${own.id}/members/${adaId}/role`, form({ role: "admin" })],
+      [`/waves/${own.id}/members/${malloryId}/remove`, form({})],
+      [`/waves/${own.id}/nodes/${theirNode}/name`, form({ name: "renamed" })],
+      [`/waves/${own.id}/nodes/${theirNode}/remove`, form({})],
+      [`/api/waves/${own.id}/nodes/${theirNode}/tags`, json("PUT", { tags: ["tag:mine"] })],
+    ];
+
+    for (const [path, init] of attempts) {
+      const res = await app.request(path, init);
+      // Refused, whichever way: an unknown wave or member is 404, an
+      // inapplicable one 400 or 403. What matters is that it is not a success.
+      expect({ path, method: init.method, ok: res.status < 400 }).toEqual({
+        path,
+        method: init.method,
+        ok: false,
+      });
+    }
+    // Withdrawing what is already gone is no error on purpose, so this one
+    // answers like a success. It must still touch nothing there, and leave no
+    // entry here claiming it did.
+    expect((await app.request(`/waves/${own.id}/invites/${theirInvite}/revoke`, form({}))).status).toBe(303);
+    expect((await listAudit(db, own.id, 50)).map((entry) => entry.action)).not.toContain("invite.revoke");
+
+    expect(await snapshot()).toEqual(before);
   });
 });
