@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { createApp } from "../src/app.ts";
 import { setPassword } from "../src/auth/password.ts";
 import { createProviders } from "../src/auth/providers.ts";
@@ -9,6 +9,7 @@ const WEB_URL = "http://127.0.0.1:3000";
 
 let db: Database;
 let close: () => Promise<void>;
+let reset: () => Promise<void>;
 
 /** Records what the proxy asked the frontend for, and answers for it. */
 function stubFrontend(answer: () => Response = () => new Response("page", { status: 200 })) {
@@ -31,9 +32,14 @@ const build = (overrides: Record<string, string>, webFetch?: typeof fetch) => {
   });
 };
 
+beforeAll(async () => {
+  ({ db, close, reset } = await createTestDb());
+});
+
+afterAll(() => close());
+
 beforeEach(async () => {
-  if (close) await close();
-  ({ db, close } = await createTestDb());
+  await reset();
 });
 
 describe("without a frontend", () => {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { buildAuthorizationHeader, generateKeyPair, signRelease } from "@wave/crypto";
 import type { ServerMessage, UpdateChannel } from "@wave/proto";
@@ -8,7 +8,15 @@ import { createProviders } from "../src/auth/providers.ts";
 import { nodes } from "../src/db/schema.ts";
 import { parseUpdateChannels } from "../src/env.ts";
 import { ReleaseFeed } from "../src/updates/releases.ts";
-import { CookieJar, createTestDb, createWaveAs, testConfig, testSigningKey } from "./helpers.ts";
+import { CookieJar, createTestDb, createWaveAs, type TestDb, testConfig, testSigningKey } from "./helpers.ts";
+
+let testDb: TestDb;
+
+beforeAll(async () => {
+  testDb = await createTestDb();
+});
+
+afterAll(() => testDb.close());
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -242,7 +250,8 @@ describe("the release feed", () => {
 
 describe("offers over the control socket", () => {
   async function startServer(releases: ReleaseFeed) {
-    const { db, close } = await createTestDb();
+    await testDb.reset();
+    const { db } = testDb;
     const config = testConfig();
     const app = createApp({
       db,
@@ -252,10 +261,7 @@ describe("offers over the control socket", () => {
       releases,
     });
     const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch, websocket: app.websocket });
-    cleanup.push(() => {
-      server.stop(true);
-      return close();
-    });
+    cleanup.push(() => server.stop(true));
     return { db, base: `http://127.0.0.1:${server.port}` };
   }
 
