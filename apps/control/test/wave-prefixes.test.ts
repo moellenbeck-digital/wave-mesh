@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { Database } from "../src/db/client.ts";
 import { nodes, users, waves } from "../src/db/schema.ts";
@@ -9,10 +9,16 @@ import { createTestDb } from "./helpers.ts";
 
 let db: Database;
 let close: () => Promise<void>;
+let reset: () => Promise<void>;
+
+beforeAll(async () => {
+  ({ db, close, reset } = await createTestDb());
+});
+
+afterAll(() => close());
 
 beforeEach(async () => {
-  if (close) await close();
-  ({ db, close } = await createTestDb());
+  await reset();
 });
 
 const user = async (email: string): Promise<string> => {

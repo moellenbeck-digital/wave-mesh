@@ -6,12 +6,53 @@ import type { Database } from "../src/db/client.ts";
 import { schema } from "../src/db/schema.ts";
 import { loadConfig } from "../src/env.ts";
 
-/** In-process Postgres: real dialect semantics, no container to start. */
-export async function createTestDb(): Promise<{ db: Database; close: () => Promise<void> }> {
+export type TestDb = {
+  db: Database;
+  /** Shuts the instance down; once per file, in `afterAll`. */
+  close: () => Promise<void>;
+  /** Back to the state right after the migrations; in `beforeEach`. */
+  reset: () => Promise<void>;
+};
+
+/**
+ * In-process Postgres: real dialect semantics, no container to start.
+ *
+ * Every instance carries its own WebAssembly heap and a full migration run, and
+ * a closed one does not give that memory back to the process. A test file
+ * therefore makes one instance in `beforeAll` and calls `reset()` before each
+ * test, instead of building a new database per test:
+ *
+ *     let db: Database;
+ *     let close: () => Promise<void>;
+ *     let reset: () => Promise<void>;
+ *
+ *     beforeAll(async () => {
+ *       ({ db, close, reset } = await createTestDb());
+ *     });
+ *     afterAll(() => close());
+ *     beforeEach(() => reset());
+ */
+export async function createTestDb(): Promise<TestDb> {
   const client = new PGlite();
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
-  return { db: db as unknown as Database, close: () => client.close() };
+
+  let truncate: string | undefined;
+  return {
+    db: db as unknown as Database,
+    close: () => client.close(),
+    // The migrations insert no rows, so emptying every table in `public` equals
+    // a fresh database. The migration journal lives in the `drizzle` schema and stays.
+    reset: async () => {
+      if (truncate === undefined) {
+        const { rows } = await client.query<{ name: string }>(
+          "select format('%I.%I', schemaname, tablename) as name from pg_tables where schemaname = 'public'",
+        );
+        truncate = `truncate ${rows.map((row) => row.name).join(", ")} restart identity cascade`;
+      }
+      await client.exec(truncate);
+    },
+  };
 }
 
 export const testConfig = (overrides: Record<string, string> = {}) =>

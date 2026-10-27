@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { buildAuthorizationHeader, generateKeyPair } from "@wave/crypto";
 import type { ServerMessage } from "@wave/proto";
 import { eq } from "drizzle-orm";
@@ -8,7 +8,15 @@ import { createProviders } from "../src/auth/providers.ts";
 import type { Database } from "../src/db/client.ts";
 import { nodes } from "../src/db/schema.ts";
 import { removeNode } from "../src/waves/nodes.ts";
-import { CookieJar, createTestDb, createWaveAs, testConfig, testSigningKey } from "./helpers.ts";
+import { CookieJar, createTestDb, createWaveAs, type TestDb, testConfig, testSigningKey } from "./helpers.ts";
+
+let testDb: TestDb;
+
+beforeAll(async () => {
+  testDb = await createTestDb();
+});
+
+afterAll(() => testDb.close());
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -17,14 +25,12 @@ afterEach(async () => {
 
 /** Runs the real app on a real port, because WebSockets need a real server. */
 async function startServer() {
-  const { db, close } = await createTestDb();
+  await testDb.reset();
+  const { db } = testDb;
   const config = testConfig();
   const app = createApp({ db, config, providers: createProviders(config), signingKey: testSigningKey() });
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch, websocket: app.websocket });
-  cleanup.push(() => {
-    server.stop(true);
-    return close();
-  });
+  cleanup.push(() => server.stop(true));
   return { db, base: `http://127.0.0.1:${server.port}`, port: server.port };
 }
 

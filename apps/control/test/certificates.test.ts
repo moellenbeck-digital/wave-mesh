@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
 import {
   buildAuthorizationHeader,
@@ -32,13 +32,19 @@ const DAY = 24 * 60 * 60 * 1000;
 
 let db: Database;
 let close: () => Promise<void>;
+let reset: () => Promise<void>;
 let app: ReturnType<typeof createApp>;
 let ca: FakeCa;
 let config: Config;
 
+beforeAll(async () => {
+  ({ db, close, reset } = await createTestDb());
+});
+
+afterAll(() => close());
+
 beforeEach(async () => {
-  if (close) await close();
-  ({ db, close } = await createTestDb());
+  await reset();
   ca = fakeCa();
   app = build();
 });

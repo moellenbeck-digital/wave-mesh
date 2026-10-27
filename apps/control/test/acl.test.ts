@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { buildAuthorizationHeader, generateKeyPair } from "@wave/crypto";
 import type { AclPolicy, Netmap } from "@wave/proto";
 import { eq } from "drizzle-orm";
@@ -23,6 +23,16 @@ import { CookieJar, createTestDb, createWaveAs, testConfig, testSigningKey } fro
  * node's netmap. A peer left out is not a WireGuard peer, and that is the
  * protection -- so these tests read netmaps, not a policy engine's opinion.
  */
+
+let db: Database;
+let close: () => Promise<void>;
+let reset: () => Promise<void>;
+
+beforeAll(async () => {
+  ({ db, close, reset } = await createTestDb());
+});
+
+afterAll(() => close());
 
 const robin = (id: string, role: AclNode["role"] = "owner"): AclNode => ({
   id,
@@ -219,13 +229,10 @@ describe("checking a policy", () => {
 });
 
 describe("the netmap under a policy", () => {
-  let db: Database;
-  let close: () => Promise<void>;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(async () => {
-    if (close) await close();
-    ({ db, close } = await createTestDb());
+    await reset();
     const config = testConfig();
     app = createApp({ db, config, providers: createProviders(config), signingKey: testSigningKey() });
   });
@@ -436,13 +443,10 @@ describe("previewing a draft", () => {
 });
 
 describe("the policy over HTTP", () => {
-  let db: Database;
-  let close: () => Promise<void>;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(async () => {
-    if (close) await close();
-    ({ db, close } = await createTestDb());
+    await reset();
     const config = testConfig();
     app = createApp({ db, config, providers: createProviders(config), signingKey: testSigningKey() });
   });

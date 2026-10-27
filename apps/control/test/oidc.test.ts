@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { createHash, generateKeyPairSync, type KeyObject, sign } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/app.ts";
@@ -253,12 +253,18 @@ describe("configuring it", () => {
 describe("through the server", () => {
   let db: Database;
   let close: () => Promise<void>;
+  let reset: () => Promise<void>;
   let fake: ReturnType<typeof fakeProvider>;
   let app: ReturnType<typeof createApp>;
 
+  beforeAll(async () => {
+    ({ db, close, reset } = await createTestDb());
+  });
+
+  afterAll(() => close());
+
   beforeEach(async () => {
-    if (close) await close();
-    ({ db, close } = await createTestDb());
+    await reset();
     fake = fakeProvider();
     const appConfig = testConfig();
     const providers = new Map<string, OAuthProvider>([

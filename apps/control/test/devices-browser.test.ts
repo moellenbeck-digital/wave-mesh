@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { buildAuthorizationHeader, generateKeyPair } from "@wave/crypto";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/app.ts";
@@ -17,11 +17,17 @@ import {
 
 let db: Database;
 let close: () => Promise<void>;
+let reset: () => Promise<void>;
 let app: ReturnType<typeof createApp>;
 
+beforeAll(async () => {
+  ({ db, close, reset } = await createTestDb());
+});
+
+afterAll(() => close());
+
 beforeEach(async () => {
-  if (close) await close();
-  ({ db, close } = await createTestDb());
+  await reset();
   const config = testConfig();
   app = createApp({ db, config, providers: createProviders(config), signingKey: testSigningKey() });
 });

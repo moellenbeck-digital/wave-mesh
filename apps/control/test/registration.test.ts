@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { buildAuthorizationHeader, canonicalJson, generateKeyPair, type KeyPair, verify } from "@wave/crypto";
 import { Netmap, SignedNetmap } from "@wave/proto";
 import { createApp } from "../src/app.ts";
@@ -15,12 +15,18 @@ import {
 
 let db: Database;
 let close: () => Promise<void>;
+let reset: () => Promise<void>;
 let app: ReturnType<typeof createApp>;
 let signingKey: KeyPair;
 
+beforeAll(async () => {
+  ({ db, close, reset } = await createTestDb());
+});
+
+afterAll(() => close());
+
 beforeEach(async () => {
-  if (close) await close();
-  ({ db, close } = await createTestDb());
+  await reset();
   const config = testConfig();
   signingKey = testSigningKey();
   app = createApp({ db, config, providers: createProviders(config), signingKey });

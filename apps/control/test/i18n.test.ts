@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { previewPolicy } from "../src/acl/preview.ts";
 import { checkPolicy } from "../src/acl/validate.ts";
@@ -10,11 +10,17 @@ import { createTestDb, testConfig, testSigningKey } from "./helpers.ts";
 
 let db: Database;
 let close: () => Promise<void>;
+let reset: () => Promise<void>;
 let app: ReturnType<typeof createApp>;
 
+beforeAll(async () => {
+  ({ db, close, reset } = await createTestDb());
+});
+
+afterAll(() => close());
+
 beforeEach(async () => {
-  if (close) await close();
-  ({ db, close } = await createTestDb());
+  await reset();
   const config = testConfig();
   app = createApp({ db, config, providers: createProviders(config), signingKey: testSigningKey() });
 });

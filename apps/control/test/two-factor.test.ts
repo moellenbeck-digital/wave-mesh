@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/app.ts";
 import { setPassword } from "../src/auth/password.ts";
@@ -40,13 +40,19 @@ describe("the codes themselves (RFC 6238)", () => {
 describe("signing in with a second factor", () => {
   let db: Database;
   let close: () => Promise<void>;
+  let reset: () => Promise<void>;
   let app: ReturnType<typeof createApp>;
   const email = "robin@example.com";
   const password = "correct horse battery staple";
 
+  beforeAll(async () => {
+    ({ db, close, reset } = await createTestDb());
+  });
+
+  afterAll(() => close());
+
   beforeEach(async () => {
-    if (close) await close();
-    ({ db, close } = await createTestDb());
+    await reset();
     app = createApp({ db, config: testConfig(), providers: new Map(), signingKey: testSigningKey() });
     await setPassword(db, email, password);
   });
