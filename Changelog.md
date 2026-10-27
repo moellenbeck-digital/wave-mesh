@@ -6,7 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.12.0.*
+### Fehlerbehebungen
+
+- **Rollenauswahl in der Mitgliederliste lesbar:** Ist die Rolle änderbar, ist die
+  Rolle-Spalte jetzt breit genug, dass der Rollenname in der Auswahl vollständig
+  zu lesen ist; „Speichern“ steht daneben. Die Spalten von Mitglieds- und
+  Einladungszeilen bleiben ausgerichtet, auch auf schmalen Displays.
 
 ---
 
