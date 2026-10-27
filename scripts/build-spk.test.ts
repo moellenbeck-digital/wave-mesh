@@ -3,7 +3,15 @@ import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSpks, PAYLOAD, runAs, SPK_TARGETS, spkName, synologyVersion } from "./build-spk.ts";
+import {
+  buildSpks,
+  DSM_APP_NAME,
+  PAYLOAD,
+  runAs,
+  SPK_TARGETS,
+  spkName,
+  synologyVersion,
+} from "./build-spk.ts";
 
 /**
  * What a package must contain to be one DSM will install, checked on the file
@@ -149,6 +157,37 @@ describe("the packages", () => {
         expect(listing.some((line) => line.endsWith("LICENSE.wireguard-go"))).toBe(true);
       });
 
+      test("brings its page for DSM's main menu, under the name INFO gives it", async () => {
+        const spk = await build();
+        const work = scratch();
+        await run(["tar", "-xf", spk, "-C", work]);
+        const info = parseInfo(readFileSync(join(work, "INFO"), "utf8"));
+        expect(info.dsmuidir).toBe("ui");
+        expect(info.dsmappname).toBe(DSM_APP_NAME);
+
+        const payload = join(work, "payload");
+        mkdirSync(payload);
+        await run(["tar", "-xzf", join(work, "package.tgz"), "-C", payload]);
+        const config = JSON.parse(readFileSync(join(payload, "ui", "config"), "utf8"));
+        const app = config[".url"][DSM_APP_NAME];
+        expect(app.type).toBe("url");
+        // Relative to DSM's root, under the folder DSM links ui/ to, and with
+        // the trailing slash the page's relative API paths rely on.
+        expect(app.url).toBe("webman/3rdparty/wave/index.cgi/");
+        expect(
+          readFileSync(join(payload, "ui", app.icon))
+            .subarray(1, 4)
+            .toString(),
+        ).toBe("PNG");
+
+        const listing = (await run(["tar", "-tvzf", join(work, "package.tgz")])).trim().split("\n");
+        // DSM runs it directly, as the package's user.
+        expect(listing.find((line) => line.endsWith(" ui/index.cgi"))?.startsWith("-rwxr-xr-x")).toBe(true);
+        expect(readFileSync(join(payload, "ui", "index.cgi"), "utf8")).toContain(
+          "exec /var/packages/wave/target/wave dsm-ui",
+        );
+      });
+
       test("never asks DSM for root, which DSM 7 refuses to install", async () => {
         const work = scratch();
         await run(["tar", "-xf", await build(), "-C", work]);
@@ -229,6 +268,9 @@ describe("the scripts DSM runs", () => {
       await run(["sh", "-n", scriptPath(script)]);
     });
   }
+  test("ui/index.cgi is valid shell", async () => {
+    await run(["sh", "-n", join(import.meta.dir, "..", "packaging", "dsm", "ui", "index.cgi")]);
+  });
 });
 
 /**
@@ -348,7 +390,11 @@ describe("the one step as root", () => {
     const result = await sandbox({ uid: 0, unit: false }).run("setup");
     expect(result.code).toBe(0);
     expect(result.calls).toHaveLength(1);
-    expect(result.calls[0]).toMatch(/^wave install --binary .*\/target\/wave$/);
+    // The socket goes to the package's user too: DSM runs the page as that user.
+    expect(result.calls[0]).toMatch(/^wave install --binary .*\/target\/wave --socket-user wave-pkg$/);
+    expect(
+      readFileSync(join(import.meta.dir, "..", "packaging", "dsm", "conf", "privilege"), "utf8"),
+    ).toContain('"username": "wave-pkg"');
   });
 
   test("uninstall takes it out again", async () => {

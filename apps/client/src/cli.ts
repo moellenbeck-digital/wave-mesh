@@ -55,6 +55,7 @@ const { values, positionals } = parseArgs({
     dsm: { type: "boolean", default: false },
     "no-dsm": { type: "boolean", default: false },
     binary: { type: "string" },
+    "socket-user": { type: "string" },
     "auth-key": { type: "string", default: process.env.WAVE_AUTH_KEY ?? "" },
     wildcard: { type: "boolean", default: false },
     "new-wave": { type: "boolean", default: false },
@@ -334,6 +335,13 @@ async function main(): Promise<number> {
     await runTray({ socketPath: values.daemon });
     return 0;
   }
+  // Not for typing: DSM runs it as the package's page (packaging/dsm/ui/index.cgi),
+  // once per request, and it speaks CGI on stdin and stdout.
+  if (command === "dsm-ui") {
+    const { runDsmUi } = await import("./dsm-ui.ts");
+    await runDsmUi();
+    return 0;
+  }
   if (command === "install" || command === "uninstall") {
     const { homeOf, install, uninstall } = await import("./install.ts");
     // Windows has no sudo: an elevated prompt keeps the account it was started
@@ -353,6 +361,7 @@ async function main(): Promise<number> {
       update: Object.keys(update).length > 0 ? update : undefined,
       binaryPath: values.binary,
       group: values.group,
+      socketUser: values["socket-user"],
       user,
       userHome: home ?? (process.env.SUDO_USER ? `/home/${process.env.SUDO_USER}` : undefined),
       userId: process.env.SUDO_UID ? Number(process.env.SUDO_UID) : undefined,

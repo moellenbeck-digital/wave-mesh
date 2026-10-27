@@ -4,14 +4,16 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DaemonClient, LineReader, type Status } from "@wave/ipc";
-import { Daemon, resolveGroupId } from "../src/daemon.ts";
+import { Daemon, resolveGroupId, resolveUserId } from "../src/daemon.ts";
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
   for (const fn of cleanup.splice(0)) await fn();
 });
 
-async function startDaemon(options: { socketGroup?: string; log?: (m: string) => void } = {}) {
+async function startDaemon(
+  options: { socketGroup?: string; socketUser?: string; log?: (m: string) => void } = {},
+) {
   const dir = await mkdtemp(join(tmpdir(), "wave-daemon-"));
   const statePath = join(dir, "state.json");
   const daemon = new Daemon({
@@ -123,6 +125,22 @@ describe("group lookup", () => {
 
   test("takes a numeric id as it is", () => {
     expect(resolveGroupId("1000")).toBe(1000);
+  });
+});
+
+describe("user lookup", () => {
+  test("reads a name from the user database, so the socket can go to a package's user", () => {
+    const passwd = join(import.meta.dir, "fixtures-passwd");
+    expect(resolveUserId("shared", passwd)).toBe(1000);
+    expect(resolveUserId("wave-pkg", passwd)).toBeNull();
+    expect(resolveUserId("1026")).toBe(1026);
+  });
+
+  test("stays root's when the user does not exist", async () => {
+    const lines: string[] = [];
+    const { path } = await startDaemon({ socketUser: "definitely-not-a-user", log: (m) => lines.push(m) });
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(lines.some((line) => line.includes("definitely-not-a-user does not exist"))).toBe(true);
   });
 });
 

@@ -45,6 +45,13 @@ export const PAYLOAD = [
 const PACKAGING = join(import.meta.dir, "..", "packaging", "dsm");
 
 /**
+ * The page in DSM's main menu (`ui/`, see INFO's dsmuidir): DSM links the
+ * folder to /webman/3rdparty/wave/ and runs index.cgi there. Its key in
+ * `ui/config` has to be the INFO's `dsmappname`, or DSM shows no entry.
+ */
+export const DSM_APP_NAME = "SYNO.SDS.wave";
+
+/**
  * DSM wants `<feature>-<build>`, numbers only -- and ours has words in it.
  * The build number carries the channel so that Package Center's idea of "newer"
  * is semver's: develop.N before insiders.N before the release.
@@ -92,6 +99,8 @@ export function spkInfo(fields: InfoFields): string {
     ["maintainer", "moellenbeck digital"],
     ["maintainer_url", "https://github.com/moellenbeck-digital/wave-mesh"],
     ["thirdparty", "yes"],
+    ["dsmuidir", "ui"],
+    ["dsmappname", DSM_APP_NAME],
     // prestart and prestop are for packages that can refuse; this one cannot.
     ["precheckstartstop", "no"],
     ["extractsize", String(fields.extractSize)],
@@ -208,11 +217,31 @@ function privilegeFile(): Uint8Array {
   return bytes;
 }
 
+/** `ui/config`, refused when it names an app other than the one INFO does. */
+function uiConfig(): Uint8Array {
+  const bytes = packaged("ui/config");
+  const apps = Object.keys(JSON.parse(new TextDecoder().decode(bytes))[".url"] ?? {});
+  if (!apps.includes(DSM_APP_NAME)) {
+    throw new Error(
+      `packaging/dsm/ui/config does not name ${DSM_APP_NAME}, so DSM would show no entry for it`,
+    );
+  }
+  return bytes;
+}
+
 /** One package, as the bytes of the .spk. */
 export function spk(version: string, arch: string, files: Record<string, Uint8Array>): Uint8Array {
   const payload = PAYLOAD.map(({ name, mode }) => ({ path: name, content: files[name] as Uint8Array, mode }));
-  const inner = gzipSync(tar(payload), { level: 9 });
-  const extractSize = Math.ceil(payload.reduce((total, file) => total + file.content.length, 0) / 1024);
+  const ui = [
+    { path: "ui/config", content: uiConfig(), mode: 0o644 },
+    // DSM runs it: the request goes to `wave dsm-ui`.
+    { path: "ui/index.cgi", content: packaged("ui/index.cgi"), mode: 0o755 },
+    { path: "ui/PACKAGE_ICON_256.PNG", content: icon(256), mode: 0o644 },
+  ];
+  const inner = gzipSync(tar([...payload, { path: "ui/", mode: 0o755 }, ...ui]), { level: 9 });
+  const extractSize = Math.ceil(
+    [...payload, ...ui].reduce((total, file) => total + file.content.length, 0) / 1024,
+  );
 
   return tar([
     {

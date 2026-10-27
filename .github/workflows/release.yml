@@ -430,12 +430,19 @@ jobs:
              selbst läuft deshalb unter einem eigenen Paketbenutzer. Der Befehl
              richtet den Dienst unter systemd ein; danach startet er auch nach
              jedem Neustart von allein. Anhalten: \`sudo systemctl stop wave\`.
+             Ohne SSH geht derselbe Schritt als Aufgabe im Aufgabenplaner, als
+             root ausgeführt (siehe \`docs/DSM.md\`). Wer schon vor dieser
+             Version eingerichtet hat, führt ihn einmal neu aus.
              Vor dem Entfernen des Pakets:
              \`sudo /var/packages/wave/scripts/setup uninstall\`.
           3. In **Systemsteuerung → Benutzer & Gruppe → Gruppe** die Gruppe
              \`wave\` öffnen und die Konten eintragen, die \`wave\` bedienen
              dürfen; sie melden sich danach neu an.
-          4. Beitreten mit \`wave login <control-server-url>\`. Zertifikate legt
+          4. Beitreten über **wave** im Hauptmenü von DSM (nur für
+             Administratoren): Adresse des Control-Servers eintragen, den
+             Freigabelink öffnen; die Seite zeigt danach die Geräte und ihre
+             Dienste. Auf der Shell geht es weiter mit
+             \`wave login <control-server-url>\`. Zertifikate legt
              \`wave cert\` auf einem DSM direkt in den Zertifikatspeicher; ein
              neuer Eintrag wird einmal unter **Systemsteuerung → Sicherheit →
              Zertifikat → Einstellungen** einem Dienst zugeordnet, die

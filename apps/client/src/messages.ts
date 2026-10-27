@@ -60,6 +60,7 @@ Options:
   --stun <list>     comma-separated STUN servers, e.g. relay.example:3478
   --no-dns          do not serve the wave's names or touch resolver settings
   --group <name>    group allowed to use the control socket (install)
+  --socket-user <n> a user who may use it too, e.g. a NAS package's (install, Linux)
   --auth-key <key>  enrol without a browser, e.g. in a cluster (WAVE_AUTH_KEY)
   --hook <cmd>      run this after every renewal, e.g. 'systemctl reload caddy'
   --dsm, --no-dsm   also put the certificate into Synology DSM's certificate store
@@ -277,6 +278,7 @@ Optionen:
   --stun <list>     STUN-Server, durch Komma getrennt, z. B. relay.example:3478
   --no-dns          die Namen des Waves nicht beantworten und den Resolver nicht anfassen
   --group <name>    Gruppe, die den Steuersocket benutzen darf (install)
+  --socket-user <n> ein Benutzer, der ihn auch darf, z. B. der eines NAS-Pakets (install, Linux)
   --auth-key <key>  ohne Browser anmelden, z. B. in einem Cluster (WAVE_AUTH_KEY)
   --hook <cmd>      nach jeder Erneuerung ausführen, z. B. 'systemctl reload caddy'
   --dsm, --no-dsm   das Zertifikat zusätzlich in den Zertifikatspeicher von Synology DSM

@@ -27,12 +27,12 @@ dazu — siehe „Abnahme“.
   Zertifikatspeicher (Tailscale reicht `setcap` für das TUN-Gerät; wave braucht
   darüber hinaus Firewall, Routen und den Zertifikatspeicher). Also läuft der Daemon nicht aus dem Paket,
   sondern unter systemd, und **einmalig richtet ihn jemand mit `sudo` ein** —
-  derselbe Handschritt, den Tailscale (`tailscale configure-host`, root, einmal)
-  und runfalks WireGuard-Paket (`sudo …/scripts/start`) für DSM 7 verlangen.
-  DSM selbst bietet für fremde Pakete keinen Weg, das zu vermeiden; die
-  Alternative, den Schritt als Aufgabenplaner-Aufgabe („Benutzerdefiniertes
-  Skript“, läuft als root) einzutragen, ist derselbe Handschritt in der
-  Oberfläche statt im Terminal und wird nicht vom Paket angelegt.
+  so wie Tailscale (`tailscale configure-host`, root) und runfalks
+  WireGuard-Paket (`sudo …/scripts/start`) für DSM 7 einen Handschritt
+  verlangen.
+  DSM selbst bietet für fremde Pakete keinen Weg, das zu vermeiden. Wer kein
+  SSH einschalten will, trägt denselben Schritt im Aufgabenplaner ein — siehe
+  „Ohne SSH: der Aufgabenplaner“. Das Paket legt diese Aufgabe nicht selbst an.
 - **Was trägt:** `conf/privilege` mit `run-as: package` (Benutzer und Gruppe
   `wave-pkg`), und `scripts/setup` — nicht von DSM gerufen, sondern von Hand —
   ruft das vorhandene `wave install --binary <Paketpfad>` auf. Das schreibt die
@@ -53,6 +53,47 @@ dazu — siehe „Abnahme“.
   hat, ist schon Mitglied) und meldet sie neu an: Die Gruppe darf den Socket
   des Daemons benutzen, ohne sie sagt `wave status` „Permission denied“. Mit
   der Gruppe `wave-pkg` hat das nichts zu tun — die gehört DSM und dem Paket.
+- **Ohne SSH: der Aufgabenplaner.** Derselbe Schritt geht auch über die
+  Oberfläche, denn eine Aufgabe des Aufgabenplaners darf als root laufen:
+
+  1. **Systemsteuerung → Aufgabenplaner → Erstellen → Geplante Aufgabe →
+     Benutzerdefiniertes Skript.**
+  2. *Allgemein:* ein Name, etwa `wave einrichten`; Benutzer **root**.
+  3. *Zeitplan:* „Am folgenden Datum ausführen“, „Nicht wiederholen“. Gebraucht
+     wird nur der eine Lauf von Hand, der Zeitplan ist bloß Pflicht im Formular.
+  4. *Aufgabeneinstellungen → Benutzerdefiniertes Skript:*
+
+     ```sh
+     /var/packages/wave/scripts/setup
+     ```
+
+     Ohne `sudo`: die Aufgabe läuft schon als root.
+  5. Die Aufgabe markieren, **Ausführen**, danach löschen.
+
+  Zwei Dinge sind dabei anders als per SSH:
+
+  - **Niemand ist automatisch in der Gruppe `wave`.** Per SSH nimmt `setup` das
+    Konto auf, das `sudo` aufgerufen hat (`SUDO_USER`); im Aufgabenplaner gibt
+    es keines. Die Gruppe entsteht trotzdem, und die Konten trägt man danach wie
+    oben unter **Benutzer & Gruppe → Gruppe** ein.
+  - **Die Ausgabe sieht man nicht von selbst.** Der Aufgabenplaner zeigt sie
+    nur, wenn unter **Einstellungen** das Speichern der Ausgabeergebnisse
+    eingeschaltet ist — also *vor* dem Ausführen einschalten; danach steht sie
+    unter **Aktion → Ergebnis anzeigen**. Das Paketzentrum taugt als Kontrolle
+    nicht: `status` meldet absichtlich auch ohne eingerichteten Dienst „läuft“
+    (siehe „Lebenszyklus“).
+
+  Anders als bei Tailscale gehört die Aufgabe **nicht** auf „Hochfahren“.
+  Tailscale braucht das, weil `configure-host` nur `/dev/net/tun` und die
+  Capabilities von `tailscaled` setzt und DSM beides beim Neustart
+  zurücknimmt. Hier ist `setup` einmalig: danach trägt systemd den Daemon
+  durch jeden Neustart, und das TUN-Modul lädt der Daemon selbst (siehe
+  „TUN“). Bei jedem Hochfahren ausgeführt, schriebe die Aufgabe die Unit neu
+  und startete den Daemon ein zweites Mal. Schaden täte das nicht (`install`
+  ist wiederholbar), nützen auch nicht.
+
+  Zum Entfernen genauso, mit `/var/packages/wave/scripts/setup uninstall` als
+  Skript, **bevor** das Paket deinstalliert wird.
 - **Nicht auf echter Hardware geprüft:** dass DSM 7 das Paket mit
   `run-as: package` über „Manuelle Installation“ ohne die Root-Meldung
   annimmt, folgt aus Synologys Regel und den Paketen oben, ist aber an keinem
@@ -81,7 +122,8 @@ dazu — siehe „Abnahme“.
 | `conf/resource` | legt `wave` per `usr-local-linker` in den PATH |
 | `scripts/start-stop-status`, `scripts/preuninst` | Lebenszyklus als Paketbenutzer, siehe unten |
 | `scripts/setup` | der Schritt als root, von Hand: `sudo /var/packages/wave/scripts/setup` |
-| `package.tgz` | `wave`, `wireguard-go`, `LICENSE`, `LICENSE.wireguard-go` |
+| `package.tgz` | `wave`, `wireguard-go`, `LICENSE`, `LICENSE.wireguard-go`, dazu `ui/` (siehe „Die Seite in DSM“) |
+| INFO `dsmuidir`, `dsmappname` | `ui` und `SYNO.SDS.wave` — der Eintrag im Hauptmenü |
 
 Die Dateien liegen unter `packaging/dsm/`; `scripts/build-spk.ts` setzt sie
 zusammen. Es schreibt das tar selbst: Der Release-Job läuft auf macOS, und bsdtar
@@ -98,7 +140,8 @@ Dateinamen tragen die echte Version.
 Paketbenutzer; der darf weder `systemctl` noch `wave install` ausführen. Der
 Daemon ist deshalb nicht Sache des Pakets, sondern von systemd und root:
 
-- `scripts/setup` (von Hand, als root) → `wave install --binary <Paketpfad>`.
+- `scripts/setup` (von Hand, als root) → `wave install --binary <Paketpfad>
+  --socket-user wave-pkg`.
   `--binary` hält das Binary dort, wo das Paket es hingelegt hat; ohne die
   Option kopierte `install` es nach `/usr/local/bin/wave` — weg vom Paket und
   über das, was der Selbstupdater dort abgelegt hat. Vorher gehört das
@@ -129,6 +172,49 @@ Die Selbstaktualisierung läuft unverändert: Der Updater tauscht die Dateien im
 Verzeichnis des laufenden Binarys. Im Paketzentrum bleibt die Paketversion
 stehen. `manifest.json` kennt die SPKs nicht, absichtlich: es listet die
 Archive, aus denen sich ein Gerät aktualisiert.
+
+## Die Seite in DSM
+
+Im Hauptmenü von DSM steht **wave**, wie bei Tailscale. Die Seite zeigt die
+Waves dieser DiskStation mit Verbinden und Trennen, meldet die NAS bei einem
+weiteren Wave an (Adresse des Control-Servers eintragen, dann den
+Freigabelink im Browser öffnen) und listet die Geräte samt ihren Diensten.
+Ohne SSH geht danach alles außer dem einmaligen Setup.
+
+So hängt sie zusammen (`packaging/dsm/ui/`, `apps/client/src/dsm-ui.ts`):
+
+- **DSM bindet `ui/` unter `/webman/3rdparty/wave/` ein** (INFO `dsmuidir`)
+  und zeigt den Eintrag aus `ui/config`, dessen Schlüssel der `dsmappname` ist
+  (`SYNO.SDS.wave`; `build-spk.ts` bricht ab, wenn die beiden auseinanderlaufen).
+  `allUsers: false`: der Eintrag erscheint nur Administratoren.
+- **`ui/index.cgi` ruft `wave dsm-ui`** — das Binary des Pakets als CGI, ein
+  Prozess je Anfrage, ohne eigenen Zustand. Die Seite fragt alle drei Sekunden,
+  solange der Tab sichtbar ist; ein verborgener fragt nichts.
+- **Wer darf, sagt DSM.** Ohne DSMs Token (`X-SYNO-TOKEN`, die Seite holt ihn
+  wie Tailscale von `/webman/login.cgi`) wird nichts beantwortet; mit ihm nennt
+  DSMs `authenticate.cgi` das angemeldete Konto, und das muss in der Gruppe
+  `administrators` stehen (`/etc/group`). Eine Anmeldung hängt die NAS an ein
+  fremdes Netz, und der Daemon läuft als root — das entscheidet nicht jedes
+  Konto, das DSM öffnen kann.
+- **Ändern nur per POST mit JSON und vom eigenen Ursprung** (`Sec-Fetch-Site`).
+  Die Seite trägt eine CSP mit Nonce und lädt nichts von anderswo; was ein
+  Control-Server schreibt (Namen, Links), wird maskiert, und verlinkt wird nur
+  `http(s)`.
+- **Der Daemon-Socket gehört zusätzlich `wave-pkg`.** DSM führt das CGI als
+  Paketbenutzer aus; der steht in keiner Gruppe, die man verlässlich pflegen
+  könnte — `synogroup` verwaltet DSMs Konten, nicht die Systembenutzer der
+  Pakete. Deshalb übergibt `setup` `--socket-user wave-pkg`, die Unit setzt
+  `WAVE_SOCKET_USER`, und der Daemon gibt dem Socket diesen Eigentümer bei
+  Gruppe `wave` und 0660. Der Preis: Als Eigentümer könnte `wave-pkg` die Rechte
+  des Sockets ändern — wer das Paketkonto übernimmt, steuert den Daemon aber
+  ohnehin schon. **Wer vor dieser Version eingerichtet hat, führt `setup`
+  einmal neu aus**; die Seite sagt das, wenn sie abgewiesen wird.
+- **Die Anmeldung wartet nicht auf die Freigabe.** Ein CGI kann keine Minuten
+  offen halten. Es übergibt die Adresse dem Daemon, wartet höchstens zehn
+  Sekunden, bis der Freigabelink (oder ein Grund, etwa ein unerreichbarer
+  Server) im Status steht, und schließt dann. Der Daemon führt die Anmeldung
+  ohne Zuhörer weiter; die nächste Abfrage der Seite zeigt, wie weit sie ist.
+- **Sprache** wie im Web: `Accept-Language`, sonst Englisch.
 
 ## Zertifikate
 
@@ -186,15 +272,33 @@ kaputtes INFO wird nie überschrieben.
    neue Zertifikat.
 6. `sudo …/scripts/setup uninstall`, dann Paket deinstallieren: Unit weg,
    `/var/lib/wave` noch da.
+7. Die Seite: wave im Hauptmenü (nur für Administratoren), die Waves und
+   Geräte stehen da, Trennen und Verbinden wirken, eine Anmeldung zeigt den
+   Freigabelink, und nach der Freigabe erscheinen die Geräte ohne Neuladen.
+   Ein Konto ohne Administratorrechte bekommt den Eintrag nicht und, über die
+   URL, nur die Meldung. Läuft das CGI wirklich als `wave-pkg` (`ps` während
+   einer Anfrage), und reicht der Socket-Eigentümer dafür? Braucht DSM nach
+   der Installation einen nginx-Neustart, bis der Eintrag erscheint (Tailscale
+   setzt dafür `startstop_restart_services="nginx"`)?
+8. Dasselbe ohne SSH: Paket neu installieren, `setup` als Aufgabe im
+   Aufgabenplaner (Benutzer root) ausführen. Läuft danach der Dienst, gibt es
+   die Gruppe `wave` (ohne Mitglieder), und stimmen die Bezeichnungen der
+   Oberfläche in dieser Anleitung?
 
 ## Quellen
 
 - Synology Developer Guide: INFO (Pflicht- und optionale Felder), Plattform-/
   Arch-Tabelle, `scripts`, `privilege`.
-- Tailscale: `release/dist/synology/pkgs.go` (Paketaufbau, `arch`-Familien),
+- Tailscale: `release/dist/synology/pkgs.go` (Paketaufbau, `arch`-Familien,
+  `dsmuidir`/`dsmappname`), `release/dist/synology/files/config` und
+  `index.cgi` (der Eintrag im Hauptmenü), `client/web/synology.go` (Token,
+  `authenticate.cgi`, `administrators`) und `client/web/src/hooks/auth.ts`
+  (der Token von `/webman/login.cgi`), außerdem
   `release/dist/synology/files/privilege-dsm7` (`run-as: package`, Benutzer und
-  Gruppe) und `cmd/tailscale/cli/configure-synology.go` (TUN und `setcap` als
-  root, einmal von Hand).
+  Gruppe) und `cmd/tailscale/cli/configure-synology.go` (`mknod`/`chmod` für
+  `/dev/net/tun` und `setcap` auf `tailscaled`, als root). Tailscales Anleitung
+  (tailscale.com/kb/1131/synology) lässt das als Aufgabe beim Hochfahren
+  laufen und nach jedem Paket-Update erneut.
 - SynoCommunity/spksrc: `mk/spksrc.service.mk` (für DSM ≥ 7 immer
   `"run-as": "package"`).
 - runfalk/synology-wireguard: README (ab DSM 7 gibt Synology Paketen ohne Signatur

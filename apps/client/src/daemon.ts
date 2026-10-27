@@ -56,6 +56,14 @@ export interface DaemonOptions extends Omit<EngineOptions, "controlUrl"> {
   /** Group allowed to use the socket; without it only root may. */
   socketGroup?: string;
   /**
+   * A user who owns the socket in root's place. One account, not a group of
+   * people: on Synology it is the package's own user, which DSM runs the
+   * package's page as (docs/DSM.md) and which cannot be put into a group
+   * reliably -- `synogroup` manages DSM's accounts, not the system users DSM
+   * makes for packages.
+   */
+  socketUser?: string;
+  /**
    * Self-updates (D13). Optional so a daemon can run without them -- the
    * tests do, and so does every run from source, where the updater would
    * only ever say it is a development build.
@@ -69,6 +77,20 @@ const isPipe = (path: string): boolean => path.startsWith("\\\\");
 const RENEWAL_CHECK_MS = 60 * 60 * 1000;
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** Resolves a user name (or numeric id) without a native getpwnam. */
+export function resolveUserId(user: string, passwdFile = "/etc/passwd"): number | null {
+  if (/^\d+$/.test(user)) return Number(user);
+  try {
+    for (const line of readFileSync(passwdFile, "utf8").split("\n")) {
+      const [name, , id] = line.split(":");
+      if (name === user && id) return Number(id);
+    }
+  } catch {
+    // No user database: the socket stays root's.
+  }
+  return null;
+}
 
 /** Resolves a group name (or numeric id) without a native getgrnam. */
 export function resolveGroupId(group: string, groupFile = "/etc/group"): number | null {
@@ -618,21 +640,39 @@ export class Daemon {
       this.log("control channel is a named pipe; access follows its ACL");
       return;
     }
+    const owner = this.options.socketUser ? resolveUserId(this.options.socketUser) : null;
+    if (this.options.socketUser && owner === null) {
+      this.log(`user ${this.options.socketUser} does not exist; the control socket stays root's`);
+    }
     const group = this.options.socketGroup ? resolveGroupId(this.options.socketGroup) : null;
     if (group === null) {
       chmodSync(path, 0o600);
       if (this.options.socketGroup) {
         this.log(`group ${this.options.socketGroup} does not exist; only root can use the control socket`);
       }
+      if (owner !== null) this.handOver(path, owner, 0);
       return;
     }
     try {
-      chownSync(path, 0, group);
+      chownSync(path, owner ?? 0, group);
       chmodSync(path, 0o660);
-      this.log(`control socket at ${path} for group ${this.options.socketGroup}`);
+      this.log(
+        `control socket at ${path} for group ${this.options.socketGroup}` +
+          (owner !== null ? ` and user ${this.options.socketUser}` : ""),
+      );
     } catch (error) {
       chmodSync(path, 0o600);
       this.log(`could not hand the socket to the group (${error}); only root can use it`);
+    }
+  }
+
+  /** The socket to one user beside root; a failure leaves it root's alone. */
+  private handOver(path: string, owner: number, group: number): void {
+    try {
+      chownSync(path, owner, group);
+      this.log(`control socket at ${path} for user ${this.options.socketUser}`);
+    } catch (error) {
+      this.log(`could not hand the socket to ${this.options.socketUser} (${error}); only root can use it`);
     }
   }
 

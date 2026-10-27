@@ -37,7 +37,10 @@ case "$1" in
     # --binary keeps the binary where the package put it. Without it install
     # would copy it to /usr/local/bin/wave, away from the package and from
     # whatever the self-updater has put next to it since.
-    exec "$WAVE" install --binary "$WAVE"
+    # --socket-user hands the daemon's socket to the package's user as well:
+    # DSM runs the package's page (ui/index.cgi) as that user, and the page is
+    # how the NAS is signed in and looked at without a shell.
+    exec "$WAVE" install --binary "$WAVE" --socket-user wave-pkg
     ;;
   uninstall)
     # The unit points into the package's directory, and a unit whose binary is

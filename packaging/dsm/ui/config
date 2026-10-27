@@ -1,0 +1,13 @@
+{
+  ".url": {
+    "SYNO.SDS.wave": {
+      "type": "url",
+      "title": "wave",
+      "desc": "Mesh VPN",
+      "icon": "PACKAGE_ICON_256.PNG",
+      "url": "webman/3rdparty/wave/index.cgi/",
+      "urlTarget": "_syno_wave",
+      "allUsers": false
+    }
+  }
+}

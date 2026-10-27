@@ -231,6 +231,12 @@ export interface InstallOptions {
   platform?: NodeJS.Platform;
   /** Group allowed to use the control socket; chosen automatically otherwise. */
   group?: string;
+  /**
+   * A user who owns the control socket beside root -- on Synology the
+   * package's user, whose page in DSM talks to the daemon (`scripts/setup`).
+   * Linux only: it is the one platform with a package that needs it.
+   */
+  socketUser?: string;
   /** Where the account databases are; overridden by the tests. */
   passwdPath?: string;
   groupPath?: string;
@@ -386,7 +392,8 @@ export function windowsTrayTaskXml(binary: string, user: string): string {
   });
 }
 
-export function systemdService(binary: string, group = "wave"): string {
+export function systemdService(binary: string, group = "wave", socketUser?: string): string {
+  const owner = socketUser ? `\nEnvironment=WAVE_SOCKET_USER=${socketUser}` : "";
   return `# Written by \`wave install\`.
 [Unit]
 Description=wave-mesh tunnel
@@ -396,7 +403,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=-${LINUX_ENV}
-Environment=WAVE_SOCKET_GROUP=${group}
+Environment=WAVE_SOCKET_GROUP=${group}${owner}
 ExecStart=${binary} daemon
 Restart=always
 RestartSec=2
@@ -486,7 +493,7 @@ export function planInstall(options: InstallOptions = {}): InstallPlan {
 
   if (platform === "linux") {
     const files: InstallPlan["files"] = [
-      { path: LINUX_SERVICE, content: systemdService(binary, group), mode: 0o644 },
+      { path: LINUX_SERVICE, content: systemdService(binary, group, options.socketUser), mode: 0o644 },
     ];
 
     const commands: string[][] = [];

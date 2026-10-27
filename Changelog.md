@@ -6,7 +6,19 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.13.0-develop.2.*
+### Neue Funktionen
+
+- **wave im Hauptmenü von DSM:** Auf einer Synology steht wave jetzt wie
+  Tailscale im Hauptmenü. Die Seite zeigt die Waves der DiskStation mit
+  Verbinden und Trennen, meldet sie bei einem weiteren Wave an (Adresse des
+  Control-Servers eintragen, Freigabelink im Browser öffnen) und listet die
+  Geräte samt ihren Diensten, die sich per Klick öffnen. Nur Administratoren
+  der DiskStation sehen und benutzen sie. Wer den Dienst vor dieser Version
+  eingerichtet hat, führt `sudo /var/packages/wave/scripts/setup` einmal neu aus,
+  sonst darf die Seite nicht mit ihm sprechen — sie sagt das dann auch. Auf
+  einer echten Synology ist das noch nicht ausprobiert.
+- **Einrichten ohne SSH:** `docs/DSM.md` beschreibt, wie der einmalige
+  Root-Schritt als Aufgabe im Aufgabenplaner von DSM läuft statt per SSH.
 
 ---
 

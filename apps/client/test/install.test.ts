@@ -27,6 +27,14 @@ describe("systemd units", () => {
     expect(unit).toContain(`EnvironmentFile=-${LINUX_ENV}`);
   });
 
+  test("hand the socket to a package's user only when asked to", () => {
+    expect(systemdService(BINARY)).not.toContain("WAVE_SOCKET_USER");
+    const unit = systemdService(BINARY, "wave", "wave-pkg");
+    expect(unit).toContain("Environment=WAVE_SOCKET_GROUP=wave\nEnvironment=WAVE_SOCKET_USER=wave-pkg\n");
+    const plan = planInstall({ platform: "linux", group: "wave", socketUser: "wave-pkg", lookup: SBIN });
+    expect(plan.files[0]?.content).toContain("WAVE_SOCKET_USER=wave-pkg");
+  });
+
   test("run the tray in the desktop session, not as a system service", () => {
     const unit = systemdTrayService(BINARY);
     expect(unit).toContain(`ExecStart=${BINARY} tray`);

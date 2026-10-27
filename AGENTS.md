@@ -2928,6 +2928,20 @@ Quellen stehen in [`docs/DSM.md`](docs/DSM.md). Was daran Absicht ist:
   aktualisiert.
 - **Die Paketversion zählt Zahlen:** `0.12.0-develop.1` → `0.12.0-1001`,
   `-insiders.N` → `-2000+N`, Stable → `-3000`.
+- **Die Seite im Hauptmenü** (`ui/`, INFO `dsmuidir`/`dsmappname`) ist
+  `wave dsm-ui` als CGI (`apps/client/src/dsm-ui.ts`), ein Prozess je Anfrage:
+  Waves mit Verbinden/Trennen, Anmeldung mit Freigabelink, Geräte und Dienste,
+  gezeichnet auf dem NAS (`dsm-ui-view.ts`), damit die Wörter nicht ein zweites
+  Mal im Browser stehen. Wer darf, sagt DSM: ohne `X-SYNO-TOKEN` nichts, sonst
+  nennt `authenticate.cgi` das Konto, und es muss in `administrators` stehen —
+  wie bei Tailscale. Ändern nur per JSON-POST vom eigenen Ursprung, CSP mit
+  Nonce, alles vom Control-Server maskiert, Links nur `http(s)`. **Der Socket
+  gehört zusätzlich `wave-pkg`** (`setup` → `install --socket-user` →
+  `WAVE_SOCKET_USER`): DSM führt das CGI als Paketbenutzer aus, und den in eine
+  Gruppe zu bringen ist mit `synogroup` nicht verlässlich. **Die Anmeldung
+  wartet nicht auf die Freigabe** — der Daemon führt sie ohne Zuhörer weiter,
+  das CGI wartet höchstens zehn Sekunden auf Link oder Grund. Zwei Verbindungen
+  dabei, aus demselben Grund wie bei `wave login`.
 - **Zertifikate:** `wave cert` legt auf einem DSM (`/etc.defaults/VERSION`)
   zusätzlich in `/usr/syno/etc/certificate/_archive/<id>/` ab und pflegt DSMs
   `INFO`; ein bestehender Eintrag wird bei der Erneuerung nur aktualisiert, nie

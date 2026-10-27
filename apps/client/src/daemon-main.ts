@@ -69,6 +69,7 @@ export async function runDaemon(values: DaemonArgs): Promise<void> {
     dns: !values["no-dns"],
     controlSocketPath: values.daemon ?? process.env.WAVE_SOCKET ?? DEFAULT_SOCKET_PATH,
     socketGroup: values.group ?? process.env.WAVE_SOCKET_GROUP ?? "wave",
+    socketUser: process.env.WAVE_SOCKET_USER || undefined,
   });
 
   const path = await daemon.listen();
