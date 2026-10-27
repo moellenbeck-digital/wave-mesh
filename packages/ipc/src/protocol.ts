@@ -66,6 +66,8 @@ export const Request = z.discriminatedUnion("command", [
     wildcard: z.boolean().optional(),
     /** Shell command to run after every renewal, e.g. "systemctl reload caddy". */
     hook: z.string().optional(),
+    /** Write into DSM's certificate store (true), never (false), or where DSM is found (absent). */
+    dsm: z.boolean().optional(),
   }),
   z.object({ command: z.literal("certs") }),
   /**

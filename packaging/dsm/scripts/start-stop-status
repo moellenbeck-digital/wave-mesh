@@ -1,0 +1,40 @@
+#!/bin/sh
+# Lifecycle of the wave package on Synology DSM 7. DSM calls this as root
+# (conf/privilege): the daemon needs root for the tunnel, the routes, the
+# firewall and DSM's certificate store.
+#
+# The daemon is not run from here. `wave install` already knows how to be a
+# service -- a systemd unit, the group that may use the socket, the restart --
+# so this only asks it to, and systemd carries the daemon from then on. That is
+# what brings it back after a reboot, and why Package Center showing the
+# package as stopped after one is no sign the tunnel is down.
+#
+# The wave binary loads /dev/net/tun itself whenever the daemon starts.
+
+PATH="/usr/syno/sbin:/usr/syno/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+WAVE="${SYNOPKG_PKGDEST:-/var/packages/wave/target}/wave"
+
+case "$1" in
+  start)
+    # --binary keeps the binary where the package put it. Without it install
+    # would copy it to /usr/local/bin/wave on every start, over whatever the
+    # self-updater has put there since.
+    "$WAVE" install --binary "$WAVE"
+    exit $?
+    ;;
+  stop)
+    # Stopped means stopped, also after the next reboot.
+    systemctl stop wave
+    systemctl disable wave
+    exit 0
+    ;;
+  status)
+    systemctl is-active --quiet wave && exit 0
+    exit 3
+    ;;
+esac
+
+# prestart and prestop: nothing to check.
+exit 0

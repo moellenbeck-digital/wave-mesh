@@ -15,7 +15,14 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "spike/**/*.ts", "mobile/fixtures/**/*.ts"],
+  "include": [
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    "spike/**/*.ts",
+    "mobile/fixtures/**/*.ts",
+    "scripts/build-spk.ts",
+    "scripts/build-spk.test.ts"
+  ],
   // apps/web needs DOM and JSX and brings its own tsconfig; `bun run typecheck`
   // there covers it.
   "exclude": ["apps/web"]

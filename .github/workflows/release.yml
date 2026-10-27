@@ -8,7 +8,8 @@ name: Release
 #
 # What a tag produces: the four images on ghcr -- control, relay, web and the
 # connector a cluster joins a wave with -- and the client for all six
-# platform/architecture pairs attached to the GitHub release.
+# platform/architecture pairs attached to the GitHub release, plus the two
+# Synology DSM 7 packages built from the Linux archives.
 on:
   push:
     tags: ["v*"]
@@ -315,6 +316,13 @@ jobs:
       - name: Build and package every client
         run: ./scripts/build-clients.sh --package
 
+      # The Synology packages come out of the two Linux archives just built --
+      # the same binaries, not a second build -- and go into SHA256SUMS. They
+      # are made before the macOS step on purpose: that step rewrites
+      # SHA256SUMS from scratch, and knows the packages by name.
+      - name: Build the Synology DSM 7 packages
+        run: bun scripts/build-spk.ts dist
+
       # Apple signing requires macOS; keeping all six builds here avoids
       # transferring large intermediate artifacts between jobs.
       - name: Load Apple credentials from wave-mesh CI
@@ -351,12 +359,26 @@ jobs:
         if: always()
         run: python3 .github/scripts/macos-signing-keychain.py cleanup
 
+      # SHA256SUMS was rewritten by the step above, and a rewrite is where a file
+      # silently falls out of the list. Every file this release uploads has to
+      # be in it, and has to match.
+      - name: Check that SHA256SUMS covers every file
+        run: |
+          set -euo pipefail
+          cd dist
+          test "$(grep -c '\.spk$' SHA256SUMS)" = 2
+          shasum -a 256 -c SHA256SUMS
+
       # The signed statement of what this release is, and the only thing a
       # device trusts about it (D13): version, channel and the hash of every
       # archive, signed with the release key. Control servers pass releases on
       # to their devices; without this file none of them offers this one. The
       # script refuses to run without the key, and refuses a key the binaries
       # do not carry -- either would be a release no device can install.
+      #
+      # The .spk files are not in it: it lists the archives a device updates
+      # itself from (.tar.gz and .zip), and a NAS keeps updating itself that
+      # way once the package has put the binary there.
       - name: Sign the release manifest
         env:
           WAVE_RELEASE_SIGNING_KEY: ${{ secrets.WAVE_RELEASE_SIGNING_KEY }}
@@ -365,6 +387,7 @@ jobs:
       - name: Write the download notes
         run: |
           repo="ghcr.io/$(printf %s "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          version="${{ needs.version.outputs.version }}"
           cat > notes.md <<NOTES
           ### Clients
 
@@ -376,6 +399,8 @@ jobs:
           | \`wave-darwin-arm64.tar.gz\` | macOS, Apple Silicon |
           | \`wave-windows-amd64.zip\` | Windows, x86-64 |
           | \`wave-windows-arm64.zip\` | Windows, ARM64 |
+          | \`wave-$version-dsm7-x86_64.spk\` | Synology DSM 7, Intel/AMD (x86_64) |
+          | \`wave-$version-dsm7-armv8.spk\` | Synology DSM 7, ARM64 (armv8) |
 
           In jedem Archiv liegt \`wave\` und alles, was der Tunnel braucht:
           **wireguard-go** und unter Windows zusätzlich **wintun.dll**.
@@ -387,6 +412,35 @@ jobs:
 
           Die Lizenzen der beigelegten Teile liegen als
           \`LICENSE.wireguard-go\` (MIT) und \`LICENSE.wintun\` daneben.
+
+          ### Synology DSM 7
+
+          Das passende Paket steht in der Tabelle oben; welche Architektur das
+          NAS hat, sagt Synologys Liste „Welche CPU hat mein NAS“.
+
+          1. **Paketzentrum → Manuelle Installation** und die \`.spk\` wählen. Lehnt
+             DSM das Paket als nicht vertrauenswürdig ab, unter Paketzentrum →
+             Einstellungen → Allgemein die Vertrauensstufe auf „Beliebiger
+             Herausgeber“ stellen. Im letzten Schritt **„Nach der Installation
+             ausführen“ abwählen**.
+          2. **Einmalig per SSH starten** (Systemsteuerung → Terminal & SNMP →
+             SSH aktivieren, als Administrator anmelden):
+             \`sudo /var/packages/wave/scripts/start-stop-status start\`
+             Der Daemon braucht root für Tunnel, Routen und Firewall, und DSM 7
+             startet Pakete von Drittanbietern nicht selbst als root. Der Befehl
+             richtet den Dienst unter systemd ein; danach startet er auch nach
+             jedem Neustart von allein.
+          3. In **Systemsteuerung → Benutzer & Gruppe → Gruppe** die Gruppe
+             \`wave\` öffnen und die Konten eintragen, die \`wave\` bedienen
+             dürfen; sie melden sich danach neu an.
+          4. Beitreten mit \`wave login <control-server-url>\`. Zertifikate legt
+             \`wave cert\` auf einem DSM direkt in den Zertifikatspeicher; ein
+             neuer Eintrag wird einmal unter **Systemsteuerung → Sicherheit →
+             Zertifikat → Einstellungen** einem Dienst zugeordnet, die
+             Erneuerungen danach laufen von selbst.
+
+          Der Versionsstand im Paketzentrum (\`$version-NNNN\`) zählt die
+          Paketversion, nicht die des Clients; \`wave version\` zeigt die laufende.
 
           Prüfsummen stehen in \`SHA256SUMS\`:
           \`sha256sum --ignore-missing -c SHA256SUMS\`
@@ -426,4 +480,4 @@ jobs:
             --notes-file notes.md \
             --generate-notes \
             ${flags[@]+"${flags[@]}"} \
-            dist/*.tar.gz dist/*.zip dist/SHA256SUMS dist/manifest.json dist/macos-signing-evidence.json
+            dist/*.tar.gz dist/*.zip dist/*.spk dist/SHA256SUMS dist/manifest.json dist/macos-signing-evidence.json

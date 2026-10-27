@@ -76,6 +76,34 @@ describe("renewing on its own", () => {
     expect(server.ordered).toEqual([]);
   });
 
+  // What `wave cert --dsm` was told is part of the record, so the renewal
+  // nobody is watching still goes where the command sent the first one. This is
+  // not a DSM, so the store is not there and the line in the log is the proof
+  // the choice arrived; the renewal itself happens all the same.
+  test("a renewal keeps the choice made for DSM's store", async () => {
+    const log: string[] = [];
+    const { daemon, statePath } = await daemonWith(
+      [
+        {
+          name: "laptop.wave.example.com",
+          names: [],
+          renewAt: YESTERDAY,
+          notAfter: YESTERDAY,
+          hook: null,
+          dsm: true,
+        },
+      ],
+      (message) => log.push(message),
+    );
+
+    await daemon.renewDue();
+
+    expect(log.some((line) => line.includes("into the DSM certificate store"))).toBe(true);
+    const renewed = (await loadProfiles(statePath))[0]?.certs[0];
+    expect(renewed?.dsm).toBe(true);
+    expect(Date.parse(renewed?.renewAt ?? "")).toBeGreaterThan(Date.now());
+  });
+
   // The date stays in the past when it fails, so the next round tries again --
   // and the failure must not take the daemon or the other waves with it.
   test("a refusal is survived and tried again next time", async () => {

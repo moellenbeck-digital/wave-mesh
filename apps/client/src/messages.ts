@@ -62,6 +62,10 @@ Options:
   --group <name>    group allowed to use the control socket (install)
   --auth-key <key>  enrol without a browser, e.g. in a cluster (WAVE_AUTH_KEY)
   --hook <cmd>      run this after every renewal, e.g. 'systemctl reload caddy'
+  --dsm, --no-dsm   also put the certificate into Synology DSM's certificate store
+                    (the default on a DSM) or never do (cert)
+  --binary <path>   where the installed binary lives (install; default
+                    /usr/local/bin/wave)
   --wildcard        ask for *.<wave domain> (an operator has to allow it first)
   --control <url>   also picks the wave for "wave cert" on a multi-wave device
   --channel <name>  update channel to ask for: stable, insiders, develop, or
@@ -275,6 +279,10 @@ Optionen:
   --group <name>    Gruppe, die den Steuersocket benutzen darf (install)
   --auth-key <key>  ohne Browser anmelden, z. B. in einem Cluster (WAVE_AUTH_KEY)
   --hook <cmd>      nach jeder Erneuerung ausführen, z. B. 'systemctl reload caddy'
+  --dsm, --no-dsm   das Zertifikat zusätzlich in den Zertifikatspeicher von Synology DSM
+                    legen (auf einem DSM die Vorgabe) bzw. nie (cert)
+  --binary <path>   wo das installierte Binary liegt (install; Vorgabe
+                    /usr/local/bin/wave)
   --wildcard        *.<Wave-Domain> anfordern (ein Operator muss es erst erlauben)
   --control <url>   wählt auf einem Gerät in mehreren Waves auch den für "wave cert"
   --channel <name>  gewünschter Update-Kanal: stable, insiders, develop, oder

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateKeyPair, leafOf } from "@wave/crypto";
 import { certPaths, dueCertificates, issueCertificate } from "../src/certs.ts";
+import type { DsmPaths } from "../src/dsm.ts";
 import { loadProfiles, type Profile, saveProfiles } from "../src/state.ts";
 import { type FakeControl, fakeControl } from "./fake-control.ts";
 
@@ -223,5 +224,195 @@ describe("when to renew", () => {
   // A date nobody can read is one nobody would ever act on, so it counts as due.
   test("an unreadable date counts as due", () => {
     expect(dueCertificates(withCerts([record("whenever")]), new Date())).toHaveLength(1);
+  });
+});
+
+/**
+ * On a Synology the certificate also goes into DSM's own store, so nobody has
+ * to import it in the control panel. Everywhere else nothing changes.
+ */
+describe("on a Synology", () => {
+  const NAME = "laptop.wave.example.com";
+
+  /** A DSM in a scratch directory -- or the same directory without the version file that makes it one. */
+  async function diskStation(options: { dsm?: boolean } = {}) {
+    const root = await mkdtemp(join(tmpdir(), "wave-dsm-certs-"));
+    const paths: DsmPaths = {
+      versionFile: join(root, "etc.defaults/VERSION"),
+      certRoot: join(root, "certificate"),
+      serviceRoots: [join(root, "certificate")],
+      subscriberDirs: [join(root, "certificate.d")],
+      profileDir: join(root, "tls-profile"),
+      synosystemctl: join(root, "synosystemctl"),
+    };
+    const archive = join(paths.certRoot, "_archive");
+    await mkdir(archive, { recursive: true });
+    await writeFile(join(archive, "INFO"), "{}");
+    if (options.dsm !== false) {
+      await mkdir(join(root, "etc.defaults"));
+      await writeFile(paths.versionFile, 'productversion="7.2.1"\nos_name="DSM"\n');
+    }
+    const commands: string[][] = [];
+    const run = async (command: string[]) => {
+      commands.push(command);
+      return { code: 0, output: "" };
+    };
+    const info = async (): Promise<Record<string, { desc: string }>> =>
+      JSON.parse(await readFile(join(archive, "INFO"), "utf8"));
+    return { paths, archive, commands, dsmOptions: { paths, run }, info };
+  }
+
+  async function setup() {
+    running = fakeControl();
+    const path = await statePath();
+    const profile = profileFor(running.url);
+    await saveProfiles(path, [profile]);
+    return { path, profile };
+  }
+
+  test("is recognised and filed in the store, next to the files in certs/", async () => {
+    const dsm = await diskStation();
+    const { path, profile } = await setup();
+    const log: string[] = [];
+
+    const result = await issueCertificate({
+      statePath: path,
+      profile,
+      names: [NAME],
+      dsmOptions: dsm.dsmOptions,
+      log: (message) => log.push(message),
+    });
+    if (!("issued" in result)) throw new Error("the fake server does not ask for a record");
+
+    const [stored] = (await loadProfiles(path))[0]?.certs ?? [];
+    const id = stored?.dsmId ?? "";
+    expect(id).toMatch(/^[A-Za-z0-9]{6}$/);
+    expect(Object.values(await dsm.info()).map((entry) => entry.desc)).toEqual([`wave: ${NAME}`]);
+    expect(await readFile(join(dsm.archive, id, "fullchain.pem"), "utf8")).toBe(
+      await readFile(result.issued.chainPath, "utf8"),
+    );
+    expect(await readFile(join(dsm.archive, id, "privkey.pem"), "utf8")).toBe(
+      await readFile(result.issued.keyPath, "utf8"),
+    );
+    expect((await stat(join(dsm.archive, id, "privkey.pem"))).mode & 0o777).toBe(0o600);
+    // The files where they always go are still there, and the key still private.
+    expect((await stat(result.issued.keyPath)).mode & 0o777).toBe(0o600);
+    // A new entry has no services yet, and the log says what to do about it.
+    expect(log.some((line) => line.includes("assign it to services"))).toBe(true);
+  });
+
+  test("a renewal updates that entry with a new key and adds no second one", async () => {
+    const dsm = await diskStation();
+    const { path, profile } = await setup();
+    const issue = () =>
+      issueCertificate({ statePath: path, profile, names: [NAME], dsmOptions: dsm.dsmOptions });
+
+    await issue();
+    const [first] = (await loadProfiles(path))[0]?.certs ?? [];
+    const keyBefore = await readFile(join(dsm.archive, first?.dsmId ?? "", "privkey.pem"), "utf8");
+    await issue();
+    const [second] = (await loadProfiles(path))[0]?.certs ?? [];
+
+    expect(second?.dsmId).toBe(first?.dsmId);
+    expect(Object.keys(await dsm.info())).toHaveLength(1);
+    expect(await readFile(join(dsm.archive, second?.dsmId ?? "", "privkey.pem"), "utf8")).not.toBe(keyBefore);
+  });
+
+  test("remembers what it was told, so the renewal makes the same choice", async () => {
+    const dsm = await diskStation();
+    const { path, profile } = await setup();
+    await issueCertificate({
+      statePath: path,
+      profile,
+      names: [NAME],
+      dsm: true,
+      dsmOptions: dsm.dsmOptions,
+    });
+    expect((await loadProfiles(path))[0]?.certs[0]?.dsm).toBe(true);
+  });
+
+  test("--no-dsm keeps it out of the store even on a DSM", async () => {
+    const dsm = await diskStation();
+    const { path, profile } = await setup();
+    const result = await issueCertificate({
+      statePath: path,
+      profile,
+      names: [NAME],
+      dsm: false,
+      dsmOptions: dsm.dsmOptions,
+    });
+
+    expect("issued" in result).toBe(true);
+    expect(await dsm.info()).toEqual({});
+    expect((await loadProfiles(path))[0]?.certs[0]).toMatchObject({ dsm: false });
+    expect((await loadProfiles(path))[0]?.certs[0]?.dsmId).toBeUndefined();
+  });
+
+  test("any other system is not touched: no detection, no store, the same files", async () => {
+    const elsewhere = await diskStation({ dsm: false });
+    const { path, profile } = await setup();
+    const log: string[] = [];
+
+    const result = await issueCertificate({
+      statePath: path,
+      profile,
+      names: [NAME],
+      dsmOptions: elsewhere.dsmOptions,
+      log: (message) => log.push(message),
+    });
+    if (!("issued" in result)) throw new Error("the fake server does not ask for a record");
+
+    expect(await elsewhere.info()).toEqual({});
+    expect(elsewhere.commands).toEqual([]);
+    expect(log.some((line) => line.includes("DSM"))).toBe(false);
+    expect(existsSync(result.issued.keyPath)).toBe(true);
+    expect((await loadProfiles(path))[0]?.certs[0]?.dsmId).toBeUndefined();
+  });
+
+  // Like the hook: the certificate on disk is valid, so the renewal happened.
+  test("a store that cannot be written is a line in the log, not a failed renewal", async () => {
+    const dsm = await diskStation();
+    await writeFile(join(dsm.archive, "INFO"), "not json");
+    const { path, profile } = await setup();
+    const log: string[] = [];
+    const marker = join(await mkdtemp(join(tmpdir(), "wave-hook-")), "ran");
+
+    const result = await issueCertificate({
+      statePath: path,
+      profile,
+      names: [NAME],
+      hook: `echo done > ${marker}`,
+      dsmOptions: dsm.dsmOptions,
+      log: (message) => log.push(message),
+    });
+
+    expect("issued" in result).toBe(true);
+    expect(log.some((line) => line.includes(`could not put ${NAME} into the DSM certificate store`))).toBe(
+      true,
+    );
+    expect(existsSync(certPaths(path, NAME).keyPath)).toBe(true);
+    expect((await loadProfiles(path))[0]?.certs).toHaveLength(1);
+    expect((await loadProfiles(path))[0]?.certs[0]?.dsmId).toBeUndefined();
+    // And the operator's own hook still runs after it.
+    expect(existsSync(marker)).toBe(true);
+  });
+
+  test("asked for with --dsm where there is no DSM, it says so and the certificate is still issued", async () => {
+    const elsewhere = await diskStation({ dsm: false });
+    await rm(join(elsewhere.archive, "INFO"));
+    const { path, profile } = await setup();
+    const log: string[] = [];
+
+    const result = await issueCertificate({
+      statePath: path,
+      profile,
+      names: [NAME],
+      dsm: true,
+      dsmOptions: elsewhere.dsmOptions,
+      log: (message) => log.push(message),
+    });
+
+    expect("issued" in result).toBe(true);
+    expect(log.some((line) => line.includes("INFO cannot be read"))).toBe(true);
   });
 });

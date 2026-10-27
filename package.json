@@ -22,6 +22,7 @@
     "stack:down": "docker compose down -v",
     "build:client": "./scripts/build-clients.sh --host",
     "build:clients": "./scripts/build-clients.sh",
+    "build:spk": "bun scripts/build-spk.ts",
     "dev:web": "cd apps/web && bun run dev",
     "build:web": "cd apps/web && bun run build",
     "icon": "bun scripts/icon.ts"

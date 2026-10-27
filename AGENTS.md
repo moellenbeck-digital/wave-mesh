@@ -22,6 +22,7 @@ cd apps/control && bun run db:migrate
 
 bun run build:client     # ./dist/wave für diese Maschine
 bun run build:clients    # alle sechs Ziele (Linux/macOS/Windows × amd64/arm64)
+bun run build:spk        # Synology-DSM-7-Pakete aus den Linux-Archiven in dist/ (nach build:clients -- --package)
 bun run images:build     # Control- und Relay-Image aus der docker-compose.yml
 bun run stack:up         # Postgres, Migration, Control und Relay im Container
 bun run stack:down
@@ -607,7 +608,7 @@ bun apps/control/src/admin.ts allow-wildcard      <wave> <gerät>
 bun apps/control/src/admin.ts deny-wildcard       <wave> <gerät>
 
 # auf dem Gerät
-wave cert [name…] [--wildcard] [--hook 'systemctl reload caddy']
+wave cert [name…] [--wildcard] [--hook 'systemctl reload caddy'] [--dsm | --no-dsm]
 wave certs
 ```
 
@@ -2892,6 +2893,35 @@ Gepackt wird deshalb auch dort, wo nur geprüft wird: ein gewanderter Pin oder
 ein Ziel, das nicht mehr übersetzt, zeigt sich erst beim Packen. Seit dem
 22.09.2026 passiert das nur noch im Release — wer einen der Pins anhebt, fährt
 `bun run build:clients -- --package` besser selbst, bevor er taggt.
+
+**Synology DSM 7** bekommt aus denselben Binaries zwei Pakete,
+`wave-<version>-dsm7-x86_64.spk` und `-armv8.spk`; Aufbau, Rechte, Ablauf und
+Quellen stehen in [`docs/DSM.md`](docs/DSM.md). Was daran Absicht ist:
+
+- **Kein zweiter Build.** `scripts/build-spk.ts` packt `wave` und `wireguard-go`
+  aus `wave-linux-amd64.tar.gz` und `wave-linux-arm64.tar.gz` um; die Bytes
+  sind die der Archive. Es schreibt das tar selbst, weil der Release-Job auf
+  macOS läuft und bsdtar und GNU tar „gehört root“ verschieden sagen.
+- **`run-as: root`, und der Start ist einmalig Handarbeit.** DSM 7 startet
+  Pakete von Drittanbietern nicht selbst als root; der Daemon braucht root für
+  Tunnel, Routen und Firewall. `start-stop-status start` ruft deshalb das
+  vorhandene `wave install --binary <Paketpfad>` auf, und systemd trägt den
+  Daemon — auch durch Neustarts, `engine.ts` lädt das TUN-Modul dabei selbst.
+- **Das Paket läuft in `release.yml` vor der macOS-Signierung**, und
+  `scripts/sign-macos.py` kennt die SPKs beim Neuschreiben von `SHA256SUMS`:
+  ein Neuschreiben, das nur die sechs Archive kennt, ließe sie stillschweigend
+  fallen. Ein Schritt danach prüft, dass beide drinstehen. `manifest.json`
+  listet sie bewusst nicht — er nennt die Archive, aus denen sich ein Gerät
+  aktualisiert.
+- **Die Paketversion zählt Zahlen:** `0.12.0-develop.1` → `0.12.0-1001`,
+  `-insiders.N` → `-2000+N`, Stable → `-3000`.
+- **Zertifikate:** `wave cert` legt auf einem DSM (`/etc.defaults/VERSION`)
+  zusätzlich in `/usr/syno/etc/certificate/_archive/<id>/` ab und pflegt DSMs
+  `INFO`; ein bestehender Eintrag wird bei der Erneuerung nur aktualisiert, nie
+  doppelt angelegt (`dsmId` im Zertifikatseintrag, sonst die Beschreibung).
+  Zugeordnet wird einmal von Hand — `wave cert` tauscht nie von sich aus das
+  Zertifikat der DSM-Weboberfläche aus. Fehler beim Ablegen sind eine Logzeile
+  wie beim Hook (`apps/client/src/dsm.ts`).
 
 **Der Versionsbau läuft ausschließlich über den `release-process`-Skill.**
 `.github/workflows/release.yml` hat genau einen Auslöser — einen Tag `v*` —,

@@ -52,6 +52,9 @@ const { values, positionals } = parseArgs({
     once: { type: "boolean", default: false },
     group: { type: "string" },
     hook: { type: "string" },
+    dsm: { type: "boolean", default: false },
+    "no-dsm": { type: "boolean", default: false },
+    binary: { type: "string" },
     "auth-key": { type: "string", default: process.env.WAVE_AUTH_KEY ?? "" },
     wildcard: { type: "boolean", default: false },
     "new-wave": { type: "boolean", default: false },
@@ -107,6 +110,15 @@ function parseStunServers(value: string): { ip: string; port: number }[] {
 }
 
 const usage = t().usage(defaultStatePath(), DEFAULT_SOCKET_PATH, DEFAULT_MTU);
+
+/**
+ * --dsm and --no-dsm for `wave cert`: undefined leaves it to detection, which
+ * is what a renewal does as well.
+ */
+function dsmChoice(): boolean | undefined {
+  if (values["no-dsm"]) return false;
+  return values.dsm ? true : undefined;
+}
 
 /**
  * Reads --channel and --auto-update. Undefined means "not given"; a channel of
@@ -339,6 +351,7 @@ async function main(): Promise<number> {
     }
     const target = {
       update: Object.keys(update).length > 0 ? update : undefined,
+      binaryPath: values.binary,
       group: values.group,
       user,
       userHome: home ?? (process.env.SUDO_USER ? `/home/${process.env.SUDO_USER}` : undefined),
@@ -534,6 +547,7 @@ async function main(): Promise<number> {
             names: positionals.length > 1 ? positionals.slice(1) : undefined,
             wildcard: values.wildcard,
             hook: values.hook,
+            dsm: dsmChoice(),
           },
           // Issuance waits for a CA to validate DNS; minutes, not seconds.
           15 * 60 * 1000,
@@ -639,6 +653,7 @@ async function main(): Promise<number> {
           names: positionals.length > 1 ? positionals.slice(1) : undefined,
           wildcard: values.wildcard,
           hook: values.hook ?? null,
+          dsm: dsmChoice(),
           log,
         });
         return "waiting" in result

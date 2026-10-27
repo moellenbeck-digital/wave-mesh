@@ -74,6 +74,21 @@ def sha256(path):
         return digest.hexdigest()
 
 
+# The Synology packages are built before this step and are not signed by it, but
+# they belong in the same SHA256SUMS: this file is rewritten here after the macOS
+# archives changed, and a rewrite that only knew the six archives would drop them.
+DSM_PACKAGE = re.compile(r"wave-\d+\.\d+\.\d+(-(insiders|develop)\.\d+)?-dsm7-(x86_64|armv8)\.spk")
+
+
+def checksum_listing(dist):
+    archives = sorted(path for path in dist.iterdir()
+                      if re.fullmatch(r"wave-(linux|darwin|windows)-(amd64|arm64)\.(tar\.gz|zip)", path.name))
+    if len(archives) != 6:
+        raise RuntimeError("Expected all six release archives")
+    packages = sorted(path for path in dist.iterdir() if DSM_PACKAGE.fullmatch(path.name))
+    return "".join(f"{sha256(path)}  {path.name}\n" for path in archives + packages)
+
+
 def sign_archives(dist):
     if sys.platform != "darwin":
         raise RuntimeError("Apple signing requires macOS")
@@ -131,11 +146,7 @@ def sign_archives(dist):
             evidence.append({"archive": name, "sha256": sha256(dist / name),
                              "submissionId": submission, "status": "Accepted"})
             print(f"{name}: signed, notarized and verified ({submission})", flush=True)
-    archives = sorted(path for path in dist.iterdir()
-                      if re.fullmatch(r"wave-(linux|darwin|windows)-(amd64|arm64)\.(tar\.gz|zip)", path.name))
-    if len(archives) != 6:
-        raise RuntimeError("Expected all six release archives")
-    (dist / "SHA256SUMS").write_text("".join(f"{sha256(path)}  {path.name}\n" for path in archives))
+    (dist / "SHA256SUMS").write_text(checksum_listing(dist))
     report = {"teamId": team, "gitSha": run(["git", "rev-parse", "HEAD"]).decode().strip(),
               "workingTreeDirty": bool(run(["git", "status", "--porcelain"]).strip()),
               "version": json.loads(Path("package.json").read_text())["version"],
