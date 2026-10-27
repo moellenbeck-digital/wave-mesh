@@ -8,6 +8,18 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Fehlerbehebungen
 
+- **Synology-Paket lässt sich auf DSM 7 installieren:** Das Paket verlangte
+  Root-Rechte, und DSM 7 lehnte es bei „Manuelle Installation“ mit „… kann nicht
+  installiert werden, da es mit Root-Rechten ausgeführt wird“ ab. Es läuft jetzt
+  unter einem eigenen Paketbenutzer, den DSM akzeptiert. Den Dienst, der root
+  braucht, richtet man nach der Installation einmal per SSH ein:
+  `sudo /var/packages/wave/scripts/setup`. Danach läuft er als Dienst und startet
+  nach jedem Neustart von allein; die Konten, die `wave` bedienen dürfen, kommen
+  in die DSM-Gruppe `wave`. Das Paketzentrum zeigt das Paket auch vor diesem
+  Schritt nicht als abgestürzt. Vor dem Entfernen des Pakets gehört
+  `sudo /var/packages/wave/scripts/setup uninstall` ausgeführt. Anleitung in
+  `docs/DSM.md` und in den Release-Hinweisen; auf einer echten Synology ist das
+  noch nicht ausprobiert.
 - **Rollenauswahl auf sehr schmalen Displays (320 px):** „Speichern“ ragte neben der
   Rollenauswahl über die Zeile hinaus, die Seite ließ sich seitwärts schieben. Reicht
   der Platz nicht, steht „Speichern“ jetzt unter der Auswahl; der Rollenname bleibt

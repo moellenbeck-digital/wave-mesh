@@ -2902,11 +2902,24 @@ Quellen stehen in [`docs/DSM.md`](docs/DSM.md). Was daran Absicht ist:
   aus `wave-linux-amd64.tar.gz` und `wave-linux-arm64.tar.gz` um; die Bytes
   sind die der Archive. Es schreibt das tar selbst, weil der Release-Job auf
   macOS läuft und bsdtar und GNU tar „gehört root“ verschieden sagen.
-- **`run-as: root`, und der Start ist einmalig Handarbeit.** DSM 7 startet
-  Pakete von Drittanbietern nicht selbst als root; der Daemon braucht root für
-  Tunnel, Routen und Firewall. `start-stop-status start` ruft deshalb das
+- **`run-as: package`, nie root — und der Root-Schritt ist einmalig
+  Handarbeit.** DSM 7 verweigert die Installation eines nicht von Synology
+  signierten Pakets, dessen `conf/privilege` root verlangt („… mit
+  Root-Rechten ausgeführt wird“); das erste Paket scheiterte daran, weil der
+  Ansatz nie auf einem NAS lief. `scripts/build-spk.test.ts` prüft am gebauten
+  SPK, dass kein `run-as` root ist, und `build-spk.ts` bricht den Bau ab, wenn es
+  doch eines gibt. Der Daemon braucht root für Tunnel, Routen, Firewall und
+  Zertifikatspeicher, läuft also nicht aus dem Paket: `scripts/setup` — von Hand
+  als `sudo /var/packages/wave/scripts/setup`, nicht von DSM gerufen — ruft das
   vorhandene `wave install --binary <Paketpfad>` auf, und systemd trägt den
-  Daemon — auch durch Neustarts, `engine.ts` lädt das TUN-Modul dabei selbst.
+  Daemon, auch durch Neustarts; `engine.ts` lädt das TUN-Modul dabei selbst.
+  `start-stop-status` und `preuninst` laufen als Paketbenutzer und fassen
+  den Dienst nicht an: `start`/`stop` enden mit 0 und ändern nichts, `status`
+  meldet den Zustand von systemd (und „noch nicht eingerichtet“ als 0, damit das
+  Paketzentrum das Paket nicht als abgestürzt zeigt). Vor dem Entfernen des
+  Pakets gehört `setup uninstall` ausgeführt; `preuninst` sagt es nur. Die
+  Konten, die `wave` bedienen dürfen, gehören in die DSM-Gruppe `wave`.
+  **Nicht auf echter Hardware geprüft**, siehe „Abnahme“ in `docs/DSM.md`.
 - **Das Paket läuft in `release.yml` vor der macOS-Signierung**, und
   `scripts/sign-macos.py` kennt die SPKs beim Neuschreiben von `SHA256SUMS`:
   ein Neuschreiben, das nur die sechs Archive kennt, ließe sie stillschweigend

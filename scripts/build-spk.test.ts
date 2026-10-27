@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSpks, PAYLOAD, SPK_TARGETS, spkName, synologyVersion } from "./build-spk.ts";
+import { buildSpks, PAYLOAD, runAs, SPK_TARGETS, spkName, synologyVersion } from "./build-spk.ts";
 
 /**
  * What a package must contain to be one DSM will install, checked on the file
@@ -102,6 +102,7 @@ describe("the packages", () => {
             "package.tgz",
             "scripts/",
             "scripts/preuninst",
+            "scripts/setup",
             "scripts/start-stop-status",
           ].sort(),
         );
@@ -109,7 +110,7 @@ describe("the packages", () => {
         // builder's own uid is no one's there.
         for (const line of listing) expect(line).toContain("root");
         // DSM runs these directly.
-        for (const script of ["scripts/start-stop-status", "scripts/preuninst"]) {
+        for (const script of ["scripts/start-stop-status", "scripts/preuninst", "scripts/setup"]) {
           expect(listing.find((line) => line.endsWith(script))?.startsWith("-rwxr-xr-x")).toBe(true);
         }
       });
@@ -148,12 +149,19 @@ describe("the packages", () => {
         expect(listing.some((line) => line.endsWith("LICENSE.wireguard-go"))).toBe(true);
       });
 
-      test("asks DSM for root and for `wave` on the PATH, and has icons of the sizes DSM wants", async () => {
+      test("never asks DSM for root, which DSM 7 refuses to install", async () => {
         const work = scratch();
         await run(["tar", "-xf", await build(), "-C", work]);
-        expect(JSON.parse(readFileSync(join(work, "conf/privilege"), "utf8"))).toEqual({
-          defaults: { "run-as": "root" },
-        });
+        const privilege = JSON.parse(readFileSync(join(work, "conf/privilege"), "utf8"));
+        expect(privilege.defaults["run-as"]).toBe("package");
+        // Not in `defaults`, not in a tool or a script entry, not under any other key.
+        expect(runAs(privilege)).toEqual(["package"]);
+        expect(readFileSync(join(work, "conf/privilege"), "utf8")).not.toMatch(/"root"/);
+      });
+
+      test("asks DSM for `wave` on the PATH, and has icons of the sizes DSM wants", async () => {
+        const work = scratch();
+        await run(["tar", "-xf", await build(), "-C", work]);
         expect(JSON.parse(readFileSync(join(work, "conf/resource"), "utf8"))).toEqual({
           "usr-local-linker": { bin: ["wave"] },
         });
@@ -203,10 +211,155 @@ describe("SHA256SUMS", () => {
   });
 });
 
+describe("run-as in a privilege file", () => {
+  test("is found wherever it stands", () => {
+    expect(runAs({ defaults: { "run-as": "package" } })).toEqual(["package"]);
+    expect(
+      runAs({ defaults: { "run-as": "package" }, "ctrl-script": [{ action: "start", "run-as": "root" }] }),
+    ).toEqual(["package", "root"]);
+    expect(runAs({})).toEqual([]);
+  });
+});
+
+const scriptPath = (name: string): string => join(import.meta.dir, "..", "packaging", "dsm", "scripts", name);
+
 describe("the scripts DSM runs", () => {
-  for (const script of ["start-stop-status", "preuninst"]) {
+  for (const script of ["start-stop-status", "preuninst", "setup"]) {
     test(`${script} is valid shell`, async () => {
-      await run(["sh", "-n", join(import.meta.dir, "..", "packaging", "dsm", "scripts", script)]);
+      await run(["sh", "-n", scriptPath(script)]);
     });
   }
+});
+
+/**
+ * The scripts run against a stand-in `systemctl`, `id` and `wave` put ahead on
+ * the PATH: what they were asked is written to `calls`, what they answer is the
+ * test's to say. Nothing here needs a DSM, or root.
+ */
+function sandbox(options: { uid: number; unit: boolean; active?: boolean }) {
+  const dir = scratch();
+  const bin = join(dir, "bin");
+  const pkg = join(dir, "target");
+  mkdirSync(bin);
+  mkdirSync(pkg);
+  const calls = join(dir, "calls");
+  writeFileSync(calls, "");
+  const tool = (path: string, body: string): void => {
+    writeFileSync(path, `#!/bin/sh\n${body}\n`);
+    chmodSync(path, 0o755);
+  };
+  tool(join(bin, "id"), `echo ${options.uid}`);
+  tool(
+    join(bin, "systemctl"),
+    `echo "systemctl $*" >> "${calls}"
+case "$1" in
+  cat) exit ${options.unit ? 0 : 1} ;;
+  is-active) exit ${options.active ? 0 : 3} ;;
+esac
+exit 0`,
+  );
+  // chown needs root; the script is told to carry on without it.
+  tool(join(bin, "chown"), "exit 0");
+  tool(join(pkg, "wave"), `echo "wave $*" >> "${calls}"`);
+  writeFileSync(join(pkg, "wireguard-go"), "");
+
+  return {
+    /** Runs a script from the package: what it said, how it ended and what it called. */
+    async run(script: string, ...args: string[]) {
+      const proc = Bun.spawn(["sh", scriptPath(script), ...args], {
+        env: { PATH: `${bin}:${process.env.PATH}`, SYNOPKG_PKGDEST: pkg },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [out, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      return { out: out + err, code, calls: readFileSync(calls, "utf8").trim().split("\n").filter(Boolean) };
+    },
+  };
+}
+
+describe("the package as the package user", () => {
+  // DSM runs these as the package's own user, who is no one's root.
+  test("start does not fail, and does not try to be root, while the daemon is not set up", async () => {
+    const result = await sandbox({ uid: 1024, unit: false }).run("start-stop-status", "start");
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("sudo /var/packages/wave/scripts/setup");
+    expect(result.calls.filter((call) => !call.startsWith("systemctl cat"))).toEqual([]);
+  });
+
+  test("start and stop leave a running daemon alone, and succeed", async () => {
+    const box = sandbox({ uid: 1024, unit: true, active: true });
+    for (const action of ["start", "stop", "prestart", "prestop"]) {
+      expect((await box.run("start-stop-status", action)).code).toBe(0);
+    }
+    const { calls } = await box.run("start-stop-status", "start");
+    expect(calls.filter((call) => /enable|disable|stop|restart|install/.test(call))).toEqual([]);
+  });
+
+  test("status says running when the daemon is", async () => {
+    const result = await sandbox({ uid: 1024, unit: true, active: true }).run("start-stop-status", "status");
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("running");
+  });
+
+  test("status says stopped when it is set up and is not running", async () => {
+    const result = await sandbox({ uid: 1024, unit: true, active: false }).run("start-stop-status", "status");
+    expect(result.code).toBe(3);
+  });
+
+  test("status does not call a package crashed for a step that only waits for root", async () => {
+    const result = await sandbox({ uid: 1024, unit: false }).run("start-stop-status", "status");
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("not set up yet");
+  });
+
+  test("preuninst never fails, and says what is left to do when the service is still there", async () => {
+    const result = await sandbox({ uid: 1024, unit: true }).run("preuninst");
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("setup uninstall");
+    expect(result.calls.some((call) => call.startsWith("wave "))).toBe(false);
+  });
+
+  test("preuninst is silent when there is nothing to take out", async () => {
+    const result = await sandbox({ uid: 1024, unit: false }).run("preuninst");
+    expect(result.code).toBe(0);
+    expect(result.out).toBe("");
+  });
+
+  test("preuninst takes the service out itself where it happens to be root", async () => {
+    const result = await sandbox({ uid: 0, unit: true }).run("preuninst");
+    expect(result.code).toBe(0);
+    expect(result.calls).toContain("wave uninstall");
+  });
+});
+
+describe("the one step as root", () => {
+  test("is refused to anyone else, and changes nothing", async () => {
+    const result = await sandbox({ uid: 1024, unit: false }).run("setup");
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("must run as root");
+    expect(result.calls).toEqual([]);
+  });
+
+  test("installs the service from the package's own binary", async () => {
+    const result = await sandbox({ uid: 0, unit: false }).run("setup");
+    expect(result.code).toBe(0);
+    expect(result.calls).toHaveLength(1);
+    expect(result.calls[0]).toMatch(/^wave install --binary .*\/target\/wave$/);
+  });
+
+  test("uninstall takes it out again", async () => {
+    const result = await sandbox({ uid: 0, unit: true }).run("setup", "uninstall");
+    expect(result.code).toBe(0);
+    expect(result.calls).toEqual(["wave uninstall"]);
+  });
+
+  test("an argument it does not know is not guessed at", async () => {
+    const result = await sandbox({ uid: 0, unit: false }).run("setup", "remove");
+    expect(result.code).toBe(2);
+    expect(result.calls).toEqual([]);
+  });
 });

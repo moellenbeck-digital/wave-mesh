@@ -1,0 +1,52 @@
+#!/bin/sh
+# The one step that needs root, done by hand over SSH:
+#
+#   sudo /var/packages/wave/scripts/setup            set the daemon up
+#   sudo /var/packages/wave/scripts/setup uninstall  take it out again
+#
+# DSM 7 does not let a package that Synology has not signed run as root, so the
+# package itself runs as its own user (conf/privilege) and cannot do this. It is
+# nothing DSM calls: only a person with sudo does, once -- and before removing
+# the package, with `uninstall`.
+#
+# `wave install` already knows how to be a service: the systemd unit, the group
+# `wave` that may use the socket, the restart. This only asks it to, and systemd
+# carries the daemon from then on, through reboots. The wave binary loads
+# /dev/net/tun itself whenever the daemon starts.
+
+PATH="${PATH:+$PATH:}/usr/syno/sbin:/usr/syno/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+PKGDEST="${SYNOPKG_PKGDEST:-/var/packages/wave/target}"
+WAVE="$PKGDEST/wave"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "wave setup must run as root: sudo $0 $*" >&2
+  exit 1
+fi
+if [ ! -x "$WAVE" ]; then
+  echo "wave setup: $WAVE not found; is the wave package installed?" >&2
+  exit 1
+fi
+
+case "$1" in
+  "")
+    # The daemon runs as root out of this directory. Whatever the package
+    # user owned of it must not be something it could swap for another binary.
+    chown root:root "$PKGDEST" "$WAVE" "$PKGDEST/wireguard-go" 2>/dev/null
+    # --binary keeps the binary where the package put it. Without it install
+    # would copy it to /usr/local/bin/wave, away from the package and from
+    # whatever the self-updater has put next to it since.
+    exec "$WAVE" install --binary "$WAVE"
+    ;;
+  uninstall)
+    # The unit points into the package's directory, and a unit whose binary is
+    # gone restarts forever. The enrolment in /var/lib/wave stays, as it does
+    # after `wave uninstall`.
+    exec "$WAVE" uninstall
+    ;;
+  *)
+    echo "usage: sudo $0 [uninstall]" >&2
+    exit 2
+    ;;
+esac
