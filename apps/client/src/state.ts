@@ -46,6 +46,14 @@ export const CertRecord = z.object({
   notAfter: z.string(),
   /** Shell command to run after every renewal, e.g. "systemctl reload caddy". */
   hook: z.string().nullable().default(null),
+  /**
+   * What was asked for at the first `wave cert`: true to write into DSM's
+   * certificate store, false never to, absent to do it wherever DSM is found.
+   * Kept so a renewal makes the same choice as the command did.
+   */
+  dsm: z.boolean().optional(),
+  /** The certificate's id in DSM's store, so a renewal updates that entry and adds no second one. */
+  dsmId: z.string().optional(),
 });
 export type CertRecord = z.infer<typeof CertRecord>;
 

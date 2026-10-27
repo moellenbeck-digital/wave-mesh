@@ -467,6 +467,7 @@ export class Daemon {
     names?: string[],
     hook?: string,
     wildcard?: boolean,
+    dsm?: boolean,
   ): Promise<CertificateStatus[] | { waiting: CertWaiting } | Notice> {
     const profiles = await this.sync();
     if (profiles.length === 0) {
@@ -493,6 +494,7 @@ export class Daemon {
         names,
         wildcard,
         hook: hook ?? null,
+        dsm,
         log,
       });
       // Handed straight back rather than waited on: the records need a person,
@@ -548,6 +550,7 @@ export class Daemon {
             profile,
             names: namesOf(record),
             hook: record.hook,
+            dsm: record.dsm,
             log,
           });
           // Nobody is watching a renewal, so a record that has to be made by
@@ -682,6 +685,7 @@ export class Daemon {
           parsed.data.names,
           parsed.data.hook,
           parsed.data.wildcard,
+          parsed.data.dsm,
         );
         if ("code" in result) reply(refusal(result));
         else if ("waiting" in result) reply({ type: "cert-waiting", waiting: result.waiting });

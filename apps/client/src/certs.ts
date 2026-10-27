@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { createCsr, der, generateCertificateKey } from "@wave/crypto";
 import type { CertChallengeRecord } from "@wave/proto";
 import { ControlClient, verifyNetmap } from "./api.ts";
+import { type DsmOptions, detectDsm, installInDsm } from "./dsm.ts";
 import {
   type CertRecord,
   findProfile,
@@ -54,6 +55,15 @@ export interface IssueOptions {
    */
   wildcard?: boolean;
   hook?: string | null;
+  /**
+   * Whether the certificate also goes into DSM's own store: true always,
+   * false never, and left out wherever DSM is found. Only a Synology has such
+   * a store, so everywhere else the default is the unchanged one -- files
+   * under `certs/<name>/` and the hook.
+   */
+  dsm?: boolean;
+  /** Where DSM keeps its store and how its services are reloaded; overridden by the tests. */
+  dsmOptions?: Pick<DsmOptions, "paths" | "run">;
   log?: (message: string) => void;
   /** How long to wait for the CA before giving up. */
   timeoutMs?: number;
@@ -104,14 +114,18 @@ export async function issueCertificate(options: IssueOptions): Promise<CertResul
     if (status.status === "issued") {
       const paths = certPaths(options.statePath, name);
       await writeCertificate(paths, key.privateKeyPem, status.chainPem);
+      const profileId = profileKey(options.profile);
       const record: CertRecord = {
         name,
         names,
         renewAt: status.renewAt,
         notAfter: status.notAfter,
         hook: options.hook ?? null,
+        ...(options.dsm === undefined ? {} : { dsm: options.dsm }),
       };
-      await remember(options.statePath, profileKey(options.profile), record);
+      const dsmId = await toDsm(options, status.chainPem, key.privateKeyPem, record, profileId, log);
+      if (dsmId) record.dsmId = dsmId;
+      await remember(options.statePath, profileId, record);
       log(`${name} is certified until ${status.notAfter}; renewing around ${status.renewAt}`);
       if (record.hook) await runHook(record.hook, paths, log);
       return { issued: { ...record, ...paths } };
@@ -154,6 +168,49 @@ async function writeCertificate(paths: CertPaths, keyPem: string, chainPem: stri
   await writeFile(paths.keyPath, keyPem, { mode: 0o600 });
   await chmod(paths.keyPath, 0o600).catch(() => {});
 }
+
+/**
+ * Hands the certificate to DSM's store when that is wanted, and says how it went.
+ *
+ * Logged, not thrown, like the hook: the files under `certs/<name>/` are
+ * already written and valid, and a store that could not be written must not
+ * make the renewal look like it did not happen. Returns the entry's id -- the
+ * one from last time when the store failed, so a later success still finds
+ * the same entry instead of adding another.
+ */
+async function toDsm(
+  options: IssueOptions,
+  chainPem: string,
+  keyPem: string,
+  record: CertRecord,
+  profileId: string,
+  log: (message: string) => void,
+): Promise<string | undefined> {
+  const previous = findProfile(await loadProfiles(options.statePath), profileId)?.certs.find(
+    (entry) => entry.name === record.name,
+  );
+  if (options.dsm === false) return previous?.dsmId;
+  if (options.dsm !== true && !detectDsm(options.dsmOptions?.paths)) return previous?.dsmId;
+
+  try {
+    const result = await installInDsm(
+      { description: `wave: ${record.name}`, id: previous?.dsmId, keyPem, chainPem },
+      { ...options.dsmOptions, log },
+    );
+    log(
+      result.services.length > 0
+        ? `${record.name} is in the DSM certificate store (${result.id}) and was updated for ${result.services.join(", ")}`
+        : `${record.name} is in the DSM certificate store (${result.id}); ` +
+            "assign it to services under Control Panel > Security > Certificate > Settings",
+    );
+    return result.id;
+  } catch (error) {
+    log(`could not put ${record.name} into the DSM certificate store: ${describe(error)}`);
+    return previous?.dsmId;
+  }
+}
+
+const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** Keeps the record with the profile, so a restart still knows when to renew. */
 async function remember(statePath: string, key: string, record: CertRecord): Promise<void> {

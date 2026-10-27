@@ -6,7 +6,24 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.12.0.*
+### Neue Funktionen
+
+- **Installationspaket für Synology DSM 7:** Zu jedem Release gibt es je ein
+  Paket für Intel/AMD-Geräte (`x86_64`) und für ARM-Geräte (`armv8`), das sich
+  im Paketzentrum per „Manuelle Installation“ einspielen lässt. Auf DSM 7
+  starten Pakete von Drittanbietern nicht selbst als root, deshalb braucht der
+  Start einmalig einen Befehl per SSH; die Anleitung steht in den
+  Release-Hinweisen und in `docs/DSM.md`. Danach läuft wave als Dienst und
+  startet nach jedem Neustart von allein.
+- **`wave cert` legt Zertifikate direkt in den Zertifikatspeicher von DSM:**
+  Auf einer Synology erscheint das Zertifikat ohne Kopieren und Importieren
+  unter Systemsteuerung → Sicherheit → Zertifikat, und jede Erneuerung
+  aktualisiert denselben Eintrag, statt einen neuen anzulegen. Einmalig wird
+  das Zertifikat dort einem Dienst zugeordnet; die Dienste, die es nutzen,
+  werden bei jeder Erneuerung neu geladen. `--no-dsm` schaltet das ab,
+  `--dsm` erzwingt es. Auf allen anderen Systemen bleibt alles wie bisher.
+- **`wave install --binary <Pfad>`:** Das Binary bleibt dort, wo es liegt,
+  statt nach `/usr/local/bin/wave` kopiert zu werden.
 
 ---
 

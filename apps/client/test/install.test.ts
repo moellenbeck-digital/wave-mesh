@@ -600,6 +600,31 @@ describe("a machine without shadow-utils", () => {
     expect(plan.commands).toContainEqual(["/usr/syno/sbin/synogroup", "--member", "wave", "shared"]);
   });
 
+  // What the DSM package's start script asks for: no account behind it (DSM
+  // calls it as root, not through sudo) and the binary left where the package
+  // put it, so a start does not overwrite what the self-updater has put there.
+  test("started from the package, the unit runs the binary where the package put it", async () => {
+    const { planInstall } = await import("../src/install.ts");
+    const syno = (name: string): string | null => (name === "synogroup" ? "/usr/syno/sbin/synogroup" : null);
+    const plan = planInstall({
+      platform: "linux",
+      binaryPath: "/var/packages/wave/target/wave",
+      passwdPath: passwd,
+      groupPath: groups,
+      lookup: syno,
+    });
+
+    expect(plan.files[0]?.content).toContain("ExecStart=/var/packages/wave/target/wave daemon");
+    expect(plan.files).toHaveLength(1);
+    // The group, with nobody to put in it: whoever should use the socket is added in DSM.
+    expect(plan.commands).toContainEqual(["/usr/syno/sbin/synogroup", "--add", "wave"]);
+    expect(plan.commands.some((command) => command.includes("--member"))).toBe(false);
+    expect(plan.commands).toContainEqual(["systemctl", "enable", "wave"]);
+    expect(plan.commands).toContainEqual(["systemctl", "restart", "wave"]);
+    expect(plan.optional).toEqual([]);
+    expect(plan.requiresGroup).toBe("wave");
+  });
+
   test("prefers shadow-utils where both are there", async () => {
     const { planInstall } = await import("../src/install.ts");
     const plan = planInstall({ ...options, lookup: (name) => `/usr/sbin/${name}` });
