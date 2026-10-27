@@ -13,6 +13,7 @@
  *   4 Spalten von Mitglieds- und Einladungszeilen fluchten        → L4
  *   5 Rollenänderung funktioniert, Owner gesperrt, Member ohne    → t41-admin-rollen.e2e.ts (K1, K2, K4, K5)
  *   6 schmale Ansicht (< md = 768 px)                             → L5 (320, 375, 767 px), L6 (768 px: Grenze)
+ *   7 Rolle-Spalte bearbeitbar breiter als nur lesbar (Member-Sicht) → L7
  *
  * Nicht prüfbar: das aufgeklappte Auswahlmenü des Browsers. Es ist ein natives Popup außerhalb des DOM und
  * erscheint weder in Playwright-Screenshots noch in der Diagnose-Sitzung. L2 misst deshalb die Textbreite
@@ -44,6 +45,7 @@ const pendingMail = `t41-wartend-${run}@example.test`;
 type Who = { ctx: BrowserContext; page: Page };
 let owner: Who;
 let admin: Who;
+let member: Who;
 
 const ownerMail = () => env("APP_USER");
 const select = (row: Locator) => row.locator('select[name="role"]');
@@ -120,7 +122,7 @@ test.describe("Rollen-Auswahl in der Mitgliederliste", () => {
     test.setTimeout(300_000);
     owner = await session(browser);
     admin = await session(browser);
-    const m = await session(browser);
+    member = await session(browser);
     try {
       await login(owner.page, ownerMail(), env("APP_PASSWORD"));
       const c = await createWave(owner.page, waveName, `${waveName}.wave.internal`);
@@ -128,9 +130,10 @@ test.describe("Rollen-Auswahl in der Mitgliederliste", () => {
       const lm = await invite(owner.page, c, memberMail, "member");
       await invite(owner.page, c, pendingMail, "member");
       await accept(admin.page, la, adminMail);
-      await accept(m.page, lm, memberMail);
-    } finally {
-      await m.ctx.close();
+      await accept(member.page, lm, memberMail);
+    } catch (e) {
+      await member.ctx.close();
+      throw e;
     }
   });
 
@@ -138,7 +141,7 @@ test.describe("Rollen-Auswahl in der Mitgliederliste", () => {
     try {
       if (owner) await deleteWave(owner.page, waveName);
     } finally {
-      await Promise.all([owner?.ctx.close(), admin?.ctx.close()]);
+      await Promise.all([owner?.ctx.close(), admin?.ctx.close(), member?.ctx.close()]);
     }
   });
 
@@ -201,8 +204,10 @@ test.describe("Rollen-Auswahl in der Mitgliederliste", () => {
       const card = await open(owner, locale);
       for (const mail of [memberMail, adminMail]) {
         const row = memberRow(card, mail);
-        const sel = await box(select(row), "Auswahl");
         const btn = saveButton(row);
+        // elementFromPoint arbeitet mit Fensterkoordinaten: erst in den Sichtbereich holen, dann messen.
+        await btn.scrollIntoViewIfNeeded();
+        const sel = await box(select(row), "Auswahl");
         await expect(btn).toHaveText(locale === "de" ? "Speichern" : "Save");
         const save = await box(btn, "Speichern");
         const rowBox = await box(row, "Zeile");
@@ -365,5 +370,17 @@ test.describe("Rollen-Auswahl in der Mitgliederliste", () => {
       }
       if (locale === "en") await shot(owner, row, "L6-768");
     }
+  });
+  test("L7 Rolle-Spalte: bearbeitbar sichtbar breiter als nur lesbar (Member-Sicht)", {
+    tag: "@t41",
+  }, async () => {
+    const editable = await cells(memberRow(await open(owner, "en"), memberMail));
+    const mCard = await open(member, "en");
+    const readOnly = await cells(memberRow(mCard, adminMail));
+    await expect(select(memberRow(mCard, adminMail)), "Member: keine Auswahl").toHaveCount(0);
+    const e = editable[1]?.width ?? 0;
+    const r = readOnly[1]?.width ?? 0;
+    expect(e, `Rolle-Spalte bearbeitbar ${e}px gegen nur lesbar ${r}px`).toBeGreaterThanOrEqual(r + 20);
+    await shot(member, memberRow(mCard, adminMail), "L7-member");
   });
 });
