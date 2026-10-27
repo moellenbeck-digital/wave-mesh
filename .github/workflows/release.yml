@@ -421,15 +421,17 @@ jobs:
           1. **Paketzentrum → Manuelle Installation** und die \`.spk\` wählen. Lehnt
              DSM das Paket als nicht vertrauenswürdig ab, unter Paketzentrum →
              Einstellungen → Allgemein die Vertrauensstufe auf „Beliebiger
-             Herausgeber“ stellen. Im letzten Schritt **„Nach der Installation
-             ausführen“ abwählen**.
-          2. **Einmalig per SSH starten** (Systemsteuerung → Terminal & SNMP →
+             Herausgeber“ stellen.
+          2. **Einmalig per SSH einrichten** (Systemsteuerung → Terminal & SNMP →
              SSH aktivieren, als Administrator anmelden):
-             \`sudo /var/packages/wave/scripts/start-stop-status start\`
+             \`sudo /var/packages/wave/scripts/setup\`
              Der Daemon braucht root für Tunnel, Routen und Firewall, und DSM 7
-             startet Pakete von Drittanbietern nicht selbst als root. Der Befehl
+             lässt Pakete von Drittanbietern nicht als root laufen; das Paket
+             selbst läuft deshalb unter einem eigenen Paketbenutzer. Der Befehl
              richtet den Dienst unter systemd ein; danach startet er auch nach
-             jedem Neustart von allein.
+             jedem Neustart von allein. Anhalten: \`sudo systemctl stop wave\`.
+             Vor dem Entfernen des Pakets:
+             \`sudo /var/packages/wave/scripts/setup uninstall\`.
           3. In **Systemsteuerung → Benutzer & Gruppe → Gruppe** die Gruppe
              \`wave\` öffnen und die Konten eintragen, die \`wave\` bedienen
              dürfen; sie melden sich danach neu an.
