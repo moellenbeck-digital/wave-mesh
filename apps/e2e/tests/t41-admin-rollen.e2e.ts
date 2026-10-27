@@ -223,6 +223,48 @@ test.describe("Admins ändern Rollen", () => {
     expect(await roleSeenByOwner(admin2Mail)).toBe("admin");
   });
 
+  test("K8 Rollen-Auswahl ist breit genug: Name lesbar, Knopf daneben, Spalten fluchten", {
+    tag: "@t41",
+  }, async () => {
+    const c = await open(a1);
+    const rows = [memberRow(c, admin2Mail), memberRow(c, memberMail)];
+    const boxes = [];
+    for (const row of rows) {
+      const sel = await select(row).boundingBox();
+      const save = await row.getByRole("button", { name: "Save" }).boundingBox();
+      const rowBox = await row.boundingBox();
+      if (!sel || !save || !rowBox) throw new Error("Auswahl, Knopf oder Zeile nicht sichtbar");
+      // "Administrator" (längster Name) plus Pfeil braucht mehr, als die alte 1fr-Spalte hergab.
+      expect(sel.width).toBeGreaterThanOrEqual(150);
+      // Knopf rechts neben der Auswahl, nichts überlagert, nichts über den Zeilenrand hinaus.
+      expect(save.x).toBeGreaterThanOrEqual(sel.x + sel.width);
+      expect(save.x + save.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
+      // Der gewählte Name passt in die Auswahl (kein Abschneiden).
+      const clipped = await select(row).evaluate((el) => el.scrollWidth > el.clientWidth);
+      expect(clipped).toBe(false);
+      boxes.push(sel);
+    }
+    // Beide Zeilen: dieselbe Spalte.
+    expect(Math.abs((boxes[0]?.x ?? 0) - (boxes[1]?.x ?? 1))).toBeLessThan(1);
+    expect(Math.abs((boxes[0]?.width ?? 0) - (boxes[1]?.width ?? 1))).toBeLessThan(1);
+  });
+
+  test("K9 Mobil (375 px): Auswahl und Knopf bleiben lesbar und in der Zeile", { tag: "@t41" }, async () => {
+    await a1.page.setViewportSize({ width: 375, height: 800 });
+    try {
+      const row = memberRow(await open(a1), admin2Mail);
+      const sel = await select(row).boundingBox();
+      const save = await row.getByRole("button", { name: "Save" }).boundingBox();
+      const rowBox = await row.boundingBox();
+      if (!sel || !save || !rowBox) throw new Error("Auswahl, Knopf oder Zeile nicht sichtbar");
+      expect(sel.width).toBeGreaterThanOrEqual(150);
+      expect(sel.x).toBeGreaterThanOrEqual(rowBox.x);
+      expect(save.x + save.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
+    } finally {
+      await a1.page.setViewportSize({ width: 1280, height: 720 });
+    }
+  });
+
   test("K7 Audit-Log: Eintrag member.role mit from und to", { tag: "@t41" }, async () => {
     const res = await owner.ctx.request.get(`/api/waves/${id}/audit?limit=200`);
     expect(res.status()).toBe(200);

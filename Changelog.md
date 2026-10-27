@@ -25,6 +25,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 - **`wave install --binary <Pfad>`:** Das Binary bleibt dort, wo es liegt,
   statt nach `/usr/local/bin/wave` kopiert zu werden.
 
+### Fehlerbehebungen
+
+- **Rollenauswahl in der Mitgliederliste lesbar:** Ist die Rolle änderbar, ist die
+  Rolle-Spalte jetzt breit genug, dass der Rollenname in der Auswahl vollständig
+  zu lesen ist; „Speichern“ steht daneben. Die Spalten von Mitglieds- und
+  Einladungszeilen bleiben ausgerichtet, auch auf schmalen Displays.
+
 ---
 
 ## ✅ Stable v0.12.0 (24.10.2026)
