@@ -11,6 +11,14 @@ import {
 import { formatDate, formatDay } from "@/lib/format";
 
 /**
+ * One grid for member and invite rows, so the columns line up. Every row is its own grid, so no
+ * column may be `auto`: the last one has a fixed width. The role column holds the select and its
+ * save button side by side and keeps room for the longest role name ("Administrator").
+ */
+const ROW =
+  "grid grid-cols-1 gap-x-6 gap-y-2 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(17rem,1.2fr)_minmax(0,1fr)_9rem] md:items-center";
+
+/**
  * Everything here is a plain form posting to the control server. It is the same
  * origin for the browser -- the control server proxies these pages -- so the
  * session cookie comes along, and none of it needs JavaScript.
@@ -31,7 +39,7 @@ function MemberRow({
   const t = appMessages(locale);
   const who = member.email ?? member.name ?? member.userId;
   return (
-    <li className="grid grid-cols-1 gap-x-6 gap-y-2 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center">
+    <li className={ROW}>
       <div className="min-w-0">
         <span className="block truncate font-medium text-navy text-body-sm">
           {member.email ?? member.name ?? member.userId}
@@ -43,11 +51,16 @@ function MemberRow({
 
       {mayChangeRole ? (
         <form method="post" action={`/waves/${wave.id}/members/${member.userId}/role`} className="flex gap-2">
-          <select className="wc-input" name="role" defaultValue={member.role} aria-label={t.roleOf(who)}>
+          <select
+            className="wc-input min-w-40 flex-1"
+            name="role"
+            defaultValue={member.role}
+            aria-label={t.roleOf(who)}
+          >
             <option value="member">{t.roleName("member")}</option>
             <option value="admin">{t.roleName("admin")}</option>
           </select>
-          <button type="submit" className="wc-btn wc-btn-secondary">
+          <button type="submit" className="wc-btn wc-btn-secondary shrink-0 whitespace-nowrap">
             {t.saveRole}
           </button>
         </form>
@@ -77,7 +90,7 @@ function MemberRow({
 function InviteRow({ invite, wave, locale }: { invite: WaveInvite; wave: Wave; locale: Locale }) {
   const t = appMessages(locale);
   return (
-    <li className="grid grid-cols-1 gap-x-6 gap-y-2 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center">
+    <li className={ROW}>
       <div className="min-w-0">
         <span className="block truncate font-medium text-navy text-body-sm">{invite.email}</span>
         <span className="block text-caption text-slate">{t.invitedNotJoined}</span>
