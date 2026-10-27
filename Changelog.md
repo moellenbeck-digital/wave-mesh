@@ -6,6 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+*Noch nichts seit v0.13.0-develop.2.*
+
+---
+
+## 🔬 Development v0.13.0-develop.2 (27.10.2026)
+
 ### Fehlerbehebungen
 
 - **Synology-Paket lässt sich auf DSM 7 installieren:** Das Paket verlangte
