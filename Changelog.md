@@ -6,6 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+*Noch nichts seit v0.13.0-develop.3.*
+
+---
+
+## 🔬 Development v0.13.0-develop.3 (27.10.2026)
+
 ### Neue Funktionen
 
 - **wave im Hauptmenü von DSM:** Auf einer Synology steht wave jetzt wie
