@@ -83,11 +83,11 @@ export function spkInfo(fields: InfoFields): string {
     ["displayname", "wave"],
     [
       "description",
-      "Self-hosted mesh VPN on WireGuard. Runs as a root service started with the one-time step in the release notes.",
+      "Self-hosted mesh VPN on WireGuard. After installing, set the service up once as root over SSH: sudo /var/packages/wave/scripts/setup",
     ],
     [
       "description_ger",
-      "Selbst gehostetes Mesh-VPN auf WireGuard-Basis. Läuft als Dienst mit root-Rechten; der Start braucht einmalig den Schritt aus den Release-Hinweisen.",
+      "Selbst gehostetes Mesh-VPN auf WireGuard-Basis. Nach der Installation einmalig per SSH als root einrichten: sudo /var/packages/wave/scripts/setup",
     ],
     ["maintainer", "moellenbeck digital"],
     ["maintainer_url", "https://github.com/moellenbeck-digital/wave-mesh"],
@@ -186,6 +186,28 @@ const icon = (size: number): Uint8Array => {
 
 const packaged = (name: string): Uint8Array => readFileSync(join(PACKAGING, name));
 
+/** Every `run-as` in a privilege file, wherever in it. */
+export function runAs(privilege: unknown): string[] {
+  if (Array.isArray(privilege)) return privilege.flatMap(runAs);
+  if (privilege === null || typeof privilege !== "object") return [];
+  return Object.entries(privilege).flatMap(([key, value]) =>
+    key === "run-as" && typeof value === "string" ? [value] : runAs(value),
+  );
+}
+
+/**
+ * A package that asks for root is one DSM 7 will not install unless Synology
+ * signed it ("wave kann nicht installiert werden, da es mit Root-Rechten
+ * ausgeführt wird"), and nothing about the build would show it.
+ */
+function privilegeFile(): Uint8Array {
+  const bytes = packaged("conf/privilege");
+  if (runAs(JSON.parse(new TextDecoder().decode(bytes))).includes("root")) {
+    throw new Error("packaging/dsm/conf/privilege asks for run-as root; DSM 7 refuses to install that");
+  }
+  return bytes;
+}
+
 /** One package, as the bytes of the .spk. */
 export function spk(version: string, arch: string, files: Record<string, Uint8Array>): Uint8Array {
   const payload = PAYLOAD.map(({ name, mode }) => ({ path: name, content: files[name] as Uint8Array, mode }));
@@ -201,13 +223,17 @@ export function spk(version: string, arch: string, files: Record<string, Uint8Ar
     { path: "PACKAGE_ICON.PNG", content: icon(72), mode: 0o644 },
     { path: "PACKAGE_ICON_256.PNG", content: icon(256), mode: 0o644 },
     { path: "conf/", mode: 0o755 },
-    { path: "conf/privilege", content: packaged("conf/privilege"), mode: 0o644 },
+    // run-as package, never root: DSM 7 refuses to install a package that is not
+    // signed by Synology if it asks for root (scripts/build-spk.test.ts holds us to it).
+    { path: "conf/privilege", content: privilegeFile(), mode: 0o644 },
     // Puts `wave` on the PATH of the NAS, which is where `wave login` is typed.
     { path: "conf/resource", content: packaged("conf/resource"), mode: 0o644 },
     { path: "package.tgz", content: inner, mode: 0o644 },
     { path: "scripts/", mode: 0o755 },
     { path: "scripts/start-stop-status", content: packaged("scripts/start-stop-status"), mode: 0o755 },
     { path: "scripts/preuninst", content: packaged("scripts/preuninst"), mode: 0o755 },
+    // Not one of DSM's hooks: the step as root that DSM 7 does not give a package.
+    { path: "scripts/setup", content: packaged("scripts/setup"), mode: 0o755 },
   ]);
 }
 

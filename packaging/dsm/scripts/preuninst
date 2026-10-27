@@ -1,14 +1,22 @@
 #!/bin/sh
-# Takes the service out before DSM removes the package: the unit points into
-# the package's directory, and a unit whose binary is gone restarts forever.
-# The enrolment in /var/lib/wave stays, as it does after `wave uninstall`.
+# Runs before DSM removes the package, as the package's own user -- which may
+# not take the service out: that is root's (`wave uninstall`, systemd, the unit
+# in /etc/systemd/system). The unit points into the package's directory, and a
+# unit whose binary is gone restarts forever, so this says what to do instead
+# of failing, and does it itself where it happens to be root.
 #
-# DSM has already run `stop` by now. Never fails: this runs on every upgrade
-# too, and a failure here would abort the removal.
+# Never fails: this runs on every upgrade too, and a failure here would abort
+# the removal. The enrolment in /var/lib/wave stays, as it does after
+# `wave uninstall`.
 
-PATH="/usr/syno/sbin:/usr/syno/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+PATH="${PATH:+$PATH:}/usr/syno/sbin:/usr/syno/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
 WAVE="${SYNOPKG_PKGDEST:-/var/packages/wave/target}/wave"
-[ -x "$WAVE" ] && "$WAVE" uninstall
+
+if [ "$(id -u)" -eq 0 ]; then
+  [ -x "$WAVE" ] && "$WAVE" uninstall
+elif systemctl cat wave >/dev/null 2>&1; then
+  echo "wave: the service is still set up. Take it out as root: sudo /var/packages/wave/scripts/setup uninstall"
+fi
 exit 0
