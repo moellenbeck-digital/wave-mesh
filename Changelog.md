@@ -6,7 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.13.0-develop.1.*
+### Fehlerbehebungen
+
+- **Rollenauswahl auf sehr schmalen Displays (320 px):** „Speichern“ ragte neben der
+  Rollenauswahl über die Zeile hinaus, die Seite ließ sich seitwärts schieben. Reicht
+  der Platz nicht, steht „Speichern“ jetzt unter der Auswahl; der Rollenname bleibt
+  vollständig lesbar. Ab 375 px ändert sich nichts.
 
 ---
 

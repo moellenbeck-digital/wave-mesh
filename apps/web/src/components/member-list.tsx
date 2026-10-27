@@ -50,7 +50,11 @@ function MemberRow({
       </div>
 
       {mayChangeRole ? (
-        <form method="post" action={`/waves/${wave.id}/members/${member.userId}/role`} className="flex gap-2">
+        <form
+          method="post"
+          action={`/waves/${wave.id}/members/${member.userId}/role`}
+          className="flex flex-wrap gap-2 md:flex-nowrap"
+        >
           <select
             className="wc-input min-w-40 flex-1"
             name="role"
