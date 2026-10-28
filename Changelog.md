@@ -6,7 +6,56 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.13.0-develop.3.*
+*Noch nichts seit v0.13.0.*
+
+---
+
+## ✅ Stable v0.13.0 (28.10.2026)
+
+*Enthält alles aus v0.13.0-develop.1 bis v0.13.0-develop.3.*
+
+### Neue Funktionen (gegenüber v0.12.0)
+
+- **Installationspaket für Synology DSM 7:** Zu jedem Release gibt es je ein
+  Paket für Intel/AMD-Geräte (`x86_64`) und für ARM-Geräte (`armv8`), das sich
+  im Paketzentrum per „Manuelle Installation“ einspielen lässt. Das Paket läuft
+  unter einem eigenen Paketbenutzer, den DSM 7 akzeptiert; weil Pakete von
+  Drittanbietern dort nicht selbst als root starten, braucht der Dienst einmalig
+  `sudo /var/packages/wave/scripts/setup` (per SSH oder als Aufgabe im
+  Aufgabenplaner von DSM, siehe `docs/DSM.md`). Danach läuft wave als Dienst und
+  startet nach jedem Neustart von allein; die Konten, die `wave` bedienen
+  dürfen, kommen in die DSM-Gruppe `wave`. Vor dem Entfernen des Pakets gehört
+  `sudo /var/packages/wave/scripts/setup uninstall` ausgeführt. Auf einer echten
+  Synology ist das noch nicht ausprobiert. *(seit develop.1)*
+- **wave im Hauptmenü von DSM:** Auf einer Synology steht wave jetzt wie
+  Tailscale im Hauptmenü. Die Seite zeigt die Waves der DiskStation mit
+  Verbinden und Trennen, meldet sie bei einem weiteren Wave an (Adresse des
+  Control-Servers eintragen, Freigabelink im Browser öffnen) und listet die
+  Geräte samt ihren Diensten, die sich per Klick öffnen. Nur Administratoren
+  der DiskStation sehen und benutzen sie. Wer den Dienst vor dieser Version
+  eingerichtet hat, führt `sudo /var/packages/wave/scripts/setup` einmal neu aus,
+  sonst darf die Seite nicht mit ihm sprechen — sie sagt das dann auch. Auf
+  einer echten Synology ist das noch nicht ausprobiert. *(seit develop.3)*
+- **`wave cert` legt Zertifikate direkt in den Zertifikatspeicher von DSM:**
+  Auf einer Synology erscheint das Zertifikat ohne Kopieren und Importieren
+  unter Systemsteuerung → Sicherheit → Zertifikat, und jede Erneuerung
+  aktualisiert denselben Eintrag, statt einen neuen anzulegen. Einmalig wird
+  das Zertifikat dort einem Dienst zugeordnet; die Dienste, die es nutzen,
+  werden bei jeder Erneuerung neu geladen. `--no-dsm` schaltet das ab,
+  `--dsm` erzwingt es. Auf allen anderen Systemen bleibt alles wie bisher.
+  *(seit develop.1)*
+- **`wave install --binary <Pfad>`:** Das Binary bleibt dort, wo es liegt,
+  statt nach `/usr/local/bin/wave` kopiert zu werden. *(seit develop.1)*
+
+### Fehlerbehebungen (gegenüber v0.12.0)
+
+- **Rollenauswahl in der Mitgliederliste lesbar, auch auf sehr schmalen
+  Displays:** Ist die Rolle änderbar, ist die Rolle-Spalte jetzt breit genug,
+  dass der Rollenname in der Auswahl vollständig zu lesen ist; „Speichern“ steht
+  daneben, die Spalten von Mitglieds- und Einladungszeilen bleiben ausgerichtet.
+  Reicht bei 320 px der Platz nicht, steht „Speichern“ unter der Auswahl und ragt
+  nicht mehr über die Zeile hinaus, die Seite lässt sich nicht mehr seitwärts
+  schieben. Ab 375 px ändert sich nichts. *(seit develop.1, develop.2)*
 
 ---
 
