@@ -241,7 +241,7 @@ Fehler und Funktionswünsche gehören in die [GitHub-Issues](../../issues). Für
 Änderungen am Code stehen Ablauf und Prüfungen in [CONTRIBUTING.md](CONTRIBUTING.md).
 Sicherheitslücken bitte gemäß [SECURITY.md](SECURITY.md) melden, nicht als
 öffentliches Issue. Die Dokumentation liegt im Repository; ein Wiki wird nicht
-verwendet.
+verwendet. Tickets für dieses Repository laufen über das GitHub-Projekt „wave-mesh“ (Projekt 7).
 
 ## Lizenz
 
