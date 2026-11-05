@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
 import { LocaleProvider } from "@/components/locale-provider";
+import { PlausibleScript } from "@/components/plausible-script";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { appMessages } from "@/i18n/app";
@@ -29,6 +30,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
 
   return (
     <html lang={locale} className={`${display.variable} ${body.variable}`}>
+      <head>
+        {/* Only where ops sets the variables; see lib/plausible.ts. */}
+        <PlausibleScript />
+      </head>
       <body className="min-h-screen antialiased">
         {/* Around everything, so a client component anywhere -- error.tsx
             included -- renders in the language the server chose. */}

@@ -75,6 +75,36 @@ describe("with a frontend", () => {
     expect(forwarded?.headers.get("x-forwarded-host")).toBe("control.example.com");
   });
 
+  test("Plausible's script and events reach the frontend with what it needs", async () => {
+    const { seen, webFetch } = stubFrontend(() => new Response("ok", { status: 202 }));
+    const app = build({ WAVE_WEB_URL: WEB_URL }, webFetch);
+
+    const script = await app.request("/_plausible/js/script.js");
+    expect(script.status).toBe(202);
+    expect(seen[0]?.url).toBe(`${WEB_URL}/_plausible/js/script.js`);
+
+    const body = JSON.stringify({ n: "pageview", u: "https://control.example.com/" });
+    const event = await app.request("/_plausible/api/event", {
+      method: "POST",
+      headers: {
+        "content-type": "text/plain",
+        "user-agent": "Mozilla/5.0 test",
+        "x-forwarded-for": "203.0.113.7",
+      },
+      body,
+    });
+    expect(event.status).toBe(202);
+
+    const forwarded = seen[1];
+    expect(forwarded?.method).toBe("POST");
+    expect(forwarded?.url).toBe(`${WEB_URL}/_plausible/api/event`);
+    // The frontend needs these three to count a visitor at all.
+    expect(forwarded?.headers.get("x-forwarded-for")).toBe("203.0.113.7");
+    expect(forwarded?.headers.get("user-agent")).toBe("Mozilla/5.0 test");
+    expect(forwarded?.headers.get("content-type")).toBe("text/plain");
+    expect(await forwarded?.text()).toBe(body);
+  });
+
   test("a redirect from the frontend reaches the browser", async () => {
     const { seen, webFetch } = stubFrontend(
       () => new Response(null, { status: 307, headers: { location: "/login" } }),

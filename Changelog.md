@@ -6,7 +6,17 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.13.0.*
+### Neue Funktionen
+
+- **Besucherstatistik über die eigene Domain (Plausible):** Die Weboberfläche kann
+  Plausible einbinden, ohne dass der Browser je einen fremden Server anspricht:
+  Script und Ereignisse laufen über `/_plausible/` der eigenen Adresse. Es zählt
+  nur, wo `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` und `NEXT_PUBLIC_PLAUSIBLE_SRC` gesetzt
+  sind (optional `NEXT_PUBLIC_PLAUSIBLE_API_HOST`); sonst wird nichts eingebunden
+  und nichts gesendet. Es landen keine IDs, Einladungstoken, Gerätenamen oder
+  Adressen in der Statistik: Pfade wie `/waves/<id>/invited` werden zu
+  `/waves/:id/invited`, Query-String und Fragment entfallen, eigene Eigenschaften
+  zu Ereignissen werden verworfen — auf dem Server, bevor etwas weitergeht.
 
 ---
 
