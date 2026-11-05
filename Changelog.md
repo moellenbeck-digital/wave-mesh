@@ -6,7 +6,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-### Neue Funktionen
+*Noch nichts seit v0.14.0.*
+
+---
+
+## ✅ Stable v0.14.0 (05.11.2026)
+
+### Neue Funktionen (gegenüber v0.13.0)
 
 - **Besucherstatistik über die eigene Domain (Plausible):** Die Weboberfläche kann
   Plausible einbinden, ohne dass der Browser je einen fremden Server anspricht:
