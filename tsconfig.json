@@ -20,6 +20,7 @@
     "packages/**/*.ts",
     "spike/**/*.ts",
     "mobile/fixtures/**/*.ts",
+    "test/web/**/*.ts",
     "scripts/build-spk.ts",
     "scripts/build-spk.test.ts"
   ],

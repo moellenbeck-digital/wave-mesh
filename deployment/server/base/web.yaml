@@ -49,6 +49,10 @@ spec:
             # Gelesen beim Start -- von next.config.ts für die Rewrites und von
             # lib/control.ts für die serverseitigen Aufrufe.
             - { name: WAVE_CONTROL_URL, value: "http://wave-control:8080" }
+            # Besucherstatistik, optional und hier absichtlich nicht gesetzt: das
+            # Overlay der Umgebung trägt sie ein (Prod: NEXT_PUBLIC_PLAUSIBLE_DOMAIN,
+            # _SRC und _API_HOST, siehe CLAUDE.md „Besucherstatistik“). Gelesen
+            # wird zur Laufzeit; ohne die ersten beiden gibt es kein Tracking.
           # Es gibt kein /healthz im Frontend; /login ist die eine Seite, die
           # ohne Sitzung rendert. Dasselbe prüft die docker-compose.yml.
           readinessProbe:

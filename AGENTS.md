@@ -123,6 +123,53 @@ hinzufügt, das keine Seite trägt, lässt es besser weg. Farben, Typografie,
 Komponenten und Regeln für Web und Tray sind in `DESIGN.md` zusammengefasst —
 wer dort oder an den Tokens etwas ändert, zieht das andere nach.
 
+### Besucherstatistik (Plausible)
+
+Plausible läuft im Ops-Cluster ohne öffentlichen Endpunkt. Das Frontend reicht
+Script und Events deshalb über die eigene Domain weiter: `/_plausible/…`
+(`apps/web/src/app/%5Fplausible/[...path]/route.ts`, Logik als reine Funktionen
+in `apps/web/src/lib/plausible.ts`, Tests in `test/web/plausible.test.ts`). Der
+Control-Server proxyt den Pfad wie jeden anderen, der Prod-Ingress braucht
+nichts Neues (ein Pfad `/` auf `wave-control`); Header und Body kommen
+unverändert beim Frontend an, auch `X-Forwarded-For`.
+
+- **Ohne Variablen kein Tracking.** `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` und
+  `NEXT_PUBLIC_PLAUSIBLE_SRC` müssen beide gesetzt sein, sonst steht kein
+  Script im HTML und `/_plausible/…` antwortet überall mit 404. Dev und Test
+  senden also nichts. `NEXT_PUBLIC_PLAUSIBLE_API_HOST` ist die Basis des
+  Event-Endpunkts (`data-api` = Wert + `/api/event`). Prod:
+  `control.wave-mesh.net`, `/_plausible/js/script.js`, `/_plausible`.
+- **Zur Laufzeit gelesen, nicht eingebacken.** Das Root-Layout rendert das
+  Script-Tag bei jeder Anfrage aus `process.env`; ein `process.env.NEXT_PUBLIC_…`
+  im Quelltext würde Next beim Build festschreiben, und das Image gälte nur für
+  eine Umgebung. Ops setzt die Variablen am Deployment `wave-web`, ein neuer
+  Build ist dafür nicht nötig.
+- **Kein offener Proxy.** Der Upstream steht als Konstante im Code. Erlaubt sind
+  genau `GET /_plausible/js/script.js` und `POST /_plausible/api/event`, alles
+  andere unter `/_plausible/` ist 404. `d` (die Site) wird auf die konfigurierte
+  Domain gesetzt, niemand kann Ereignisse für fremde Sites einspeisen. Der Body
+  ist auf 8 KiB begrenzt (413), ein nicht erreichbarer oder langsamer Upstream
+  (5 s) ist 502, nie ein hängender Request. Weitergereicht werden nur
+  `X-Forwarded-For`, `User-Agent` und `content-type` — nie Cookies oder
+  `Authorization`.
+- **Datenschutz: gefiltert wird auf dem Server.** Die Oberfläche ist angemeldet
+  nutzbar, Pfade tragen Wave-IDs und Einladungstokens, Query-Strings Gerätenamen.
+  Bevor ein Event weitergeht, schreibt `sanitizeEvent` es um: `u` verliert Query,
+  Fragment und Zugangsdaten, und der Pfad wird gegen die Seiten von
+  `apps/web/src/app` geprüft — bekannte Namen bleiben, jede ID wird `:id`, jedes
+  Token `:token` (`/waves/:id/invited`, `/join/:token`); was nicht auf der Liste
+  steht, wird ersetzt, auch wenn es harmlos aussieht. Der Referrer wird genauso
+  behandelt (eigene Seiten normalisiert, fremde auf Ursprung und Pfad ohne Query).
+  Von allem anderen bleiben nur `n`, `d` und `w`; **`p` (Custom Props), `m`,
+  `revenue` und jedes unbekannte Feld werden verworfen.** Ein neuer Seitenname
+  gehört in `ROUTES` in `apps/web/src/lib/plausible.ts` — vergisst man es, steht
+  in der Statistik `:id` statt des Namens, nie die ID.
+- **Eine CSP gibt es im Repo nicht** (nur im Client-Code), deshalb auch keinen
+  CSP-Test. Käme eine, gehören nur die eigenen `/_plausible/`-Pfade in
+  `script-src` und `connect-src`, nie der Plausible-Host.
+- **`_plausible` allein wird nicht geroutet:** Ordner mit `_`-Präfix sind im
+  App-Router private Ordner. Der Ordner heißt deshalb `%5Fplausible`.
+
 ## Sprachen
 
 Alles, was ein Mensch liest, gibt es auf **Deutsch und Englisch** — Web,
