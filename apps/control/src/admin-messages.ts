@@ -136,6 +136,9 @@ it at; allow-pier lets a device put names through it, deny-pier takes its names 
 
   // --- the wave itself ------------------------------------------------------
   suffixTaken: (domain: string) => `another wave already answers for ${domain}`,
+  domainHasPiers: (wave: string, names: string[]) =>
+    `${wave} still has names in the open network (${names.join(", ")}); ` +
+    "remove them first (`wave expose --remove <name>` on the device, or `deny-pier`), then set the domain",
   namesNow: (wave: string, domain: string) => `${wave}: names are now <host>.${domain}`,
   nextNetmap: "Connected nodes pick this up with their next netmap.",
   deleteSummary: (wave: string, suffix: string, devices: number, members: number) =>
@@ -312,6 +315,9 @@ erreichbar ist; allow-pier erlaubt einem Gerät, Namen darüber freizugeben, den
   judgedByTags: "Die Policy beurteilt es jetzt nur nach diesen Tags, nicht mehr als Gerät seines Besitzers.",
 
   suffixTaken: (domain) => `ein anderer Wave antwortet schon für ${domain}`,
+  domainHasPiers: (wave, names) =>
+    `${wave} hat noch Namen im offenen Netz (${names.join(", ")}); ` +
+    "nimm sie zuerst heraus (`wave expose --remove <name>` auf dem Gerät oder `deny-pier`), dann setze die Domain",
   namesNow: (wave, domain) => `${wave}: die Namen lauten jetzt <host>.${domain}`,
   nextNetmap: "Verbundene Knoten übernehmen das mit ihrer nächsten Netzkarte.",
   deleteSummary: (wave, suffix, devices, members) =>
