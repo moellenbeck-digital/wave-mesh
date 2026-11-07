@@ -26,6 +26,27 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   des Piers und löscht ihn beim Entzug wieder — bei Cloudflare, Hetzner, IONOS
   und INWX. Verwaltet der Wave seine Zone von Hand, nennt der Server den Eintrag
   als Aufforderung.
+- **`wave expose`: einen lokalen Dienst ins Internet stellen:** `wave expose
+  app.wave.example.com http://localhost:3000` gibt den Namen frei; der Dienst
+  darf auf dem Gerät oder im LAN laufen (`http://` oder `https://`, mit Port).
+  Der Dienst des Geräts beendet die Verschlüsselung selbst, mit dem Zertifikat
+  des Geräts für den Namen, und reicht den Verkehr an den Dienst weiter — der
+  Pier sieht keinen Klartext. `wave expose --list` zeigt die Namen und wie es um
+  jeden steht, `--remove` nimmt einen heraus, `wave pier status` sagt, warum ein
+  Name noch nicht geht (kein Zertifikat, Tunnel unten, Gerät offline). Vorher
+  muss der Betreiber den Pier für das Gerät erlaubt haben; sonst nennt die
+  Meldung `admin.ts allow-pier` als nächsten Schritt.
+- **Zertifikat für die eigenen Pier-Namen:** Ein Gerät bekommt jetzt auch für die
+  Namen ein Zertifikat, die es selbst freigegeben hat — nicht für den ganzen
+  Wave, nicht für Namen anderer Geräte, und nur solange der Betreiber den Pier
+  erlaubt. Nach dem Entfernen läuft ein schon ausgestelltes Zertifikat bis zu
+  seinem Ablauf weiter.
+
+### Änderungen
+
+- **Domain wechseln, solange Namen im offenen Netz stehen:** `admin.ts
+  set-domain` und das Webformular lehnen ab, solange der Wave Pier-Namen hat, und
+  nennen sie. Erst entfernen (`wave expose --remove`), dann umziehen.
 
 ---
 

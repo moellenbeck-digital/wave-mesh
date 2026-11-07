@@ -235,6 +235,58 @@ eingehenden Port, und der interne Ingress-Controller nur eine ClusterIP.
 **Im Cluster gefahren ist das noch nicht** — die Regeln und der Operator sind
 gegen Fakes getestet, nicht gegen echtes Kubernetes.
 
+### Ein Dienst im offenen Netz: der Pier
+
+Ein Gerät kann einen Namen unter der Domain des Waves aus dem Internet
+erreichbar machen — ohne eingehenden Port, feste Adresse oder Portfreigabe. Ein
+**Pier-Knoten** (Image `wave-reverse-proxy`) liest nur den Namen aus dem
+Verbindungsaufbau und reicht die Verbindung durch den Wave an das Gerät weiter;
+die Verschlüsselung endet auf dem Gerät, mit dessen eigenem Zertifikat. Der Pier
+hält keinen Schlüssel und sieht keinen Klartext.
+
+```bash
+# Betreiber, auf dem Server — einmal je Wave, dann je Gerät
+bun apps/control/src/admin.ts set-pier   meinwave wave-pier-0 --ipv4 <öffentliche Adresse>
+bun apps/control/src/admin.ts allow-pier meinwave laptop
+
+# Besitzer, auf dem Gerät
+wave expose app.meinwave.example.com http://localhost:3000
+wave cert   app.meinwave.example.com     # beim ersten Mal: noch kein Zertifikat
+wave pier status                         # läuft der Proxy? wenn nicht: warum
+wave expose --remove app.meinwave.example.com
+```
+
+`<url>` ist `http(s)://host:port` auf dem Gerät oder in seinem LAN. Der Anspruch
+steht auch ohne Zertifikat; der Proxy öffnet, sobald eines den Namen deckt
+(`wave expose` nennt den nächsten Schritt). Den öffentlichen A/AAAA-Eintrag
+schreibt der Control-Server über die Provider-API des Waves — oder nennt ihn, wenn
+die Zone von Hand gepflegt wird. Entziehst du die Erlaubnis (`deny-pier`) oder
+nimmst einen Namen heraus, wird der Eintrag gelöscht; ein schon ausgestelltes
+Zertifikat läuft bis zu seinem Ablauf weiter.
+
+Den Pier-Knoten startest du im Cluster oder auf einer eigenen Maschine:
+
+```bash
+bun apps/control/src/admin.ts auth-key meinwave pier --reusable   # auf dem Server
+
+cd deployment/pier/overlays/example      # dort, wo die öffentliche Adresse liegt
+cp secret.env.example secret.env         # den Schlüssel eintragen
+kubectl apply -k .
+```
+
+Ein Ingress leitet **alles** auf TCP 443 per SNI-Durchleitung an den Pod
+(`deployment/pier/base/ingress.example.yaml`); seine Adresse ist die, die
+`set-pier` bekommt.
+
+**Behandle den Pier-Knoten wie einen Bastion-Host.** Er ist Mitglied des Waves
+und hat eine öffentliche Adresse. Solange keine Policy ihn zurückhält, ist seine
+Übernahme ein Fuß in der Tür zum ganzen Wave: eigene Maschine oder eigener
+Cluster, sonst läuft dort nichts. Der Proxy auf dem Gerät lauscht nur auf dessen
+Wave-Adresse, nie im LAN.
+
+**Nicht geprüft:** der Pier an einem echten Ingress über das Internet und das
+gebaute Image — die Tests laufen über Loopback.
+
 ## Mitmachen und Probleme melden
 
 Fehler und Funktionswünsche gehören in die [GitHub-Issues](../../issues). Für
