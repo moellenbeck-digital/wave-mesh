@@ -16,7 +16,7 @@ M5 meinte, gibt es nicht.
 ## Befehle
 
 ```bash
-bun test                 # 904 Tests, kein Docker nötig
+bun test                 # die ganze Suite (PGlite, kein Docker nötig); die Zahl steht im CI-Lauf, nicht hier
 bun run check            # Biome (Lint + Format)
 bun run typecheck        # tsc --noEmit, strict inkl. noUncheckedIndexedAccess
 bun run db:up            # Postgres für die Entwicklung
