@@ -1,5 +1,5 @@
 import { connect, createServer, type Server, type Socket } from "node:net";
-import { sniFromClientHello } from "@wave/sni";
+import { clientHelloProgress, sniFromClientHello } from "@wave/sni";
 import type { PierTable } from "./table.ts";
 
 /**
@@ -33,11 +33,23 @@ export interface PierOptions {
   /** Read for every connection, so the table can change underneath. */
   table: () => PierTable;
   log?: (message: string) => void;
-  /** How long a client may take to say which name it wants. */
+  /**
+   * How long a client may take to say which name it wants -- in total, from
+   * the first byte, not between bytes: a client sending one byte every few
+   * seconds would otherwise hold a slot for hours.
+   */
   sniffTimeoutMs?: number;
   /** How long the device may take to accept the connection through the tunnel. */
   connectTimeoutMs?: number;
+  /** How long a spliced connection may carry nothing before both halves are closed. */
+  idleTimeoutMs?: number;
   maxConnections?: number;
+  /**
+   * Open connections one name may hold. The pool above is shared by every name
+   * in the wave; without a share per name, one popular -- or attacked -- name
+   * would close the pier for all the others.
+   */
+  maxPerName?: number;
   /**
    * Where the target's port lives, when it is not the one in the netmap. Only
    * the tests say otherwise -- they have no wave address to connect to.
@@ -59,7 +71,12 @@ export async function startPier(options: PierOptions): Promise<Pier> {
   const log = options.log ?? console.log;
   const sniffTimeout = options.sniffTimeoutMs ?? 10_000;
   const connectTimeout = options.connectTimeoutMs ?? 10_000;
+  const idleTimeout = options.idleTimeoutMs ?? 10 * 60_000;
   const maxConnections = options.maxConnections ?? 1024;
+  const maxPerName = options.maxPerName ?? Math.max(1, Math.floor(maxConnections / 4));
+  const perName = new Map<string, number>();
+  /** ClientHellos arrive in a handful of segments; hundreds is someone trickling. */
+  const MAX_CHUNKS = 128;
   const resolve = options.resolveTarget ?? ((target) => ({ host: target.ipv4, port: target.port }));
   let open = 0;
 
@@ -89,21 +106,42 @@ export async function startPier(options: PierOptions): Promise<Pier> {
       open--;
     });
     client.on("error", () => client.destroy());
-    client.setTimeout(sniffTimeout, () => refuse(client, "no name within the time allowed"));
+    // A deadline, not an idle timer: it does not start over with every byte.
+    const deadline = setTimeout(() => refuse(client, "no name within the time allowed"), sniffTimeout);
+    client.on("close", () => clearTimeout(deadline));
 
-    let buffered = Buffer.alloc(0);
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let buffered: Buffer = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
-      buffered = Buffer.concat([buffered, chunk]);
-      const sniffed = sniFromClientHello(buffered);
+      chunks.push(chunk);
+      size += chunk.length;
+      if (chunks.length > MAX_CHUNKS) return refuse(client, "the first bytes came in too many pieces");
+      // Put together and looked at only once the record headers say the whole
+      // ClientHello can be there: concatenating and parsing on every chunk is
+      // quadratic in a client that sends a byte at a time.
+      const head = chunks.length === 1 ? chunk : Buffer.concat(chunks, size);
+      const progress = clientHelloProgress(head);
+      if (progress === "more") return;
+      buffered = head;
+      const sniffed = progress === "none" ? "none" : sniFromClientHello(buffered);
       if (sniffed === "more") return;
       client.off("data", onData);
       client.pause();
       // The name is known; from here the time that counts is the target's.
-      client.setTimeout(0);
+      clearTimeout(deadline);
 
       if (sniffed === "none") return refuse(client, "no server name");
       const target = options.table().get(sniffed.name);
       if (!target) return refuse(client, `${sniffed.name} is not a name this pier serves`);
+      const held = perName.get(sniffed.name) ?? 0;
+      if (held >= maxPerName) return refuse(client, `${sniffed.name} holds its share of connections`);
+      perName.set(sniffed.name, held + 1);
+      client.on("close", () => {
+        const left = (perName.get(sniffed.name) ?? 1) - 1;
+        if (left > 0) perName.set(sniffed.name, left);
+        else perName.delete(sniffed.name);
+      });
 
       const destination = resolve(target);
       const upstream = connect(destination);
@@ -113,8 +151,10 @@ export async function startPier(options: PierOptions): Promise<Pier> {
         upstream.destroy();
       });
       upstream.on("connect", () => {
-        upstream.setTimeout(0);
-        client.setTimeout(0);
+        // Spliced: a connection that carries nothing for this long is closed,
+        // so a slot cannot be held by one that is merely open.
+        upstream.setTimeout(idleTimeout, () => upstream.destroy());
+        client.setTimeout(idleTimeout, () => client.destroy());
         // Both ends are found dead eventually: a phone that left the wifi never
         // says goodbye, and a connection that outlives it is a slot nobody uses.
         client.setKeepAlive(true, 30_000);

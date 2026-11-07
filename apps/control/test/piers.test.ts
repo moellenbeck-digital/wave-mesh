@@ -12,8 +12,13 @@ import { storeDnsCredential } from "../src/dns/credentials.ts";
 import { buildNetmap, signNetmap } from "../src/netmap/build.ts";
 import { createAuthKey } from "../src/waves/auth-keys.ts";
 import { listNodes } from "../src/waves/nodes.ts";
-import { publishPierZone, unpublishPierZone, unpublishPierZoneOfNode } from "../src/waves/pier-dns.ts";
-import { clearPierHost, removePiersOf, setPierAllowed, setPierHost } from "../src/waves/piers.ts";
+import {
+  pierLeaving,
+  publishPierZone,
+  unpublishLeavingPier,
+  unpublishPierZone,
+} from "../src/waves/pier-dns.ts";
+import { clearPierHost, setPierAllowed, setPierHost } from "../src/waves/piers.ts";
 import { syncServices } from "../src/waves/services.ts";
 import { CookieJar, createTestDb, createWaveAs, testConfig, testSigningKey } from "./helpers.ts";
 
@@ -244,9 +249,8 @@ describe("the first lock: the operator", () => {
     await expose(wave, "git", 9443);
 
     const before = await versionOf(wave.waveId);
-    await setPierAllowed(db, wave.waveId, wave.laptop.id, false);
-    const taken = await removePiersOf(db, wave.waveId, wave.laptop.id);
-    expect(taken.map((pier) => pier.name).sort()).toEqual(["app", "git"]);
+    const denied = await setPierAllowed(db, wave.waveId, wave.laptop.id, false);
+    expect(denied?.taken.map((pier) => pier.name).sort()).toEqual(["app", "git"]);
     expect(await versionOf(wave.waveId)).toBe((before ?? 0) + 1);
 
     expect((await expose(wave, "app")).status).toBe(403);
@@ -266,10 +270,32 @@ describe("claiming a name", () => {
     // not cover it, so it is not a name the pier could serve.
     expect((await expose(wave, `app.${SUFFIX}`)).status).toBe(400);
     expect((await expose(wave, `a.b.${ZONE}`)).status).toBe(400);
+    // What the internet and a CA are offered: one DNS label at most, and no
+    // punycode -- the way a look-alike of someone else's name would get in.
+    expect((await expose(wave, "a".repeat(64))).status).toBe(400);
+    expect((await expose(wave, "xn--pypal-4ve")).status).toBe(400);
+    expect((await expose(wave, "ab--cd")).status).toBe(400);
+    expect((await expose(wave, "a".repeat(63))).status).toBe(200);
     // Fully qualified under the pier zone is the same name as the bare label.
     const res = await expose(wave, `App.${ZONE}`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ name: "app", dnsName: `app.${ZONE}`, port: 8443 });
+  });
+
+  test("a name to take back that is not one is a 400, not a 500", async () => {
+    const wave = await home();
+    await open(wave);
+    expect((await signed(wave.laptopMachine, "DELETE", "/v1/piers/%E0")).status).toBe(400);
+    expect((await signed(wave.laptopMachine, "DELETE", "/v1/piers/a%20b")).status).toBe(400);
+  });
+
+  test("a claim without the permission behind it is not in any netmap", async () => {
+    const wave = await home();
+    await open(wave);
+    await expose(wave, "app");
+    // As if a claim had outlived its permission: the netmap checks once more.
+    await db.update(nodes).set({ pierAllowed: false }).where(eq(nodes.id, wave.laptop.id));
+    expect((await netmapOf(wave.pier.id)).piers).toBeUndefined();
   });
 
   test("needs a port that is one", async () => {
@@ -407,11 +433,35 @@ describe("the public record", () => {
     await open(wave);
     await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
 
-    expect(await unpublishPierZoneOfNode(dns(), { waveId: wave.waveId, nodeId: wave.laptop.id })).toBeNull();
+    expect(await pierLeaving(db, { waveId: wave.waveId, leaving: { nodeId: wave.laptop.id } })).toBeNull();
+    expect(await unpublishLeavingPier(dns(), null)).toBeNull();
     expect(zone.at(WILDCARD)).toHaveLength(2);
 
-    const gone = await unpublishPierZoneOfNode(dns(), { waveId: wave.waveId, nodeId: wave.pier.id });
+    const pier = await pierLeaving(db, { waveId: wave.waveId, leaving: { nodeId: wave.pier.id } });
+    expect(pier).toEqual({ waveId: wave.waveId, zone: ZONE, host });
+    const gone = await unpublishLeavingPier(dns(), pier);
     expect(gone?.name).toBe(WILDCARD);
+    expect(zone.at(WILDCARD)).toEqual([]);
+  });
+
+  test("the pier's member and the whole wave going count as the pier going", async () => {
+    const wave = await home();
+    await open(wave);
+    expect(await pierLeaving(db, { waveId: wave.waveId, leaving: { userId: wave.userId } })).not.toBeNull();
+    expect(await pierLeaving(db, { waveId: wave.waveId, leaving: { userId: "someone-else" } })).toBeNull();
+    expect(await pierLeaving(db, { waveId: wave.waveId, leaving: { wholeWave: true } })).not.toBeNull();
+  });
+
+  test("the pier logging itself out takes the wildcard away", async () => {
+    const wave = await home();
+    await open(wave);
+    await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    expect(zone.at(WILDCARD)).toHaveLength(2);
+
+    expect((await signed(wave.laptopMachine, "POST", "/v1/node/logout", {})).status).toBe(200);
+    expect(zone.at(WILDCARD)).toHaveLength(2);
+
+    expect((await signed(wave.pierMachine, "POST", "/v1/node/logout", {})).status).toBe(200);
     expect(zone.at(WILDCARD)).toEqual([]);
   });
 

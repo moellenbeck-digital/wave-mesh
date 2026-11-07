@@ -8,6 +8,7 @@ import {
   ExposeListeners,
   type ExposeTarget,
   exposeLabel,
+  isForbiddenTarget,
   nameCovers,
   type PemPair,
   parseLocalUrl,
@@ -40,6 +41,9 @@ describe("the name", () => {
       "-app",
       "a_b",
       "a b",
+      "xn--pypal-4ve",
+      "ab--cd",
+      "a".repeat(64),
     ]) {
       expect(exposeLabel(bad, SUFFIX)).toBeNull();
     }
@@ -81,8 +85,20 @@ describe("the local URL", () => {
       "http://localhost:3000#x",
       "http://:3000",
       "http://a b:3000",
+      "http://169.254.169.254:80",
+      "http://[fe80::1]:80",
+      "http://[::ffff:169.254.169.254]:80",
     ]) {
       expect(parseLocalUrl(bad)).toBeNull();
+    }
+  });
+
+  test("link-local addresses -- where cloud metadata lives -- are never a target", () => {
+    for (const address of ["169.254.169.254", "::ffff:169.254.0.1", "fe80::1", "FEBF::1", "fd00:ec2::254"]) {
+      expect(isForbiddenTarget(address)).toBe(true);
+    }
+    for (const address of ["127.0.0.1", "192.168.1.20", "10.64.0.2", "::1", "fd7a::1", "nas.lan"]) {
+      expect(isForbiddenTarget(address)).toBe(false);
     }
   });
 });

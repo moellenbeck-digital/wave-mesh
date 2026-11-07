@@ -16,6 +16,7 @@ import { newId } from "../ids.ts";
 import { allocateIpv4, ipv6ForIpv4, uniqueHostname } from "../net/addressing.ts";
 import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
 import { authKeyWave, claimAuthKey } from "../waves/auth-keys.ts";
+import { pierLeaving, unpublishLeavingPier } from "../waves/pier-dns.ts";
 import { type NetmapHub, publishEndpoints } from "./control-ws.ts";
 import { authenticateMachine } from "./machine-auth.ts";
 import { pageMessages } from "./messages.ts";
@@ -33,11 +34,13 @@ export interface MachineRouteDeps {
   signingKey: SigningKey;
   hub?: NetmapHub;
   nonces?: NonceStore;
+  /** How the DNS providers are reached when a pier logs out. Only the tests replace it. */
+  dnsFetch?: typeof fetch;
 }
 
 type Vars = { user: SessionUser | null };
 
-export function machineRoutes({ db, config, signingKey, hub, nonces }: MachineRouteDeps) {
+export function machineRoutes({ db, config, signingKey, hub, nonces, dnsFetch }: MachineRouteDeps) {
   const app = new Hono<{ Variables: Vars }>();
   const nonceStore = nonces ?? createMemoryNonceStore();
 
@@ -213,7 +216,11 @@ export function machineRoutes({ db, config, signingKey, hub, nonces }: MachineRo
     // Already gone is a success: logging out twice is not an error.
     if (!node) return c.json({ ok: true });
 
+    // The pier logging itself out takes its wildcard with it, like any other
+    // way a pier node goes (waves/pier-dns.ts).
+    const pier = await pierLeaving(db, { waveId: node.waveId, leaving: { nodeId: node.id } });
     await db.delete(nodes).where(eq(nodes.id, node.id));
+    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
     await bumpNetmapVersion(node.waveId);
     await hub?.broadcast(node.waveId);
     return c.json({ ok: true });

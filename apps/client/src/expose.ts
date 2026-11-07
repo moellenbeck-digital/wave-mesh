@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { readFile, stat } from "node:fs/promises";
 import { isIP, connect as netConnect, type Server, type Socket } from "node:net";
 import { createSecureContext, createServer, type SecureContext, connect as tlsConnect } from "node:tls";
@@ -29,7 +30,8 @@ export function exposeLabel(given: string, zone: string): string | null {
   const name = given.trim().toLowerCase().replace(/\.$/, "");
   const suffix = zone.toLowerCase();
   const label = name.endsWith(`.${suffix}`) ? name.slice(0, -(suffix.length + 1)) : name;
-  return LABEL.test(label) ? label : null;
+  // `??--` is reserved, `xn--` is punycode: the server refuses both.
+  return LABEL.test(label) && label.slice(2, 4) !== "--" ? label : null;
 }
 
 /** The full name of an exposed entry: the server's answer, or rebuilt for an entry from before it was kept. */
@@ -64,8 +66,48 @@ export function parseLocalUrl(input: string): LocalTarget | null {
   } catch {
     return null;
   }
-  if (!host) return null;
+  if (!host || isForbiddenTarget(host)) return null;
   return { url: `${scheme}://${hostPart.toLowerCase()}:${port}`, host, port, secure: scheme === "https" };
+}
+
+/**
+ * Addresses a pier name must never lead to, whatever the URL said: link-local
+ * (169.254.0.0/16, fe80::/10) is where cloud metadata services live -- an
+ * instance's credentials, one GET away -- and nothing a person means to put
+ * on the internet sits there. Checked on the resolved address at connect time,
+ * not on the URL, so a name that resolves there (or is made to) does not get
+ * around it.
+ */
+export function isForbiddenTarget(address: string): boolean {
+  const lower = address.toLowerCase();
+  const mapped = lower.startsWith("::ffff:") ? lower.slice(7) : lower;
+  if (isIP(mapped) === 4) return mapped.startsWith("169.254.");
+  if (isIP(lower) === 6) {
+    // `::ffff:a9fe:…` is 169.254.x.x written the way `URL` writes it back.
+    return /^fe[89ab][0-9a-f]:/.test(lower) || lower.startsWith("::ffff:a9fe:") || lower === "fd00:ec2::254";
+  }
+  return false;
+}
+
+/**
+ * Whether something already answers on `host:port`. Asked before a port is
+ * claimed: the claim opens the pier's way to that port at once, and until this
+ * device's own listener holds it, whatever else listens there -- a database on
+ * 0.0.0.0, say -- would get the internet's bytes without TLS in front.
+ * Connecting rather than binding, because on macOS a bind to one address
+ * succeeds next to a service bound to all of them.
+ */
+export function somethingListens(host: string, port: number, timeoutMs = 1000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = netConnect({ host, port });
+    const done = (answer: boolean) => {
+      socket.destroy();
+      resolve(answer);
+    };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
 }
 
 /** Whether one certificate name stands for the given name. */
@@ -154,6 +196,11 @@ export class ExposeListeners {
 
   constructor(private readonly options: ExposeOptions) {
     this.log = options.log ?? (() => {});
+  }
+
+  /** Whether one of these listeners holds the port already. */
+  holds(port: number): boolean {
+    return this.bound.has(port);
   }
 
   /**
@@ -266,6 +313,9 @@ export class ExposeListeners {
         // negotiated h2 here would be speaking it to a service that may not.
         ALPNProtocols: ["http/1.1"],
         minVersion: "TLSv1.2",
+        // Node waits two minutes for a handshake by default; a peer opening
+        // half-handshakes would hold that long, each one a certificate read.
+        handshakeTimeout: 10_000,
         SNICallback: (servername, done) => {
           const name = servername?.toLowerCase();
           if (!name || !this.targets.has(name)) return done(new Error("unknown name"), undefined);
@@ -285,6 +335,35 @@ export class ExposeListeners {
         client.setTimeout(idleTimeout, () => client.destroy());
 
         const { host: toHost, port: toPort, secure } = target.local;
+        // Every address the target resolves to is checked before a byte goes
+        // out: never link-local (metadata services), and never this listener
+        // itself -- `https://app.pier.<zone>:443` as the service of
+        // `app.pier.<zone>` resolves to the wave address, and every connection
+        // would come back in until the slots ran out.
+        const lookup = (
+          hostname: string,
+          options: object,
+          callback: (error: Error | null, address: string | LookupAddress[], family?: number) => void,
+        ) =>
+          dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
+            if (error) return callback(error, []);
+            const refused = addresses.find(
+              (entry) =>
+                isForbiddenTarget(entry.address) || (entry.address === host && this.bound.has(toPort)),
+            );
+            if (refused)
+              return callback(new Error(`${hostname} resolves to ${refused.address}, which is refused`), []);
+            const wantsAll = (options as { all?: boolean }).all === true;
+            const first = addresses[0];
+            if (wantsAll) return callback(null, addresses);
+            if (!first) return callback(new Error(`${hostname} has no address`), []);
+            callback(null, first.address, first.family);
+          });
+        // An address is connected to without a lookup, so it is checked here.
+        if (isIP(toHost) && (isForbiddenTarget(toHost) || (toHost === host && this.bound.has(toPort)))) {
+          this.log(`expose: ${name} -> ${toHost}:${toPort}: refused target`);
+          return client.destroy();
+        }
         const upstream = secure
           ? tlsConnect({
               host: toHost,
@@ -292,8 +371,9 @@ export class ExposeListeners {
               // An address is no name a certificate can be checked against.
               servername: isIP(toHost) ? undefined : toHost,
               ca: this.options.upstreamCa,
+              lookup,
             })
-          : netConnect({ host: toHost, port: toPort });
+          : netConnect({ host: toHost, port: toPort, lookup });
         upstream.setNoDelay(true);
         upstream.setTimeout(connectTimeout, () => {
           this.log(`expose: ${name} -> ${toHost}:${toPort}: no answer`);
@@ -313,6 +393,9 @@ export class ExposeListeners {
         client.setKeepAlive(true, 30_000);
       },
     );
+    // The limit above counts finished handshakes; this one counts sockets, so
+    // connections that never finish one cannot pile up past it either.
+    server.maxConnections = maxConnections * 2;
     server.on("connection", (raw: Socket) => raw.on("error", () => raw.destroy()));
 
     return new Promise<Bound>((resolve, reject) => {

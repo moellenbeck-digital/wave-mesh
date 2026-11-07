@@ -3,6 +3,7 @@ import { connect, createServer, type Server, type Socket } from "node:net";
 import { connect as tlsConnect } from "node:tls";
 import { RecordType, resolve } from "@wave/dns";
 import type { ProfileStatus } from "@wave/ipc";
+import { clientHelloProgress } from "@wave/sni";
 import {
   type Egress,
   egressResolver,
@@ -56,6 +57,17 @@ describe("reading the name", () => {
     expect(sniFromClientHello(inTwoRecords(hello))).toEqual({ name: NAME });
     expect(sniFromClientHello(hello.subarray(0, 20))).toBe("more");
     expect(sniFromClientHello(Buffer.from("GET / HTTP/1.1\r\n"))).toBe("none");
+  });
+
+  test("whether the ClientHello can be complete, from the record headers alone", async () => {
+    const hello = await clientHello(NAME);
+    expect(clientHelloProgress(hello)).toBe("ready");
+    expect(clientHelloProgress(inTwoRecords(hello))).toBe("ready");
+    for (const cut of [1, 4, 8, 20, hello.length - 1]) {
+      expect(clientHelloProgress(hello.subarray(0, cut))).toBe("more");
+    }
+    expect(clientHelloProgress(inTwoRecords(hello).subarray(0, hello.length))).toBe("more");
+    expect(clientHelloProgress(Buffer.from("GET / HTTP/1.1\r\n"))).toBe("none");
   });
 
   test("Host from an HTTP request, port and case aside", () => {

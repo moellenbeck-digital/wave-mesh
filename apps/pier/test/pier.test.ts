@@ -276,6 +276,65 @@ describe("splicing connections", () => {
     expect(target.connections()).toBe(0);
   });
 
+  test("a client trickling its first bytes is let go at the deadline, not kept alive by each byte", async () => {
+    const target = await device();
+    const port = await start(known(target.port), target.port, { sniffTimeoutMs: 300 });
+    const hello = await clientHello(NAME);
+    const closed = await new Promise<boolean>((resolve) => {
+      const socket = connect(port, "127.0.0.1");
+      socket.on("error", () => {});
+      let at = 0;
+      const drip = setInterval(() => {
+        if (at < hello.length - 1) socket.write(hello.subarray(at, ++at));
+      }, 50);
+      socket.on("close", () => {
+        clearInterval(drip);
+        resolve(true);
+      });
+      setTimeout(() => {
+        clearInterval(drip);
+        socket.destroy();
+        resolve(false);
+      }, 2000);
+    });
+    expect(closed).toBe(true);
+    expect(target.connections()).toBe(0);
+  });
+
+  test("a ClientHello split into a few pieces still gets through", async () => {
+    const target = await device();
+    const port = await start(known(target.port), target.port);
+    const hello = await clientHello(NAME);
+    const answer = await new Promise<string>((resolve) => {
+      let got = "";
+      const socket = connect(port, "127.0.0.1", async () => {
+        for (let at = 0; at < hello.length; at += 64) {
+          socket.write(hello.subarray(at, at + 64));
+          await Bun.sleep(5);
+        }
+      });
+      socket.on("data", (chunk: Buffer) => {
+        got += chunk.toString();
+        socket.destroy();
+      });
+      socket.on("error", () => {});
+      socket.on("close", () => resolve(got));
+    });
+    expect(answer).toBe("pong");
+  });
+
+  test("one name cannot take every slot of the pier", async () => {
+    const target = await device();
+    const port = await start(known(target.port), target.port, { maxConnections: 8, maxPerName: 1 });
+    const held = connect(port, "127.0.0.1", async () => held.write(await clientHello(NAME)));
+    held.on("error", () => {});
+    await Bun.sleep(200);
+    const { closed, answer } = await exchange(port, await clientHello(NAME));
+    expect(closed).toBe(true);
+    expect(answer.length).toBe(0);
+    held.destroy();
+  });
+
   test("the table is read for every connection, so a name added later works", async () => {
     const target = await device();
     const table: PierTable = new Map();

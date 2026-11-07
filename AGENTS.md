@@ -1899,9 +1899,13 @@ Was daran festliegt:
 - **Zwei Schlösser, beide in `setPier()`.** `nodes.pier_allowed` (Vorgabe aus,
   nur der Betreiber) entscheidet, wer *beanspruchen* darf; die Zeile in
   `wave_piers` ist der Anspruch. Die Erlaubnis zu entziehen **räumt die Namen ab**
-  (`removePiersOf()`) — ein geschlossenes Schloss, das die Tür offen
-  lässt, ist keins. Das Schloss wird vor dem Namenskonflikt geprüft: ein Gerät
-  ohne Erlaubnis erfährt nichts darüber, welche Namen vergeben sind.
+  — in `setPierAllowed()` selbst, in einer Transaktion unter derselben Sperre auf die
+  Wave-Zeile, die `setPier()` nimmt. Getrennt konnte ein Claim, der „erlaubt“ schon
+  gelesen hatte, nach dem Abräumen committen und ohne Erlaubnis stehen bleiben; ein
+  geschlossenes Schloss, das die Tür offen lässt, ist keins. `buildNetmap()` prüft
+  `pier_allowed` des Besitzers trotzdem noch einmal. Das Schloss wird vor dem
+  Namenskonflikt geprüft: ein Gerät ohne Erlaubnis erfährt nichts darüber, welche
+  Namen vergeben sind.
 - **Der Pier ist genau ein Knoten je Wave und wird gesagt, nie geraten.**
   `nodes.pier_ipv4/pier_ipv6` tragen die öffentliche Adresse; ein Knoten mit einer
   von beiden *ist* der Pier (`admin.ts set-pier`). Der Server sieht hinter einem
@@ -1912,7 +1916,10 @@ Was daran festliegt:
   ist `pier`, solange der Betreiber mit `set-pier --label` nichts anderes sagt; `pierZone()`
   in `waves/piers.ts` setzt die Zone zusammen, sonst niemand. Ein Name ist genau ein Label
   darunter, bar (`app`) oder voll (`app.pier.wave.example.com`); alles andere ist 400 —
-  auch `app.wave.example.com`, das der Wildcard nicht deckt. Mit Geräten und Diensten
+  auch `app.wave.example.com`, das der Wildcard nicht deckt. `pierLabel()` ist dabei
+  strenger als ein Dienstname: höchstens 63 Zeichen (länger scheiterte erst an der CA,
+  nachdem der Name in jede Netmap signiert wurde) und kein `??--`-Label — `xn--` ist
+  Punycode, der Weg, auf dem ein Name hereinkäme, der wie ein fremder aussieht. Mit Geräten und Diensten
   gibt es **keinen** gemeinsamen Namensraum mehr (die liegen ein Label unter dem Suffix),
   also auch keine Prüfung dagegen; 409 gibt es nur, wenn ein anderes Gerät denselben
   Namen hält. Das Label zieht nur um, solange niemand einen Namen in der Zone hält —
@@ -1945,9 +1952,14 @@ Was daran festliegt:
 - **Ein Record für die ganze Zone, und er zeigt auf den Pier, nie auf eine
   Wave-Adresse** (`waves/pier-dns.ts`). `set-pier` schreibt `*.pier.<suffix>` —
   jedes Mal, geändert oder nicht, denn so kommt ein Record hinein, der beim ersten
-  Mal scheiterte —, `clear-pier` und das Entfernen des Pier-Knotens nehmen ihn
-  wieder heraus (Letzteres *vor* dem Löschen, weil die Adressen mit der Zeile
-  verschwinden), ein umgezogenes Label räumt den alten weg. `DnsProvider` kennt
+  Mal scheiterte —, `clear-pier` und **jeder Weg, auf dem der Pier-Knoten geht**, nehmen
+  ihn wieder heraus: `remove-device`, Entfernen im Browser, `wave logout` auf dem Pier,
+  das Entfernen oder Gehen seines Mitglieds, das Löschen des Waves (Knopf,
+  `delete-wave`, Billing-Sweep). Zwei Schritte, `pierLeaving()` *vor* dem Löschen (die
+  Adressen verschwinden mit der Zeile) und `unpublishLeavingPier()` *danach* (eine
+  verweigerte Entfernung nimmt nichts weg). Ein stehengebliebener Wildcard zeigte auf
+  eine Adresse, die der Betreiber vielleicht aufgibt — wer sie danach bekommt,
+  beantwortet jeden Namen der Zone. Ein umgezogenes Label räumt den alten weg. `DnsProvider` kennt
   dafür `setAddress(name, adresse)` (macht sie zum *einzigen* A- bzw. AAAA-Record
   am Namen, idempotent) und `removeAddress(name, typ)`, über Cloudflare, Hetzner,
   IONOS und INWX; der Stern ist für die Zonensuche ein gewöhnliches Label. Ein Pier
@@ -1965,6 +1977,16 @@ Was daran festliegt:
   schließen, kein TLS-Alert, keine Fehlerseite** — beides setzte Terminierung bzw.
   verriete einem Scanner, welche Namen es gibt. Was los ist, steht im Log
   (Ablehnungen höchstens einmal je 30 s, mit Zähler).
+- **Langsame Clients halten den Pier nicht auf.** Für den Namen gibt es eine
+  *Gesamtfrist* ab dem ersten Byte (`sniffTimeoutMs`, 10 s), keine Leerlauffrist —
+  die begann mit jedem Byte neu, und ein Byte alle neun Sekunden hielt einen Platz
+  stundenlang. Geparst wird erst, wenn die Record-Header sagen, dass das ClientHello
+  da sein kann (`clientHelloProgress()` in `@wave/sni`), sonst wäre ein Client, der
+  16 KiB byteweise schickt, quadratische Arbeit auf dem einen Thread; mehr als 128
+  Stücke sind keines. Je Name höchstens ein Viertel der Plätze (`maxPerName`), damit
+  ein Name nicht alle anderen aussperrt, und nach dem Spleiß schließen zehn Minuten
+  ohne Verkehr beide Hälften. Eine Grenze je Client-IP kann der Pier nicht ziehen —
+  er sieht nur die Adresse des Ingress —, die gehört an Traefik (`InFlightConn`).
 - **Der Pier verlässt den Wave nie.** `pierTable()` nimmt einen Namen nur, wenn
   seine Adresse die eines Peers (oder des Knotens selbst) ist — ein beschädigter
   Eintrag, der auf einen Metadatendienst oder einen LAN-Host zeigte, machte ihn
@@ -1977,7 +1999,10 @@ Was daran festliegt:
 - **Der Pier-Knoten ist ein Bastion-Host.** Er ist Mitglied des Waves mit
   öffentlicher Adresse; bei vollem Mesh und ohne Policy ist seine Übernahme ein Fuß
   in der Tür zum ganzen Wave. Eigene Maschine bzw. eigener Cluster, sonst läuft
-  dort nichts.
+  dort nichts. Der Pod hat kein ServiceAccount-Token, läuft unter `RuntimeDefault`-seccomp,
+  und der `pier`-Container hat ein schreibgeschütztes Dateisystem. Offen ist, dass er
+  denselben Steuersocket mit allen Befehlen nutzt wie jeder andere Client und als
+  UID 0 läuft — ein schreibgeschützter Status-Socket wäre die saubere Trennung.
 - **Die Kante gehört dem Pier.** Ein Ingress leitet *alles* auf TCP 443 per
   SNI-Durchleitung an `wave-pier` (`deployment/pier/base/ingress.example.yaml`,
   Traefik `IngressRouteTCP`, nicht Teil der Kustomization). Die Adresse dieses
@@ -2021,7 +2046,13 @@ Was daran festliegt:
   Wildcard, nichts Tieferes; die Zone kommt aus `Netmap.pier`, sonst fragt der Daemon
   `GET /v1/piers`), `parseLocalUrl()` (`http(s)://host:port`, Port Pflicht,
   kein Pfad, keine Zugangsdaten), Port 1–65535, und nicht der eigene Listener hinter
-  dem eigenen Namen. Erst wenn der Server den Anspruch angenommen hat, wird
+  dem eigenen Namen. **Antwortet auf `<wave-adresse>:<port>` schon etwas anderes als
+  der eigene Listener, wird verweigert** (`somethingListens()`, Notice `expose-port-busy`):
+  der Claim öffnet dem Pier den Weg zu diesem Port sofort, und bis der eigene Listener
+  ihn hält — ohne Zertifikat nie —, bekäme etwa eine Datenbank auf `0.0.0.0` die Bytes
+  aus dem Internet ohne TLS davor. Gefragt wird per Verbindung, nicht per Bind: unter
+  macOS gelingt ein Bind auf eine Adresse neben einem Dienst auf allen. Was nach dem
+  Claim auf dem Port startet, fängt das nicht. Erst wenn der Server den Anspruch angenommen hat, wird
   `Profile.exposed` geschrieben. 403 vom Server („`allow-pier`“) wird zu einer
   übersetzten Meldung mit dem nächsten Schritt (Notice `pier-not-allowed`).
 - **Der Anspruch steht auch ohne Zertifikat.** `wave expose` sagt dann „kein Zertifikat
@@ -2034,12 +2065,18 @@ Was daran festliegt:
   gleichzeitig; ein Listener je Port, SNI wählt Namen, Zertifikat und Dienst
   (`ExposeListeners` in `apps/client/src/expose.ts`). Gebunden **an die Wave-Adresse
   des Geräts**, nie an `0.0.0.0`: sonst antwortete der Proxy auch im LAN, und der einzige
-  Weg hinein soll der Pier sein. Schlüssel und Kette werden bei jedem Handshake neu
+  Weg hinein soll der Pier sein. Ein Handshake hat 10 s, offene Sockets sind begrenzt
+  (`maxConnections` zählt erst fertige Handshakes). Schlüssel und Kette werden bei jedem Handshake neu
   gelesen (und nur neu geladen, wenn sich der Inhalt geändert hat): eine Erneuerung
   braucht keinen Neustart.
 - **Der Proxy bewegt Bytes und versteht kein HTTP.** ALPN nur `http/1.1` (ein Browser mit
   h2 spräche es sonst mit einem Dienst, der es nicht kann), danach roher TCP-Spleiß an
-  `localUrl`. Der `Host`-Header kommt unverändert beim Dienst an. Ein unbekannter Name
+  `localUrl`. Der `Host`-Header kommt unverändert beim Dienst an. **Nie an Link-Local**
+  (169.254.0.0/16, fe80::/10, `fd00:ec2::254`): dort liegen die Metadatendienste der
+  Clouds, die Zugangsdaten einer Instanz einen GET entfernt. Geprüft wird beim Parsen
+  und, für Namen, an der *aufgelösten* Adresse beim Verbinden (`isForbiddenTarget()`),
+  ebenso die Schleife über den eigenen Listener (`https://app.pier.<zone>:443` als
+  Dienst von `app.pier.<zone>`). Ein unbekannter Name
   bekommt keinen Handshake. Ein `https`-Ziel wird **geprüft** (Systemwurzeln, Name des
   Ziels); ein LAN-Gerät mit selbstsigniertem Zertifikat wird deshalb nicht erreicht, und das
   Log sagt, warum — dafür gilt `http://`. Kein „unsicher“-Schalter.

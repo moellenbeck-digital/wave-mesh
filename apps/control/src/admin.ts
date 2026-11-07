@@ -34,12 +34,13 @@ import { addMember, listMembers, removeMember } from "./waves/members.ts";
 import { findNode, listNodes, removeNode, setWildcardAllowed } from "./waves/nodes.ts";
 import {
   type PierDnsOutcome,
+  pierLeaving,
   publishPierZone,
+  unpublishLeavingPier,
   unpublishPierZone,
-  unpublishPierZoneOfNode,
   wildcardOf,
 } from "./waves/pier-dns.ts";
-import { clearPierHost, removePiersOf, setPierAllowed, setPierHost } from "./waves/piers.ts";
+import { clearPierHost, setPierAllowed, setPierHost } from "./waves/piers.ts";
 import {
   createWave,
   DEFAULT_DNS_BASE,
@@ -505,10 +506,10 @@ async function main(): Promise<never> {
     }
 
     // A closed lock that leaves the door open is no lock: what the device had
-    // put out goes with the permission. The zone is untouched -- the wildcard
-    // belongs to the pier, and a name nobody claims is closed there.
-    const taken = await removePiersOf(db, target.id, found.id);
-    console.log(m.pierDenied(found.hostname, taken.length));
+    // put out went with the permission, in the same transaction. The zone is
+    // untouched -- the wildcard belongs to the pier, and a name nobody claims
+    // is closed there.
+    console.log(m.pierDenied(found.hostname, updated.taken.length));
     // The running server pushes nothing for a shell change; the heartbeat does.
     return done(0);
   }
@@ -803,8 +804,11 @@ async function main(): Promise<never> {
     const typed = await readLine(m.typeToConfirm(target.name));
     if (typed !== target.name) return done(1, m.notDeleted);
 
+    const pier = await pierLeaving(db, { waveId: target.id, leaving: { wholeWave: true } });
     const deleted = await deleteWave(db, target.id);
     if (!deleted) return done(1, m.noWaveMatches(rest[0] ?? ""));
+    const zone = await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret }, pier);
+    if (zone) reportPierDns(zone.name, target.name, "unpublish", zone.outcome);
     // Connected devices are not told from here -- this process has no hub.
     // They find out when their control connection next asks for a netmap.
     return done(0, m.deleted(deleted.name, deleted.nodeIds.length));
@@ -860,13 +864,11 @@ async function main(): Promise<never> {
     const found = await findNode(db, target.id, host);
     if (!found) return done(1, m.noDevice(host, target.name));
 
-    // Before the row goes, while its names are still known.
-    const zone = await unpublishPierZoneOfNode(
-      { db, dnsSecret: config.dnsSecret },
-      { waveId: target.id, nodeId: found.id },
-    );
-    if (zone) reportPierDns(zone.name, target.name, "unpublish", zone.outcome);
+    // Read before the row goes, while its addresses are still known.
+    const pier = await pierLeaving(db, { waveId: target.id, leaving: { nodeId: found.id } });
     await removeNode(db, target.id, found.id);
+    const zone = await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret }, pier);
+    if (zone) reportPierDns(zone.name, target.name, "unpublish", zone.outcome);
     console.log(m.deviceRemoved(found.hostname, target.name));
     // The running server has the sockets, this process does not -- a device
     // that is connected right now learns it at its next heartbeat.
@@ -914,6 +916,7 @@ async function main(): Promise<never> {
     const found = await account(email);
     if (!found) return done(1, m.noAccount(email));
 
+    const pier = await pierLeaving(db, { waveId: target.id, leaving: { userId: found.id } });
     // The operator acts as the owner here: this is the shell of the server.
     const result = await removeMember(db, target.id, "owner", found.id);
     if (result === "not-a-member") return done(1, m.notInWave(email, target.name));
@@ -921,6 +924,10 @@ async function main(): Promise<never> {
       return done(1, m.ownsWave(email, target.name));
     }
     if (result === "forbidden") return done(1, m.notAllowed);
+    {
+      const zone = await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret }, pier);
+      if (zone) reportPierDns(zone.name, target.name, "unpublish", zone.outcome);
+    }
 
     console.log(m.memberRemoved(email, target.name, result.removedNodes));
     return done(0, m.peersGone);

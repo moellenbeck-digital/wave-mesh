@@ -35,6 +35,7 @@ import {
   type PemPair,
   parseLocalUrl,
   readPem,
+  somethingListens,
 } from "./expose.ts";
 import { platformLink } from "./link-platform.ts";
 import { describeConflict, findConflict } from "./overlap.ts";
@@ -701,6 +702,13 @@ export class Daemon {
     const self = (await runtime?.tunnel?.snapshot())?.self;
     if (self && local.port === port && [self.ipv4, self.ipv6, self.dnsName].includes(local.host)) {
       return this.refuse(notice("expose-loop", { url: local.url }));
+    }
+
+    // The claim opens the pier's way to this port at once. If something other
+    // than our own listener already answers there, the internet would reach it
+    // directly, without TLS in front -- so that is a refusal, before the claim.
+    if (self?.ipv4 && !runtime?.expose?.holds(port) && (await somethingListens(self.ipv4, port))) {
+      return this.refuse(notice("expose-port-busy", { port: String(port), address: self.ipv4 }));
     }
 
     const log = this.logFor(profile);

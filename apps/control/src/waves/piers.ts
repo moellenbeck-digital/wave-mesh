@@ -63,6 +63,22 @@ export const pierZone = (wave: { pierLabel: string; dnsSuffix: string }): string
 /** Whether a label may name the pier zone: one DNS label, nothing else. */
 export const isPierLabel = (label: string): boolean => LABEL.test(label);
 
+/**
+ * The label of a pier name as a device gives it: bare (`app`) or full
+ * (`app.pier.wave.example.com`), one label under the zone, or null.
+ *
+ * Stricter than a service name, because this one is offered to the internet
+ * and to a CA: at most 63 characters (what DNS allows, and longer would only
+ * fail at the CA after being signed into every netmap), and no `??--` label --
+ * those are reserved, and `xn--` is punycode, the way a name that looks like
+ * someone else's (`pаypal`, with a Cyrillic а) would get in.
+ */
+export function pierLabel(given: string, zone: string): string | null {
+  const label = serviceLabel(given, zone);
+  if (!label || !LABEL.test(label) || label.slice(2, 4) === "--") return null;
+  return label;
+}
+
 export const toPierHost = (node: NodeRow): PierHost | null =>
   node.pierIpv4 || node.pierIpv6
     ? {
@@ -125,7 +141,7 @@ export async function setPier(
     // Only the pier zone, and only one label inside it -- a name from
     // elsewhere would be a route for a name the wildcard does not cover.
     const zone = pierZone(wave);
-    const label = serviceLabel(input.name, zone);
+    const label = pierLabel(input.name, zone);
     if (!label) return { error: `${input.name} is not a name under ${zone}`, status: 400 };
     if (!isPublicSuffix(wave.dnsSuffix)) {
       return {
@@ -230,22 +246,33 @@ const bumpNetmap = (db: Database, waveId: string) =>
     .where(eq(waves.id, waveId));
 
 /**
- * The first lock, opened or closed for one device. Closing it is the caller's
- * to follow with `removePiersOf()`: the flag decides who may *claim*, and a
- * claim made before it was withdrawn must not outlive it.
+ * The first lock, opened or closed for one device. Closing it takes the
+ * device's names with it, in the same transaction: the flag decides who may
+ * *claim*, and a claim made before it was withdrawn must not outlive it.
+ *
+ * Under the wave's lock, the one `setPier()` takes: without it a claim that
+ * had read "allowed" could commit after the names were cleared, and stand
+ * without the permission it needed -- the netmap would carry it, the pier
+ * would splice it, and only the certificate would be refused.
  */
 export async function setPierAllowed(
   db: Database,
   waveId: string,
   nodeId: string,
   allowed: boolean,
-): Promise<{ hostname: string } | null> {
-  const updated = await db
-    .update(nodes)
-    .set({ pierAllowed: allowed })
-    .where(and(eq(nodes.waveId, waveId), eq(nodes.id, nodeId)))
-    .returning({ hostname: nodes.hostname });
-  return updated[0] ?? null;
+): Promise<{ hostname: string; taken: PierRow[] } | null> {
+  return db.transaction(async (tx) => {
+    await tx.select({ id: waves.id }).from(waves).where(eq(waves.id, waveId)).limit(1).for("update");
+    const updated = await tx
+      .update(nodes)
+      .set({ pierAllowed: allowed })
+      .where(and(eq(nodes.waveId, waveId), eq(nodes.id, nodeId)))
+      .returning({ hostname: nodes.hostname });
+    const row = updated[0];
+    if (!row) return null;
+    const taken = allowed ? [] : await removePiersOf(tx as unknown as Database, waveId, nodeId);
+    return { hostname: row.hostname, taken };
+  });
 }
 
 export type SetPierHostResult =

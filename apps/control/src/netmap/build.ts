@@ -102,9 +102,11 @@ export async function buildNetmap(
     nodeId === self.node.id ? self.node : allPeerRows.find((row) => row.id === nodeId);
   const isPierHost = pierHost?.id === self.node.id;
   const zone = pierZone(self.wave);
+  // The owner's permission once more, not only at claim time: a claim that
+  // outlived its `pier_allowed` somehow is still not one the pier serves.
   const allPiers = (
     await db.select().from(wavePiers).where(eq(wavePiers.waveId, self.wave.id)).orderBy(asc(wavePiers.name))
-  ).filter((pier) => targetOf(pier.nodeId));
+  ).filter((pier) => targetOf(pier.nodeId)?.pierAllowed === true);
   const ownPiers = allPiers.filter((pier) => pier.nodeId === self.node.id);
   const pierPeers = new Set<string>(
     isPierHost

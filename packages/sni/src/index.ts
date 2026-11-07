@@ -18,6 +18,39 @@ export type Sniffed = { name: string } | "more" | "none";
 export const MAX_SNIFF = 16 * 1024;
 
 /**
+ * Whether the ClientHello in `data` can be complete yet, from the record
+ * headers alone and without copying a byte -- so a reader that sees the bytes
+ * arrive one at a time asks `sniFromClientHello()` once, not once per byte.
+ * Parsing on every chunk is quadratic, and a client trickling 16 KiB a byte at
+ * a time would spend the pier's one thread on it.
+ *
+ * "ready" means: parse now (the answer may still be "none"). It is said early
+ * when the handshake length itself is split across records, which no real
+ * client does -- the full parser handles that case.
+ */
+export function clientHelloProgress(data: Uint8Array): "more" | "ready" | "none" {
+  if (data.length >= MAX_SNIFF) return "ready";
+  if (data.length < 5) return "more";
+  if (data[0] !== 0x16) return "none";
+  const first = ((data[3] ?? 0) << 8) | (data[4] ?? 0);
+  if (first < 4) return "ready";
+  if (data.length < 9) return "more";
+  if (data[5] !== 0x01) return "none";
+  const needed = 4 + (((data[6] ?? 0) << 16) | ((data[7] ?? 0) << 8) | (data[8] ?? 0));
+  // Handshake bytes on hand, record by record, headers skipped.
+  let have = 0;
+  let offset = 0;
+  while (offset + 5 <= data.length) {
+    if (data[offset] !== 0x16) return "ready";
+    const length = ((data[offset + 3] ?? 0) << 8) | (data[offset + 4] ?? 0);
+    have += Math.min(length, data.length - offset - 5);
+    if (have >= needed) return "ready";
+    offset += 5 + length;
+  }
+  return "more";
+}
+
+/**
  * The server name a TLS ClientHello asks for.
  *
  * The handshake may be split across several records -- rare, but a large

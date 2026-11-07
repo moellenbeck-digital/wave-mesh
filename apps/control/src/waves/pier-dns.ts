@@ -1,10 +1,10 @@
 import type { PierDnsState, PierRecord } from "@wave/proto";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull, or } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { waves } from "../db/schema.ts";
+import { nodes, waves } from "../db/schema.ts";
 import { loadDnsMode } from "../dns/credentials.ts";
 import type { AddressType } from "../dns/provider.ts";
-import { findPierHost, type PierHost, pierZone } from "./piers.ts";
+import { type PierHost, pierZone } from "./piers.ts";
 
 /**
  * What the zone says about the pier (D12).
@@ -105,26 +105,73 @@ export async function unpublishPierZone(
 }
 
 /**
- * The wildcard a device leaves behind when it is removed from its wave -- only
- * if it was the pier, because nothing answers for the zone any more.
- *
- * Called *before* the device goes: its public addresses go with the row, and
- * so would the only record of what the zone pointed at. Never throws -- the
- * removal must not be undone by a provider that is having a bad day -- and
- * null when there was nothing to do.
+ * Who is about to leave a wave: one device, every device of one member, or the
+ * whole wave. Each of these can take the pier with it.
  */
-export async function unpublishPierZoneOfNode(
-  ctx: PierDnsContext,
-  input: { waveId: string; nodeId: string },
-): Promise<{ name: string; outcome: PierDnsOutcome } | null> {
-  const host = await findPierHost(ctx.db, input.waveId);
-  if (host?.id !== input.nodeId) return null;
-  const rows = await ctx.db.select().from(waves).where(eq(waves.id, input.waveId)).limit(1);
-  const wave = rows[0];
+export type Leaving = { nodeId: string } | { userId: string } | { wholeWave: true };
+
+/** What a leaving pier left in the zone, read while its row still exists. */
+export interface LeavingPier {
+  waveId: string;
+  zone: string;
+  host: Pick<PierHost, "publicIpv4" | "publicIpv6">;
+}
+
+/**
+ * The wildcard a wave leaves behind when its pier goes -- one device removed,
+ * logged out, its member removed, or the whole wave deleted. Two steps, and
+ * every path that deletes a node row takes both:
+ *
+ * - `pierLeaving()` *before* the delete: the pier's public addresses go with
+ *   the row, and so would the only record of what the zone pointed at.
+ * - `unpublishLeavingPier()` *after* it succeeded: a removal that is refused
+ *   (the owner, an admin removed by an admin) must not take the record away.
+ *
+ * A wildcard left standing points at an address the operator may give up, and
+ * whoever gets it next answers every name under the pier zone -- with
+ * certificates, unless CAA says otherwise.
+ */
+export async function pierLeaving(
+  db: Database,
+  input: { waveId: string; leaving: Leaving },
+): Promise<LeavingPier | null> {
+  const rows = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.waveId, input.waveId), or(isNotNull(nodes.pierIpv4), isNotNull(nodes.pierIpv6))))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  const { leaving } = input;
+  const goes =
+    "wholeWave" in leaving ||
+    ("nodeId" in leaving ? row.id === leaving.nodeId : row.userId === leaving.userId);
+  if (!goes) return null;
+  const waveRows = await db.select().from(waves).where(eq(waves.id, input.waveId)).limit(1);
+  const wave = waveRows[0];
   if (!wave) return null;
-  const zone = pierZone(wave);
   return {
-    name: wildcardOf(zone),
-    outcome: await unpublishPierZone(ctx, { waveId: input.waveId, zone, host }),
+    waveId: input.waveId,
+    zone: pierZone(wave),
+    host: { publicIpv4: row.pierIpv4, publicIpv6: row.pierIpv6 },
   };
+}
+
+/**
+ * Takes the wildcard of a pier that has gone. Never throws -- the removal has
+ * happened, and a provider having a bad day must not make it look undone --
+ * and null when there was no pier among those leaving.
+ */
+export async function unpublishLeavingPier(
+  ctx: PierDnsContext,
+  pier: LeavingPier | null,
+): Promise<{ name: string; outcome: PierDnsOutcome } | null> {
+  if (!pier) return null;
+  const outcome = await unpublishPierZone(ctx, pier);
+  if (outcome.state === "failed") {
+    console.error(`pier: could not take ${wildcardOf(pier.zone)} away: ${outcome.error}`);
+  } else if (outcome.state !== "published") {
+    console.log(`pier: ${wildcardOf(pier.zone)} has to be deleted by hand (${outcome.state})`);
+  }
+  return { name: wildcardOf(pier.zone), outcome };
 }

@@ -5,8 +5,7 @@ import { Hono } from "hono";
 import { type Actor, audit } from "../audit.ts";
 import type { Database } from "../db/client.ts";
 import { waves } from "../db/schema.ts";
-import { findPierHost, listPiers, pierZone, removePier, setPier } from "../waves/piers.ts";
-import { serviceLabel } from "../waves/services.ts";
+import { findPierHost, listPiers, pierLabel, pierZone, removePier, setPier } from "../waves/piers.ts";
 import type { NetmapHub } from "./control-ws.ts";
 import { authenticateMachine, nodeByMachineKey } from "./machine-auth.ts";
 
@@ -107,7 +106,9 @@ export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
     if (!wave) return c.json({ error: "the wave is gone" }, 404);
 
     const zone = pierZone(wave);
-    const label = serviceLabel(decodeURIComponent(c.req.param("name")), zone);
+    // Hono has decoded the parameter already; decoding it again would throw on
+    // a lone `%` and answer 500 to what is only a name that is not one.
+    const label = pierLabel(c.req.param("name"), zone);
     if (!label) return c.json({ error: `not a name under ${zone}` }, 400);
 
     const removed = await removePier(db, { waveId: node.waveId, nodeId: node.id, name: label });

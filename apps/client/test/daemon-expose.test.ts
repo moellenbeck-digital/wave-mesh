@@ -61,6 +61,18 @@ describe("what is checked before the server is asked", () => {
     expect(server.pierCalls).toEqual([]);
   });
 
+  test("a port something else already answers on is refused before the claim", async () => {
+    // A database on 0.0.0.0, say: the claim would open the pier's way to it,
+    // and the internet's bytes would reach it with no TLS in front.
+    const busy = await service();
+    const svc = await service();
+    const { daemon, statePath, control: server } = await setUp();
+    const result = await daemon.expose(undefined, "app", `http://127.0.0.1:${svc.port}`, busy.port);
+    expect(isNotice(result) && result.code).toBe("expose-port-busy");
+    expect(server.pierCalls).toEqual([]);
+    expect((await loadProfiles(statePath))[0]?.exposed).toEqual([]);
+  });
+
   test("the operator's lock: a translated refusal with the next step, and no state change", async () => {
     const { daemon, statePath, control: server } = await setUp();
     server.pierAllowed = false;

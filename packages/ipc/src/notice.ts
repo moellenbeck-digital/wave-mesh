@@ -37,6 +37,8 @@ const en = {
   "expose-bad-port": (p: Params) => `${p.port} is not a port between 1 and 65535`,
   "expose-loop": (p: Params) =>
     `${p.url} is this device's own listener for the pier; name the service behind it`,
+  "expose-port-busy": (p: Params) =>
+    `something already listens on ${p.address}:${p.port}; the pier would reach it directly -- choose another port with --listen-port`,
   "pier-not-allowed": (p: Params) =>
     `the operator has not allowed the pier for ${p.device}; next step: an operator runs \`admin.ts allow-pier <wave> ${p.device}\``,
   "pier-refused": (p: Params) => `${p.name} was not put out: ${p.reason}`,
@@ -73,6 +75,8 @@ const de: typeof en = {
   "expose-bad-port": (p) => `${p.port} ist kein Port zwischen 1 und 65535`,
   "expose-loop": (p) =>
     `${p.url} ist der eigene Listener dieses Geräts für den Pier; nenne den Dienst dahinter`,
+  "expose-port-busy": (p) =>
+    `auf ${p.address}:${p.port} lauscht schon etwas; der Pier erreichte es direkt -- nimm mit --listen-port einen anderen Port`,
   "pier-not-allowed": (p) =>
     `der Betreiber hat den Pier für ${p.device} nicht erlaubt; nächster Schritt: ein Betreiber führt \`admin.ts allow-pier <wave> ${p.device}\` aus`,
   "pier-refused": (p) => `${p.name} wurde nicht freigegeben: ${p.reason}`,

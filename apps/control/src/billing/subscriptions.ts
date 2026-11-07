@@ -6,6 +6,7 @@ import { users, waveBilling, waveMembers, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
 import { ContainerFullError } from "../net/addressing.ts";
 import { looksLikeEmail, normaliseEmail } from "../waves/invites.ts";
+import { type PierDnsContext, pierLeaving, unpublishLeavingPier } from "../waves/pier-dns.ts";
 import {
   createWave,
   DEFAULT_DNS_BASE,
@@ -237,6 +238,7 @@ export async function billedWave(
 export async function sweepEndedWaves(
   db: Database,
   now: Date = new Date(),
+  dns: PierDnsContext = { db },
 ): Promise<Array<DeletedWave & { waveId: string }>> {
   const due = await db
     .select({ waveId: waveBilling.waveId, subscriptionId: waveBilling.subscriptionId })
@@ -252,6 +254,9 @@ export async function sweepEndedWaves(
   const deleted: Array<DeletedWave & { waveId: string }> = [];
   for (const { waveId, subscriptionId } of due) {
     try {
+      // Read outside the transaction, taken away after it: a provider call
+      // does not belong under the lock on the billing row.
+      const pier = await pierLeaving(db, { waveId, leaving: { wholeWave: true } });
       const gone = await db.transaction(async (tx) => {
         const still = await tx
           .select({ state: waveBilling.state, deleteAfter: waveBilling.deleteAfter })
@@ -264,6 +269,7 @@ export async function sweepEndedWaves(
         return deleteWave(tx as unknown as Database, waveId);
       });
       if (!gone) continue;
+      await unpublishLeavingPier(dns, pier);
       // The wave's own audit log goes with it, so the operator's log is stdout.
       console.log(`billing: deleted ${gone.name} (${waveId}), subscription ${subscriptionId} ended`);
       deleted.push({ ...gone, waveId });

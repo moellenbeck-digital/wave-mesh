@@ -30,7 +30,7 @@ import {
 } from "../waves/invites.ts";
 import { canManage, changeRole, listMembers, removeMember, roleOf } from "../waves/members.ts";
 import { ownerOfNode, removeNode, renameNode } from "../waves/nodes.ts";
-import { unpublishPierZoneOfNode } from "../waves/pier-dns.ts";
+import { pierLeaving, unpublishLeavingPier } from "../waves/pier-dns.ts";
 import {
   createWave,
   deleteWave,
@@ -359,6 +359,7 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
 
+    const pier = await pierLeaving(db, { waveId, leaving: { userId: c.req.param("userId") } });
     const result = await removeMember(db, waveId, auth.role ?? "member", c.req.param("userId"));
     if (result === "not-a-member") return page(c, (m) => [m.notAMember, m.nothingToRemove], 404);
     if (result === "owner") {
@@ -367,6 +368,7 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
     if (result === "forbidden") {
       return page(c, (m) => [m.notAllowed, m.onlyOwnerRemovesAdmins], 403);
     }
+    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
 
     await audit(db, waveId, userActor(auth.user), { action: "member.remove", target: c.req.param("userId") });
     // Their devices are gone from the database; the ones still up learn it
@@ -454,8 +456,10 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
     if (auth.role === "owner") return page(c, (m) => [m.ownerStays, m.ownerCannotLeave], 403);
 
     // As the owner would: leaving is always one's own business.
+    const pier = await pierLeaving(db, { waveId, leaving: { userId: auth.user.id } });
     const result = await removeMember(db, waveId, "owner", auth.user.id);
     if (typeof result === "string") return page(c, (m) => [m.notAMember, m.nothingToRemove], 404);
+    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
     await audit(db, waveId, userActor(auth.user), { action: "member.leave", target: auth.user.id });
     await hub?.broadcast(waveId);
     return c.redirect("/", 303);
@@ -473,16 +477,14 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
 
-    // Before the row goes: if it was the pier, its public addresses go with
-    // it, and with them the only record of what the wildcard pointed at.
-    await unpublishPierZoneOfNode(
-      { db, dnsSecret: config.dnsSecret, http: dnsFetch },
-      { waveId, nodeId: c.req.param("nodeId") },
-    );
+    // Read before the row goes: if it was the pier, its public addresses go
+    // with it, and with them the only record of what the wildcard pointed at.
+    const pier = await pierLeaving(db, { waveId, leaving: { nodeId: c.req.param("nodeId") } });
     const removed = await removeNode(db, waveId, c.req.param("nodeId"));
     // Already gone, or never in this wave -- the same answer either way, for
     // the same reason a wave one is not in looks like one that does not exist.
     if (!removed) return page(c, (m) => [m.noSuchDevice, m.notInThisWave], 404);
+    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
 
     // Cut first, push second: the device learns it is out, and the ones that
     // stay lose it from their netmap -- that is what drops the peer entry from
@@ -798,8 +800,10 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
         409,
       );
 
+    const pier = await pierLeaving(db, { waveId, leaving: { wholeWave: true } });
     const deleted = await deleteWave(db, waveId);
     if (!deleted) return page(c, (m) => [m.unknownWave, m.nothingToDelete], 404);
+    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
 
     // Cut every device, and no broadcast afterwards: a netmap belongs to a
     // wave, and there is no longer one to build. A socket left open would go

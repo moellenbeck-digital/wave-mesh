@@ -6,7 +6,23 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.15.0.*
+### Sicherheit
+
+- **Pier und `wave expose` gehärtet** nach einer Durchsicht der ganzen Kette:
+  - Der Wildcard-Record `*.pier.<domain>` verschwindet jetzt auf jedem Weg, auf dem
+    der Pier-Knoten geht (Logout, Mitglied entfernt, Wave gelöscht), statt auf eine
+    womöglich aufgegebene IP zu zeigen.
+  - `deny-pier` räumt die Namen in derselben Transaktion ab; ein gleichzeitiger
+    Claim kann den Entzug nicht mehr überleben.
+  - Pier-Namen höchstens 63 Zeichen, kein Punycode (`xn--`).
+  - Der Pier hat eine harte Frist für das ClientHello, parst erst, wenn es
+    vollständig sein kann, begrenzt Verbindungen je Name und schließt ruhende
+    Verbindungen.
+  - `wave expose` verweigert einen Port, auf dem schon ein anderer Dienst lauscht,
+    sowie Ziele auf Link-Local-Adressen (Cloud-Metadaten) und die Schleife über den
+    eigenen Pier-Namen.
+  - Das Manifest des Piers ohne ServiceAccount-Token, mit seccomp und
+    schreibgeschütztem Dateisystem.
 
 ---
 

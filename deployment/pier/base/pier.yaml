@@ -39,6 +39,12 @@ spec:
         app.kubernetes.io/name: wave-pier
     spec:
       enableServiceLinks: false
+      # Nichts in diesem Pod spricht mit dem Kubernetes-API. Ein Token im
+      # Dateisystem wäre bei einer Übernahme des Piers -- des einen Prozesses,
+      # der dem Internet zugewandt ist -- ein Schlüssel zum Cluster dazu.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
       imagePullSecrets:
         - name: ghcr
       containers:
@@ -92,10 +98,15 @@ spec:
             # erreichen, den eine Policy ihm verwehrt hätte.
             - name: WAVE_PIER_HOST
               valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            # Bun legt sonst einen Transpiler-Cache unter dem Home-Verzeichnis
+            # an, das hier schreibgeschützt ist.
+            - name: BUN_RUNTIME_TRANSPILER_CACHE_PATH
+              value: "0"
           ports:
             - { name: tls, containerPort: 8443, protocol: TCP }
           volumeMounts:
             - { name: run, mountPath: /run/wave }
+            - { name: tmp, mountPath: /tmp }
           # Tunnel oben, Relay (falls angeboten) verbunden, und der Listener
           # nimmt eine Verbindung an. Ein Pier mit totem Tunnel weist jeden
           # Namen ab und sieht von außen wie ein funktionierender aus.
@@ -111,6 +122,10 @@ spec:
             periodSeconds: 10
           securityContext:
             allowPrivilegeEscalation: false
+            # Der Pier schreibt nichts: er liest die Netmap über den Socket und
+            # schiebt Bytes. Ein schreibgeschütztes Dateisystem nimmt einer
+            # Übernahme den Platz, etwas abzulegen.
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           resources:
@@ -120,6 +135,8 @@ spec:
       volumes:
         - name: run
           emptyDir: {}
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
         - name: tun
           hostPath: { path: /dev/net/tun, type: CharDevice }
 

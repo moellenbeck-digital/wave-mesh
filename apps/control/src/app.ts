@@ -142,7 +142,7 @@ export function createApp({
   // One nonce store for every node-facing route: a signature is bound to its
   // path, so sharing it costs nothing and keeps the replay window in one place.
   const nonces = createMemoryNonceStore();
-  app.route("/", machineRoutes({ db, config, signingKey, hub, nonces }));
+  app.route("/", machineRoutes({ db, config, signingKey, hub, nonces, dnsFetch }));
   app.route("/", certRoutes({ db, certs: certs ?? new CertificateService({ db, config }), nonces }));
   app.route("/", serviceRoutes({ db, hub, nonces }));
   app.route("/", pierRoutes({ db, hub, nonces }));
@@ -156,7 +156,7 @@ export function createApp({
    * on a timer; a test calls it with the clock it wants.
    */
   const sweepBilling = async (now: Date = new Date()): Promise<number> => {
-    const deleted = await sweepEndedWaves(db, now);
+    const deleted = await sweepEndedWaves(db, now, { db, dnsSecret: config.dnsSecret, http: dnsFetch });
     for (const wave of deleted) {
       for (const nodeId of wave.nodeIds) hub.disconnect(wave.waveId, nodeId, "node-removed");
     }
