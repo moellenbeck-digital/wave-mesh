@@ -1,5 +1,11 @@
 import { totp as sharedTotp, TOTP_STEP_MS, TotpSecretError } from "../auth/totp.ts";
-import { type DnsProvider, DnsProviderError, zoneCandidates } from "./provider.ts";
+import {
+  type AddressType,
+  addressRecordType,
+  type DnsProvider,
+  DnsProviderError,
+  zoneCandidates,
+} from "./provider.ts";
 
 const API = "https://api.domrobot.com/jsonrpc/";
 /** The OTE, INWX's test system. Separate accounts, separate domains, no charges. */
@@ -223,13 +229,16 @@ export function inwxProvider(
    * `nameserver.info` fails for a domain the account does not hold, so asking
    * for the records *is* asking whether the zone is ours.
    */
-  const infoFor = async (recordName: string): Promise<{ domain: string; records: NameserverRecord[] }> => {
+  const infoFor = async (
+    recordName: string,
+    type: "TXT" | AddressType = "TXT",
+  ): Promise<{ domain: string; records: NameserverRecord[] }> => {
     let lastError: Error | undefined;
     for (const candidate of zoneCandidates(recordName)) {
       try {
         const { resData } = await rpc<{ record?: NameserverRecord[] }>("nameserver.info", {
           domain: candidate,
-          type: "TXT",
+          type,
           name: recordName,
         });
         return { domain: candidate, records: resData?.record ?? [] };
@@ -273,6 +282,34 @@ export function inwxProvider(
         for (const record of records) {
           if (record.type !== "TXT" || record.name !== name) continue;
           if (record.content !== value && record.content !== `"${value}"`) continue;
+          await rpc("nameserver.deleteRecord", { id: record.id });
+        }
+      });
+    },
+
+    async setAddress(name, address) {
+      await withSession(async () => {
+        const type = addressRecordType(address);
+        const { domain, records } = await infoFor(name, type);
+        let present = false;
+        for (const record of records) {
+          if (record.type !== type || record.name !== name) continue;
+          if (record.content === address && !present) {
+            present = true;
+            continue;
+          }
+          await rpc("nameserver.deleteRecord", { id: record.id });
+        }
+        if (present) return;
+        await rpc("nameserver.createRecord", { domain, name, type, content: address, ttl: INWX_TTL_SECONDS });
+      });
+    },
+
+    async removeAddress(name, type) {
+      await withSession(async () => {
+        const { records } = await infoFor(name, type);
+        for (const record of records) {
+          if (record.type !== type || record.name !== name) continue;
           await rpc("nameserver.deleteRecord", { id: record.id });
         }
       });

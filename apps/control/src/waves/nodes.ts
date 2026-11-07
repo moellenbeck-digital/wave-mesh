@@ -15,6 +15,11 @@ export interface DeviceRow {
   lastSeenAt: Date | null;
   /** Whether this device may ask for the wave's wildcard (D7). */
   wildcardAllowed: boolean;
+  /** Whether this device may put names into the open network through the pier (D12). */
+  pierAllowed: boolean;
+  /** Public addresses, on the one node that is the pier; null elsewhere. */
+  pierIpv4: string | null;
+  pierIpv6: string | null;
   /** What it is to the wave's policy (M7). */
   tags: string[];
   /** What it last said about enforcing the policy's ports. */
@@ -36,6 +41,9 @@ export async function listNodes(db: Database, waveId: string): Promise<DeviceRow
       userId: nodes.userId,
       lastSeenAt: nodes.lastSeenAt,
       wildcardAllowed: nodes.wildcardAllowed,
+      pierAllowed: nodes.pierAllowed,
+      pierIpv4: nodes.pierIpv4,
+      pierIpv6: nodes.pierIpv6,
       tags: nodes.tags,
       filterEnforced: nodes.filterEnforced,
       filterReason: nodes.filterReason,

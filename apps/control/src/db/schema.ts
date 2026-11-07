@@ -220,6 +220,25 @@ export const nodes = pgTable(
      */
     wildcardAllowed: boolean("wildcard_allowed").notNull().default(false),
     /**
+     * Whether this device may put names into the open network through the
+     * pier (D12).
+     *
+     * The first of two locks, and off unless an operator turns it on, for the
+     * same reason as the wildcard: a name in the open network is not the
+     * device's to decide. A member may not put a wave on the internet on their
+     * own, and a server must never guess that they would like to.
+     */
+    pierAllowed: boolean("pier_allowed").notNull().default(false),
+    /**
+     * The public addresses of the pier, on the one node an operator made the
+     * pier (`admin.ts set-pier`). Configured, never guessed: the control server
+     * cannot see which address the world reaches the pier at -- behind an
+     * ingress it is not an address the node itself has. Either or both may be
+     * set; a node with neither is not a pier.
+     */
+    pierIpv4: text("pier_ipv4"),
+    pierIpv6: text("pier_ipv6"),
+    /**
      * What this device is to the wave's policy (M7): `tag:nas`, `tag:connector`.
      *
      * Set by an operator, never by the device -- the same reason as the
@@ -303,6 +322,38 @@ export const waveServices = pgTable(
     uniqueIndex("wave_services_ipv4_idx").on(t.waveId, t.ipv4),
     index("wave_services_node_idx").on(t.viaNodeId),
   ],
+);
+
+/**
+ * A name a device has put into the open network through the pier (D12).
+ *
+ * The row is the *grant*: the name is what the pier's SNI lookup answers, the
+ * port is where on the device the connection is spliced to, and the device is
+ * the one that terminates TLS there with its own certificate (D7).
+ *
+ * Like a service, a name lives in one namespace with the devices and the
+ * services, so no unique index can span them; the writes run under the same
+ * row lock on `waves`.
+ */
+export const wavePiers = pgTable(
+  "wave_piers",
+  {
+    id: text("id").primaryKey(),
+    waveId: text("wave_id")
+      .notNull()
+      .references(() => waves.id, { onDelete: "cascade" }),
+    /** The device that answers for the name -- not the pier node. */
+    nodeId: text("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    /** One label under the wave's suffix, e.g. `app`. */
+    name: text("name").notNull(),
+    /** The TCP port on the device the pier splices to. */
+    port: integer("port").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("wave_piers_name_idx").on(t.waveId, t.name), index("wave_piers_node_idx").on(t.nodeId)],
 );
 
 /**
@@ -602,6 +653,7 @@ export const schema = {
   users,
   waveAuthKeys,
   waveServices,
+  wavePiers,
   identities,
   waves,
   waveMembers,

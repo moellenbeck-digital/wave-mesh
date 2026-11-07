@@ -6,8 +6,10 @@
  * handing that to every device would trade one compromised machine for the
  * domain (D6/D7).
  *
- * The interface is deliberately two calls wide. dns-01 needs nothing else, and
- * anything wider would be an invitation to manage records that are not ours.
+ * The interface is deliberately small. dns-01 needs a TXT record added and
+ * taken away, and the pier (D12) needs one public address per exposed name --
+ * nothing more, because anything wider would be an invitation to manage
+ * records that are not ours.
  */
 export interface DnsProvider {
   readonly kind: string;
@@ -17,7 +19,24 @@ export interface DnsProvider {
   setTxt(name: string, value: string): Promise<void>;
   /** Removes exactly the record with this value, leaving any others alone. */
   removeTxt(name: string, value: string): Promise<void>;
+  /**
+   * Makes `address` the only A record (IPv4) or AAAA record (IPv6) at `name`.
+   *
+   * Unlike a challenge, a public name answers with one address: the pier's.
+   * Setting it again with the same address changes nothing, and setting a new
+   * one -- the pier moved -- replaces the old, never leaving both in the zone.
+   * Only that one type at that one name is touched.
+   */
+  setAddress(name: string, address: string): Promise<void>;
+  /** Removes every record of this type at `name`, the way an exposure ends. */
+  removeAddress(name: string, type: AddressType): Promise<void>;
 }
+
+/** The two record types a public name needs. */
+export type AddressType = "A" | "AAAA";
+
+/** Which record carries this address: IPv6 has a colon, IPv4 never does. */
+export const addressRecordType = (address: string): AddressType => (address.includes(":") ? "AAAA" : "A");
 
 /**
  * Providers that write the record themselves, each with a credential of its
@@ -78,3 +97,10 @@ export function relativeName(recordName: string, zone: string): string {
 
 /** TTL of a challenge record: it exists for a minute or two and never longer. */
 export const CHALLENGE_TTL_SECONDS = 60;
+
+/**
+ * TTL of a public address: five minutes, the floor of the strictest provider.
+ * Short enough that moving the pier takes effect within the coffee break, long
+ * enough that nobody's resolver asks for it on every request.
+ */
+export const ADDRESS_TTL_SECONDS = 300;

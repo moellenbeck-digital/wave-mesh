@@ -39,6 +39,20 @@ import { type FoundWave, isAmbiguous, resolveWave } from "./waves/lookup.ts";
 import { addMember, listMembers, removeMember } from "./waves/members.ts";
 import { findNode, listNodes, removeNode, setWildcardAllowed } from "./waves/nodes.ts";
 import {
+  type PierDnsOutcome,
+  publishPierName,
+  unpublishPierName,
+  unpublishPiersOfNode,
+} from "./waves/pier-dns.ts";
+import {
+  clearPierHost,
+  findPierHost,
+  listPiers,
+  removePiersOf,
+  setPierAllowed,
+  setPierHost,
+} from "./waves/piers.ts";
+import {
   createWave,
   DEFAULT_DNS_BASE,
   deleteWave,
@@ -158,6 +172,10 @@ const COMMANDS = [
   "revoke-auth-key",
   "allow-wildcard",
   "deny-wildcard",
+  "allow-pier",
+  "deny-pier",
+  "set-pier",
+  "clear-pier",
   "set-dns-provider",
   "dns-provider",
   "remove-dns-provider",
@@ -188,6 +206,10 @@ const CHANGES = new Set([
   "revoke-auth-key",
   "allow-wildcard",
   "deny-wildcard",
+  "allow-pier",
+  "deny-pier",
+  "set-pier",
+  "clear-pier",
   "set-dns-provider",
   "remove-dns-provider",
   "set-acl",
@@ -232,6 +254,10 @@ const usage = `${m.usageTitle}
   ${invocation} revoke-auth-key     <wave> <id>
   ${invocation} allow-wildcard      <wave> <hostname|node-id>
   ${invocation} deny-wildcard       <wave> <hostname|node-id>
+  ${invocation} set-pier            <wave> <hostname|node-id> [--ipv4 <addr>] [--ipv6 <addr>]
+  ${invocation} clear-pier          <wave>
+  ${invocation} allow-pier          <wave> <hostname|node-id>
+  ${invocation} deny-pier           <wave> <hostname|node-id>
 
   ${invocation} acl                 <wave>
   ${invocation} set-acl             <wave> <file|->
@@ -293,6 +319,31 @@ async function account(email: string): Promise<{ id: string } | null> {
     .where(eq(users.email, normaliseEmail(email)))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/** What happened to the public records of one name, in words an operator can act on. */
+function reportPierDns(
+  fqdn: string,
+  wave: string,
+  direction: "publish" | "unpublish",
+  outcome: PierDnsOutcome,
+): void {
+  if (outcome.state === "published") {
+    console.log(direction === "publish" ? m.pierRecordPublished(fqdn) : m.pierRecordRemoved(fqdn));
+    return;
+  }
+  if (outcome.state === "failed") {
+    console.error(m.pierDnsFailed(fqdn, outcome.error ?? "unknown"));
+    return;
+  }
+  if (outcome.state === "unconfigured") console.log(m.pierDnsUnconfigured(wave));
+  for (const record of outcome.records) {
+    console.log(
+      direction === "publish"
+        ? m.pierRecordCreate(record.type, record.name, record.value)
+        : m.pierRecordDelete(record.type, record.name, record.value),
+    );
+  }
 }
 
 const asRole = (value: string | undefined): "admin" | "member" => (value === "admin" ? "admin" : "member");
@@ -450,6 +501,105 @@ async function main(): Promise<never> {
     // device it is given to.
     console.log(m.wildcardAllowed(found.hostname, target.dnsSuffix));
     return done(0, m.wildcardWarning);
+  }
+
+  if (command === "allow-pier" || command === "deny-pier") {
+    const [selector, host] = rest;
+    if (!host) return done(1, usage);
+    const target = await wave(selector);
+    const found = await findNode(db, target.id, host);
+    if (!found) return done(1, m.noDevice(host, target.name));
+
+    const allowed = command === "allow-pier";
+    const updated = await setPierAllowed(db, target.id, found.id, allowed);
+    if (!updated) return done(1, m.noDevice(host, target.name));
+    if (allowed) {
+      console.log(m.pierAllowed(found.hostname));
+      return done(0, m.pierWarning);
+    }
+
+    // A closed lock that leaves the door open is no lock: what the device had
+    // put out goes with the permission, and so do its records in the zone.
+    const taken = await removePiersOf(db, target.id, found.id);
+    const pierHost = await findPierHost(db, target.id);
+    console.log(m.pierDenied(found.hostname, taken.length));
+    for (const pier of taken) {
+      const outcome = await unpublishPierName(
+        { db, dnsSecret: config.dnsSecret },
+        { waveId: target.id, fqdn: `${pier.name}.${target.dnsSuffix}`, host: pierHost },
+      );
+      reportPierDns(`${pier.name}.${target.dnsSuffix}`, target.name, "unpublish", outcome);
+    }
+    // The running server pushes nothing for a shell change; the heartbeat does.
+    return done(0);
+  }
+
+  if (command === "set-pier") {
+    // Positional arguments are what is left once each flag has taken its value.
+    const positional: string[] = [];
+    for (let at = 0; at < rest.length; at++) {
+      const entry = rest[at] ?? "";
+      if (entry === "--ipv4" || entry === "--ipv6") at++;
+      else positional.push(entry);
+    }
+    const [selector, host] = positional;
+    if (!host) return done(1, usage);
+    const flagValue = (name: string): string | undefined => {
+      const at = rest.indexOf(name);
+      return at >= 0 ? rest[at + 1] : undefined;
+    };
+    const ipv4 = flagValue("--ipv4");
+    const ipv6 = flagValue("--ipv6");
+    if (ipv4 === undefined && ipv6 === undefined) return done(1, m.pierNeedsAddress);
+
+    const target = await wave(selector);
+    const found = await findNode(db, target.id, host);
+    if (!found) return done(1, m.noDevice(host, target.name));
+
+    const set = await setPierHost(db, { waveId: target.id, nodeId: found.id, ipv4, ipv6 });
+    if ("invalid" in set) return done(1, set.invalid);
+    if ("conflict" in set) return done(1, set.conflict);
+
+    console.log(
+      m.pierSet(found.hostname, [set.host.publicIpv4, set.host.publicIpv6].filter(Boolean).join(", ")),
+    );
+    // Names claimed before this pier (or under another address) must point here.
+    for (const pier of await listPiers(db, target.id)) {
+      const fqdn = `${pier.name}.${target.dnsSuffix}`;
+      reportPierDns(
+        fqdn,
+        target.name,
+        "publish",
+        await publishPierName(
+          { db, dnsSecret: config.dnsSecret },
+          { waveId: target.id, fqdn, host: set.host },
+        ),
+      );
+    }
+    return done(0, m.pierSetWarning);
+  }
+
+  if (command === "clear-pier") {
+    const target = await wave(rest[0]);
+    const cleared = await clearPierHost(db, target.id);
+    if (!cleared) return done(1, m.noPierHost(target.name));
+
+    console.log(m.pierCleared(cleared.hostname));
+    // Nothing answers for these names any more, so their records go too; the
+    // claims stay and are written again when there is a pier to point at.
+    for (const pier of await listPiers(db, target.id)) {
+      const fqdn = `${pier.name}.${target.dnsSuffix}`;
+      reportPierDns(
+        fqdn,
+        target.name,
+        "unpublish",
+        await unpublishPierName(
+          { db, dnsSecret: config.dnsSecret },
+          { waveId: target.id, fqdn, host: cleared },
+        ),
+      );
+    }
+    return done(0);
   }
 
   if (command === "audit") {
@@ -692,6 +842,8 @@ async function main(): Promise<never> {
       const seen = device.lastSeenAt ? device.lastSeenAt.toISOString() : m.neverSeen;
       const owner = device.email ?? device.userId;
       const wildcard = device.wildcardAllowed ? "  [wildcard]" : "";
+      const pier =
+        device.pierIpv4 || device.pierIpv6 ? "  [pier]" : device.pierAllowed ? "  [pier allowed]" : "";
       const tags = device.tags.length > 0 ? `  ${device.tags.join(" ")}` : "";
       const ports = policy ? `  [${enforcementText(device, locale)}]` : "";
       // Who is behind (D13). A client from before self-updates never says.
@@ -699,7 +851,7 @@ async function main(): Promise<never> {
         ? `  v${device.clientVersion}${device.updateChannel ? ` (${device.updateChannel})` : ""}`
         : m.versionUnknown;
       console.log(
-        `  ${device.hostname.padEnd(20)} ${device.ipv4.padEnd(16)} ${owner}  ${seen}${version}${wildcard}${tags}${ports}`,
+        `  ${device.hostname.padEnd(20)} ${device.ipv4.padEnd(16)} ${owner}  ${seen}${version}${wildcard}${pier}${tags}${ports}`,
       );
     }
     if (devices.length === 0) console.log(m.noDevices);
@@ -713,6 +865,13 @@ async function main(): Promise<never> {
     const found = await findNode(db, target.id, host);
     if (!found) return done(1, m.noDevice(host, target.name));
 
+    // Before the row goes, while its names are still known.
+    for (const { fqdn, outcome } of await unpublishPiersOfNode(
+      { db, dnsSecret: config.dnsSecret },
+      { waveId: target.id, nodeId: found.id },
+    )) {
+      reportPierDns(fqdn, target.name, "unpublish", outcome);
+    }
     await removeNode(db, target.id, found.id);
     console.log(m.deviceRemoved(found.hostname, target.name));
     // The running server has the sockets, this process does not -- a device

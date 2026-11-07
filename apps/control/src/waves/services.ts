@@ -1,7 +1,7 @@
 import type { ServiceScheme } from "@wave/proto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { nodes, waveServices, waves } from "../db/schema.ts";
+import { nodes, wavePiers, waveServices, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
 import { allocateIpv4, ipv6ForIpv4 } from "../net/addressing.ts";
 
@@ -104,6 +104,7 @@ export async function syncServices(
 
     const siblings = await tx.select().from(nodes).where(eq(nodes.waveId, input.waveId));
     const existing = await tx.select().from(waveServices).where(eq(waveServices.waveId, input.waveId));
+    const piers = await tx.select().from(wavePiers).where(eq(wavePiers.waveId, input.waveId));
 
     // A device and a service may not share a name: inside a wave a name means
     // one thing, and a resolver that answered twice would be the proof it does
@@ -111,6 +112,11 @@ export async function syncServices(
     for (const label of labels) {
       if (siblings.some((node) => node.hostname === label)) {
         return { conflict: `${label}.${wave.dnsSuffix} is a device in this wave` };
+      }
+      // Nor a name a device has put into the open network (D12): the pier
+      // answers for it, and the same name cannot mean a cluster as well.
+      if (piers.some((pier) => pier.name === label)) {
+        return { conflict: `${label}.${wave.dnsSuffix} is put out through the pier` };
       }
       const other = existing.find((service) => service.name === label);
       if (other && other.viaNodeId !== input.viaNodeId) {

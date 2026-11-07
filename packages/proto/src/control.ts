@@ -111,9 +111,11 @@ export type PierRecord = z.infer<typeof PierRecord>;
  * `published`: the server wrote them through the provider API. `manual`: the
  * wave writes its zone by hand and `records` are what somebody has to create,
  * as with dns-01. `unconfigured`: the wave has said neither -- no provider and
- * no manual mode -- and the records are still what is missing.
+ * no manual mode -- and the records are still what is missing. `failed`: the
+ * provider refused; the grant is stored, `error` says why, and asking again
+ * tries again.
  */
-export const PierDnsState = z.enum(["published", "manual", "unconfigured"]);
+export const PierDnsState = z.enum(["published", "manual", "unconfigured", "failed"]);
 export type PierDnsState = z.infer<typeof PierDnsState>;
 
 export const PierResponse = z.object({
@@ -122,6 +124,8 @@ export const PierResponse = z.object({
   port: z.number().int().min(1).max(65535),
   dns: PierDnsState,
   records: z.array(PierRecord),
+  /** The provider's own words, when `dns` is `failed`. */
+  error: z.string().optional(),
 });
 export type PierResponse = z.infer<typeof PierResponse>;
 

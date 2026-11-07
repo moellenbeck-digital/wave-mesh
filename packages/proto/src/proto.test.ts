@@ -110,7 +110,7 @@ describe("netmap", () => {
     const parsed = Netmap.parse(sent);
     expect(parsed.piers?.[0]?.dnsName).toBe("app.wave.example.com");
     expect(Object.keys(parsed).sort()).toEqual(Object.keys(sent).sort());
-    expect(parsed.piers?.[0]).toEqual(sent.piers[0]);
+    expect(JSON.stringify(parsed.piers?.[0])).toBe(JSON.stringify(sent.piers[0]));
   });
 
   // The other direction: an empty list is not the same document as no list.

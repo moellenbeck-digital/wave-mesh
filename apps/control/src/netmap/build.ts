@@ -1,13 +1,14 @@
 import { canonicalJson, sign } from "@wave/crypto";
-import type { Netmap, Peer, Relay, Service, SignedNetmap } from "@wave/proto";
+import type { Netmap, Peer, Pier, Relay, Service, SignedNetmap } from "@wave/proto";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { visibleTo } from "../acl/evaluate.ts";
 import { inboundFilter } from "../acl/filter.ts";
 import { compiledPolicyFor } from "../acl/store.ts";
 import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
-import { nodes, waveServices, waves } from "../db/schema.ts";
+import { nodes, wavePiers, waveServices, waves } from "../db/schema.ts";
 import { resolverAddressFor } from "../net/addressing.ts";
+import { pierFilter, toPierHost } from "../waves/piers.ts";
 import { serviceUrl } from "../waves/services.ts";
 import { boundCandidates } from "./candidates.ts";
 
@@ -90,7 +91,36 @@ export async function buildNetmap(
   // behind a connector this node may otherwise reach.
   const policy = await compiledPolicyFor(db, self.wave.id);
   const visible = policy ? visibleTo(policy.compiled, self.node.id, policy.services) : null;
-  const reachable = visible ? allPeerRows.filter((peer) => visible.peers.has(peer.id)) : allPeerRows;
+  // The pier (D12). Its node needs every device that owns a name, and such a
+  // device needs the pier: a WireGuard peer that is not in the netmap is
+  // dropped on arrival, replies included. Under a policy the claim is itself
+  // the grant -- two locks and a named port -- so both are added to what the
+  // policy lets this node see, and `pierFilter()` opens that one port below.
+  // Piers of a device that is not approved are left out, like the device.
+  const pierHost = [self.node, ...allPeerRows].map(toPierHost).find((host) => host !== null) ?? null;
+  const targetOf = (nodeId: string) =>
+    nodeId === self.node.id ? self.node : allPeerRows.find((row) => row.id === nodeId);
+  const isPierHost = pierHost?.id === self.node.id;
+  const allPiers = pierHost
+    ? (
+        await db
+          .select()
+          .from(wavePiers)
+          .where(eq(wavePiers.waveId, self.wave.id))
+          .orderBy(asc(wavePiers.name))
+      ).filter((pier) => targetOf(pier.nodeId))
+    : [];
+  const pierRows = isPierHost ? allPiers : allPiers.filter((pier) => pier.nodeId === self.node.id);
+  const pierPeers = new Set<string>(
+    isPierHost
+      ? pierRows.map((pier) => pier.nodeId).filter((id) => id !== self.node.id)
+      : pierRows.length > 0 && pierHost
+        ? [pierHost.id]
+        : [],
+  );
+  const reachable = visible
+    ? allPeerRows.filter((peer) => visible.peers.has(peer.id) || pierPeers.has(peer.id))
+    : allPeerRows;
   const offered = visible ? allServices.filter((service) => visible.services.has(service.name)) : allServices;
 
   // A wave paused for billing keeps everything -- devices, addresses, members,
@@ -101,6 +131,7 @@ export async function buildNetmap(
   const suspended = await isSuspended(db, self.wave.id);
   const peerRows = suspended ? [] : reachable;
   const services = suspended ? [] : offered;
+  const piers = suspended ? [] : pierRows;
 
   return {
     version: self.wave.netmapVersion,
@@ -127,10 +158,39 @@ export async function buildNetmap(
         url: serviceUrl(service.name, self.wave.dnsSuffix, service.scheme),
       }),
     ),
+    // Only when there is something to say: absent and empty mean the same to
+    // every reader, but only the absent one keeps the canonical form of a wave
+    // that has never heard of piers exactly as it was signed before this field.
+    ...(piers.length > 0
+      ? {
+          piers: piers.map((pier): Pier => {
+            // Present by construction: piers of a device this netmap cannot
+            // name were dropped above.
+            const target = targetOf(pier.nodeId) as NodeRow;
+            return {
+              name: pier.name,
+              dnsName: `${pier.name}.${self.wave.dnsSuffix}`,
+              nodeId: pier.nodeId as Pier["nodeId"],
+              ipv4: target.ipv4,
+              ipv6: target.ipv6,
+              port: pier.port,
+            };
+          }),
+        }
+      : {}),
     // Only under a policy: absent is "no policy" and lets everything in, while
     // an empty list is "deny all but replies" -- the field must not appear by
     // accident, so it is spread in rather than set to undefined.
-    ...(policy ? { packetFilter: inboundFilter(policy.compiled, self.node, allPeerRows, allServices) } : {}),
+    ...(policy
+      ? {
+          packetFilter: [
+            ...inboundFilter(policy.compiled, self.node, allPeerRows, allServices),
+            // What the pier may send to a device that has put a name out. Not
+            // for the pier node itself: it is only ever the sender.
+            ...(pierHost && !isPierHost && !suspended ? pierFilter(pierHost, self.node, pierRows) : []),
+          ],
+        }
+      : {}),
     dns: {
       suffix: self.wave.dnsSuffix,
       ...(resolver ? { resolverAddress: resolver } : {}),

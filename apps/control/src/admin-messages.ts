@@ -14,7 +14,9 @@ set-acl reads a policy from a file, or from a pipe with -; without one every dev
 every other. acl prints the policy and who reaches whom under it.
 set-dns-provider reads the credential from the terminal or from a pipe. cloudflare, hetzner and
 ionos take one token; inwx takes an account and asks for its parts, or reads
-{"user":"…","password":"…","totpSecret":"…"} from a pipe.`,
+{"user":"…","password":"…","totpSecret":"…"} from a pipe.
+set-pier makes one device the pier of the wave (D12) and says the public address the world reaches
+it at; allow-pier lets a device put names through it, deny-pier takes its names back.`,
 
   // --- credentials ----------------------------------------------------------
   ionosPrompt: (suffix: string) => `IONOS API key, <public prefix>.<secret> (${suffix}): `,
@@ -64,6 +66,38 @@ ionos take one token; inwx takes an account and asks for its parts, or reads
     "Whoever holds that certificate's key can serve every name in the wave,",
     "so it belongs on a machine you would trust with all of them.",
   ].join("\n"),
+
+  // --- the pier (D12) -------------------------------------------------------
+  pierAllowed: (host: string) => `${host} may now put names into the open network through the pier.`,
+  pierDenied: (host: string, count: number) =>
+    count === 0
+      ? `${host} may no longer put names into the open network.`
+      : `${host} may no longer put names into the open network; ${count} name${count === 1 ? " was" : "s were"} taken back.`,
+  pierWarning: [
+    "A name through the pier is reachable by anyone on the internet, and what answers",
+    "behind it is the device's own service. Allow it only for a device whose services",
+    "you would put on a public address.",
+  ].join("\n"),
+  pierSet: (host: string, addresses: string) =>
+    `${host} is now the pier of this wave, reached by the world at ${addresses}.`,
+  pierSetWarning: [
+    "A pier is a member of the wave with a public address -- treat it like a bastion host:",
+    "its own machine and nothing else on it. Until policies hold it back, whoever takes it",
+    "over is inside the wave.",
+  ].join("\n"),
+  pierCleared: (host: string) =>
+    `${host} is no longer the pier of this wave; its names stay, and wait for the next one.`,
+  noPierHost: (wave: string) => `${wave} has no pier`,
+  pierNeedsAddress: "a pier needs a public address: --ipv4 and/or --ipv6",
+  pierRecordPublished: (name: string) => `  ${name}: public records written`,
+  pierRecordRemoved: (name: string) => `  ${name}: public records removed`,
+  pierRecordCreate: (type: string, name: string, value: string) =>
+    `  create by hand: ${name}  ${type}  ${value}`,
+  pierRecordDelete: (type: string, name: string, value: string) =>
+    `  delete by hand: ${name}  ${type}  ${value}`,
+  pierDnsUnconfigured: (wave: string) =>
+    `${wave} has no DNS credential, so no record is written -- set one with set-dns-provider, or manual.`,
+  pierDnsFailed: (name: string, why: string) => `  ${name}: the DNS provider refused: ${why}`,
 
   // --- services and keys ----------------------------------------------------
   via: (host: string) => `via ${host}`,
@@ -168,7 +202,9 @@ set-acl liest eine Policy aus einer Datei oder mit - aus einer Pipe; ohne Policy
 Gerät jedes andere. acl druckt die Policy und wer danach wen erreicht.
 set-dns-provider liest die Zugangsdaten vom Terminal oder aus einer Pipe. cloudflare, hetzner und
 ionos nehmen einen Token; inwx nimmt ein Konto und fragt nach seinen Teilen, oder liest
-{"user":"…","password":"…","totpSecret":"…"} aus einer Pipe.`,
+{"user":"…","password":"…","totpSecret":"…"} aus einer Pipe.
+set-pier macht ein Gerät zum Pier des Waves (D12) und nennt die öffentliche Adresse, unter der es
+erreichbar ist; allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie zurück.`,
 
   ionosPrompt: (suffix) => `IONOS-API-Schlüssel, <öffentliches Präfix>.<Geheimnis> (${suffix}): `,
   tokenPrompt: (kind, suffix) => `API-Token für ${kind} (${suffix}): `,
@@ -211,6 +247,36 @@ ionos nehmen einen Token; inwx nimmt ein Konto und fragt nach seinen Teilen, ode
     "Wer den Schlüssel dieses Zertifikats hat, kann jeder Name im Wave sein,",
     "es gehört also auf eine Maschine, der du alle davon anvertrauen würdest.",
   ].join("\n"),
+
+  // --- der Pier (D12) -------------------------------------------------------
+  pierAllowed: (host) => `${host} darf jetzt Namen über den Pier ins offene Netz stellen.`,
+  pierDenied: (host, count) =>
+    count === 0
+      ? `${host} darf keine Namen mehr ins offene Netz stellen.`
+      : `${host} darf keine Namen mehr ins offene Netz stellen; ${count} ${count === 1 ? "Name wurde" : "Namen wurden"} zurückgenommen.`,
+  pierWarning: [
+    "Ein Name über den Pier ist für jeden im Internet erreichbar, und dahinter antwortet der",
+    "eigene Dienst des Geräts. Erlaube es nur für ein Gerät, dessen Dienste du an eine",
+    "öffentliche Adresse stellen würdest.",
+  ].join("\n"),
+  pierSet: (host, addresses) =>
+    `${host} ist jetzt der Pier dieses Waves, aus dem Netz erreichbar unter ${addresses}.`,
+  pierSetWarning: [
+    "Ein Pier ist Mitglied des Waves mit einer öffentlichen Adresse -- behandle ihn wie einen",
+    "Bastion-Host: eigene Maschine, sonst nichts darauf. Solange Policies ihn nicht zurückhalten,",
+    "ist drin im Wave, wer ihn übernimmt.",
+  ].join("\n"),
+  pierCleared: (host) =>
+    `${host} ist nicht mehr der Pier dieses Waves; seine Namen bleiben und warten auf den nächsten.`,
+  noPierHost: (wave) => `${wave} hat keinen Pier`,
+  pierNeedsAddress: "ein Pier braucht eine öffentliche Adresse: --ipv4 und/oder --ipv6",
+  pierRecordPublished: (name) => `  ${name}: öffentliche Records geschrieben`,
+  pierRecordRemoved: (name) => `  ${name}: öffentliche Records entfernt`,
+  pierRecordCreate: (type, name, value) => `  von Hand anlegen: ${name}  ${type}  ${value}`,
+  pierRecordDelete: (type, name, value) => `  von Hand löschen: ${name}  ${type}  ${value}`,
+  pierDnsUnconfigured: (wave) =>
+    `${wave} hat keine DNS-Zugangsdaten, also wird kein Record geschrieben -- set-dns-provider oder manual einrichten.`,
+  pierDnsFailed: (name, why) => `  ${name}: der DNS-Provider hat abgelehnt: ${why}`,
 
   via: (host) => `über ${host}`,
   noServices: "  keine Dienste",
