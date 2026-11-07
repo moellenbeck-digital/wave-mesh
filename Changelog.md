@@ -6,7 +6,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-### Sicherheit
+*Noch nichts seit v0.15.1.*
+
+---
+
+## ✅ Stable v0.15.1 (07.11.2026)
+
+### Sicherheit (gegenüber v0.15.0)
 
 - **Pier und `wave expose` gehärtet** nach einer Durchsicht der ganzen Kette:
   - Der Wildcard-Record `*.pier.<domain>` verschwindet jetzt auf jedem Weg, auf dem
