@@ -27,6 +27,18 @@ export interface FakeControl {
    * looks like from here.
    */
   waitingFor?: { name: string; value: string };
+  /**
+   * The private key of the certificate issued last. A real CA certifies the
+   * key in the request; this one makes its own, so a test that needs the two
+   * to match (a TLS handshake) writes this one next to the chain.
+   */
+  issuedKey?: string;
+  /** The names put out through the pier, label to port: what `GET /v1/piers` lists. */
+  piers: Map<string, number>;
+  /** The operator's lock: while false, `POST /v1/piers` answers 403 like the server does. */
+  pierAllowed: boolean;
+  /** Every pier request, as `METHOD /path`, so a test can see that none was made. */
+  pierCalls: string[];
 }
 
 /** It signs only the netmap: what is being tested here is always the node. */
@@ -36,7 +48,7 @@ export function fakeControl(
   const ordered: string[][] = [];
   const orders = new Map<string, string[]>();
   const issuer = { privateKeyPem: "" };
-  const control: Partial<FakeControl> = { ordered };
+  const control: Partial<FakeControl> = { ordered, piers: new Map(), pierAllowed: true, pierCalls: [] };
 
   const server = Bun.serve({
     port: 0,
@@ -58,6 +70,7 @@ export function fakeControl(
         }
         const key = generateCertificateKey();
         issuer.privateKeyPem = key.privateKeyPem;
+        control.issuedKey = key.privateKeyPem;
         const notAfter = new Date(Date.now() + 90 * DAY);
         const chainPem = toPem(
           "CERTIFICATE",
@@ -74,6 +87,47 @@ export function fakeControl(
           notAfter: notAfter.toISOString(),
           renewAt: new Date(Date.now() + 60 * DAY).toISOString(),
         });
+      }
+      if (url.pathname.startsWith("/v1/piers")) {
+        control.pierCalls?.push(`${request.method} ${url.pathname}`);
+        const piers = control.piers as Map<string, number>;
+        const dnsName = (label: string) => `${label}.wave.example.com`;
+        if (request.method === "GET") {
+          return Response.json({
+            allowed: control.pierAllowed,
+            pier: { publicIpv4: "203.0.113.10", publicIpv6: null },
+            piers: [...piers].map(([name, port]) => ({ name, dnsName: dnsName(name), port })),
+          });
+        }
+        if (request.method === "POST") {
+          if (!control.pierAllowed) {
+            return Response.json(
+              {
+                error: "the pier is not allowed for laptop; an operator grants it with `admin.ts allow-pier`",
+              },
+              { status: 403 },
+            );
+          }
+          const body = (await request.json()) as { name: string; port: number };
+          const label = body.name.replace(/\.wave\.example\.com$/, "");
+          piers.set(label, body.port);
+          return Response.json({
+            name: label,
+            dnsName: dnsName(label),
+            port: body.port,
+            dns: "published",
+            records: [],
+          });
+        }
+        if (request.method === "DELETE") {
+          const label = decodeURIComponent(url.pathname.slice("/v1/piers/".length));
+          const port = piers.get(label);
+          if (port === undefined) {
+            return Response.json({ error: "this device has not put that name out" }, { status: 404 });
+          }
+          piers.delete(label);
+          return Response.json({ name: label, dnsName: dnsName(label), port, dns: "published", records: [] });
+        }
       }
       if (url.pathname === "/v1/netmap" && options.netmapKey) {
         return Response.json(signedNetmap(options.netmapKey, options.dnsName));

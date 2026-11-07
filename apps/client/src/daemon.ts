@@ -5,13 +5,18 @@ import {
   type CertificateStatus,
   type CertWaiting,
   DEFAULT_SOCKET_PATH,
+  type ExposedList,
+  type ExposedName,
+  type ExposeState,
   encodeMessage,
   englishText,
   LineReader,
   type Notice,
   notice,
+  type PierRow,
   PLATFORM,
   type ProfileStatus,
+  pathKind,
   profileStatusFromSnapshot,
   Request,
   type Status,
@@ -21,8 +26,18 @@ import {
 import { ControlClient } from "./api.ts";
 import { certPaths, dueCertificates, issueCertificate, namesOf } from "./certs.ts";
 import { up as bringUp, type EngineOptions, type Tunnel } from "./engine.ts";
+import {
+  chooseCertificate,
+  ExposeListeners,
+  exposeLabel,
+  type ListenerState,
+  type PemPair,
+  parseLocalUrl,
+  readPem,
+} from "./expose.ts";
 import { platformLink } from "./link-platform.ts";
 import { describeConflict, findConflict } from "./overlap.ts";
+import { HttpError } from "./retry.ts";
 import {
   ambiguity,
   ensureProfile,
@@ -32,6 +47,7 @@ import {
   type Profile,
   profileKey,
   removeProfile,
+  updateProfile,
 } from "./state.ts";
 import type { Updater } from "./update.ts";
 
@@ -69,6 +85,8 @@ export interface DaemonOptions extends Omit<EngineOptions, "controlUrl"> {
    * only ever say it is a development build.
    */
   updater?: Updater;
+  /** Brings a tunnel up. Only the tests say otherwise: they have no WireGuard to bring up. */
+  bringUp?: typeof bringUp;
 }
 
 const isPipe = (path: string): boolean => path.startsWith("\\\\");
@@ -76,7 +94,32 @@ const isPipe = (path: string): boolean => path.startsWith("\\\\");
 /** How often the daemon looks for a certificate that has reached its date. */
 const RENEWAL_CHECK_MS = 60 * 60 * 1000;
 
+/** How often the daemon looks at whether an exposed name can be served yet. */
+const EXPOSE_CHECK_MS = 5_000;
+
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** The server's own sentence out of a failed request's message, which carries its JSON body. */
+function serverReason(error: HttpError): string {
+  const start = error.message.indexOf("{");
+  if (start >= 0) {
+    try {
+      const body = JSON.parse(error.message.slice(start)) as { error?: unknown };
+      if (typeof body.error === "string") return body.error;
+    } catch {
+      // Cut off at 200 characters: say what there is.
+    }
+  }
+  return error.message;
+}
+
+/** A listener's state as the pair the IPC carries: the state, and the system's words when it failed. */
+function viewOf(state: ListenerState | { state: ExposeState }): {
+  state: ExposeState;
+  detail: string | null;
+} {
+  return { state: state.state, detail: "reason" in state ? state.reason : null };
+}
 
 /** Resolves a user name (or numeric id) without a native getpwnam. */
 export function resolveUserId(user: string, passwdFile = "/etc/passwd"): number | null {
@@ -131,6 +174,10 @@ interface Runtime {
   /** Woken when the attempt starts waiting for the control server. */
   onWaiting: Array<() => void>;
   events: string[];
+  /** The proxy for this wave's exposed names (D12), once there is something to proxy. */
+  expose?: ExposeListeners;
+  /** How each exposed name's listener stood at the last look, by full name. */
+  exposeStates?: Map<string, ListenerState>;
 }
 
 export class Daemon {
@@ -142,6 +189,8 @@ export class Daemon {
   private server?: Server;
   private ticker?: ReturnType<typeof setInterval>;
   private renewals?: ReturnType<typeof setInterval>;
+  private exposing?: ReturnType<typeof setInterval>;
+  private reconciling: Promise<void> | null = null;
 
   constructor(private readonly options: DaemonOptions) {}
 
@@ -326,7 +375,7 @@ export class Daemon {
     void this.publish();
 
     try {
-      const tunnel = await bringUp({
+      const tunnel = await (this.options.bringUp ?? bringUp)({
         ...this.options,
         authKey,
         signal: cancel.signal,
@@ -427,6 +476,9 @@ export class Daemon {
         runtime.notice = null;
       }
       if (tunnel) await this.stopTunnel(tunnel);
+      // The proxy answers on the tunnel's address, so it goes with the tunnel.
+      await runtime.expose?.close();
+      runtime.expose = undefined;
     }
     await this.publish();
     return null;
@@ -541,6 +593,326 @@ export class Daemon {
     }
   }
 
+  /**
+   * The one wave a command is about: named by its server, or the only one.
+   * The same rule as `cert`, with its own words for the case of several.
+   */
+  private async oneProfile(wanted: string | undefined): Promise<Profile | Notice> {
+    const profiles = await this.sync();
+    if (profiles.length === 0) return this.refuse(notice("not-enrolled"));
+    const found = wanted ? matchProfiles(profiles, wanted) : profiles;
+    if (found.length !== 1) {
+      return this.refuse(
+        found.length === 0
+          ? notice("no-such-wave", { name: wanted ?? "" })
+          : wanted
+            ? ambiguity(wanted, found)
+            : notice("expose-which-wave", { count: String(found.length) }),
+      );
+    }
+    return found[0] as Profile;
+  }
+
+  /** The wave's domain: the live netmap's when the tunnel is up, the last one seen otherwise. */
+  private async suffixOf(profile: Profile): Promise<{ suffix: string | null; hostname: string | null }> {
+    const snapshot = await this.runtimes.get(profileKey(profile))?.tunnel?.snapshot();
+    return {
+      suffix: snapshot?.dnsSuffix ?? profile.label ?? null,
+      hostname: snapshot?.self?.hostname ?? null,
+    };
+  }
+
+  /** What a refusal from the pier routes means to this device's owner. */
+  private async pierFailure(
+    error: unknown,
+    profile: Profile,
+    name: string,
+    hostname: string | null,
+  ): Promise<Notice> {
+    if (error instanceof HttpError) {
+      const reason = serverReason(error);
+      if (error.status === 403 && reason.includes("allow-pier")) {
+        return this.refuse(notice("pier-not-allowed", { device: hostname ?? "<device>" }));
+      }
+      return this.refuse(notice("pier-refused", { name, reason }));
+    }
+    return this.refuse(notice("pier-failed", { controlUrl: profile.controlUrl, reason: describe(error) }));
+  }
+
+  /**
+   * Puts a name into the open network and proxies it to a service here (D12).
+   *
+   * Everything that can be checked on this device is checked first -- the name,
+   * the URL, the port -- and nothing is changed until the server has accepted
+   * the claim. What the server decides (the operator's lock, a name that is
+   * taken) comes back as the server's own words, with the next step where
+   * there is one. The claim is made even when there is no certificate yet; the
+   * listener opens by itself once one covers the name.
+   */
+  async expose(
+    wanted: string | undefined,
+    name: string,
+    localUrl: string,
+    port = 443,
+  ): Promise<ExposedName | Notice> {
+    const profile = await this.oneProfile(wanted);
+    if ("code" in profile) return profile;
+    const { suffix, hostname } = await this.suffixOf(profile);
+    if (!suffix) return this.refuse(notice("expose-wave-unknown"));
+
+    const label = exposeLabel(name, suffix);
+    if (!label) return this.refuse(notice("expose-bad-name", { name, suffix }));
+    const local = parseLocalUrl(localUrl);
+    if (!local) return this.refuse(notice("expose-bad-url", { url: localUrl }));
+
+    // The device's own listener behind its own name would proxy to itself.
+    const runtime = this.runtimes.get(profileKey(profile));
+    const self = (await runtime?.tunnel?.snapshot())?.self;
+    if (self && local.port === port && [self.ipv4, self.ipv6, self.dnsName].includes(local.host)) {
+      return this.refuse(notice("expose-loop", { url: local.url }));
+    }
+
+    const log = this.logFor(profile);
+    let response: Awaited<ReturnType<ControlClient["exposePier"]>>;
+    try {
+      response = await new ControlClient(profile).exposePier(label, port);
+    } catch (error) {
+      return this.pierFailure(error, profile, name, hostname);
+    }
+
+    const key = profileKey(profile);
+    const current = (await this.sync()).find((entry) => profileKey(entry) === key) ?? profile;
+    const exposed = [
+      ...current.exposed.filter((entry) => entry.name !== label),
+      { name: label, localUrl: local.url, port: response.port },
+    ];
+    await updateProfile(this.options.statePath, key, { exposed });
+    log(`exposing ${response.dnsName} on port ${response.port} -> ${local.url}`);
+    await this.sync();
+    await this.reconcileExpose();
+    await this.publish();
+
+    const fqdn = response.dnsName.toLowerCase();
+    const state = this.runtimes.get(key)?.exposeStates?.get(fqdn);
+    return {
+      controlUrl: profile.controlUrl,
+      name: label,
+      dnsName: response.dnsName,
+      port: response.port,
+      localUrl: local.url,
+      ...viewOf(state ?? { state: "tunnel-down" }),
+      dns: response.dns,
+      records: response.records,
+      ...(response.error ? { dnsError: response.error } : {}),
+    };
+  }
+
+  /** Takes a name out again: on the server first, so a failure there changes nothing here. */
+  async unexpose(wanted: string | undefined, name: string): Promise<ExposedName | Notice> {
+    const profile = await this.oneProfile(wanted);
+    if ("code" in profile) return profile;
+    const { suffix, hostname } = await this.suffixOf(profile);
+    if (!suffix) return this.refuse(notice("expose-wave-unknown"));
+    const label = exposeLabel(name, suffix);
+    if (!label) return this.refuse(notice("expose-bad-name", { name, suffix }));
+
+    const key = profileKey(profile);
+    let result: Awaited<ReturnType<ControlClient["unexposePier"]>> | null = null;
+    try {
+      result = await new ControlClient(profile).unexposePier(label);
+    } catch (error) {
+      // The server not knowing the name is how it looks after `deny-pier`; what
+      // is left here is then only the local half, and that is still removed.
+      const known = profile.exposed.some((entry) => entry.name === label);
+      if (!(error instanceof HttpError && error.status === 404 && known)) {
+        if (error instanceof HttpError && error.status === 404) {
+          return this.refuse(notice("unexpose-unknown", { name }));
+        }
+        return this.pierFailure(error, profile, name, hostname);
+      }
+    }
+
+    const entry = profile.exposed.find((item) => item.name === label);
+    await updateProfile(this.options.statePath, key, {
+      exposed: profile.exposed.filter((item) => item.name !== label),
+    });
+    this.logFor(profile)(`no longer exposing ${label}.${suffix}`);
+    await this.sync();
+    await this.reconcileExpose();
+    await this.publish();
+    return {
+      controlUrl: profile.controlUrl,
+      name: label,
+      dnsName: `${label}.${suffix}`,
+      port: result?.port ?? entry?.port ?? 443,
+      localUrl: entry?.localUrl ?? null,
+      state: "removed",
+      detail: null,
+      ...(result ? { dns: result.dns, records: result.records } : { records: [] }),
+      ...(result?.error ? { dnsError: result.error } : {}),
+    };
+  }
+
+  /** What the operator allows for this device and the names it has, with where each one stands here. */
+  async exposedList(wanted: string | undefined): Promise<ExposedList | Notice> {
+    const profile = await this.oneProfile(wanted);
+    if ("code" in profile) return profile;
+    const { hostname } = await this.suffixOf(profile);
+    let remote: Awaited<ReturnType<ControlClient["piers"]>>;
+    try {
+      remote = await new ControlClient(profile).piers();
+    } catch (error) {
+      return this.pierFailure(error, profile, "", hostname);
+    }
+
+    const runtime = this.runtimes.get(profileKey(profile));
+    const states = runtime?.exposeStates ?? new Map<string, ListenerState>();
+    const names: ExposedName[] = remote.piers.map((pier) => {
+      const entry = profile.exposed.find((item) => item.name === pier.name);
+      const state: ListenerState | { state: ExposeState } = !entry
+        ? { state: "unmapped" }
+        : (states.get(pier.dnsName.toLowerCase()) ?? { state: "tunnel-down" });
+      return {
+        controlUrl: profile.controlUrl,
+        name: pier.name,
+        dnsName: pier.dnsName,
+        port: pier.port,
+        localUrl: entry?.localUrl ?? null,
+        ...viewOf(state),
+        records: [],
+      };
+    });
+    const suffix =
+      remote.piers[0]?.dnsName.split(".").slice(1).join(".") ?? (await this.suffixOf(profile)).suffix;
+    for (const entry of profile.exposed) {
+      if (remote.piers.some((pier) => pier.name === entry.name)) continue;
+      names.push({
+        controlUrl: profile.controlUrl,
+        name: entry.name,
+        dnsName: suffix ? `${entry.name}.${suffix}` : entry.name,
+        port: entry.port,
+        localUrl: entry.localUrl,
+        state: "not-claimed",
+        detail: null,
+        records: [],
+      });
+    }
+    return { controlUrl: profile.controlUrl, allowed: remote.allowed, pier: remote.pier, names };
+  }
+
+  /**
+   * What `wave pier status` shows: this device's own names with the state of
+   * their listener, and -- on the pier node -- every name it splices, with
+   * whether the device behind it can be reached. The reason a name does not
+   * work is the state, not a log line.
+   */
+  async pierStatus(): Promise<PierRow[]> {
+    const profiles = await this.sync();
+    await this.reconcileExpose();
+    const rows: PierRow[] = [];
+    for (const profile of profiles) {
+      const runtime = this.runtimes.get(profileKey(profile));
+      const snapshot = await runtime?.tunnel?.snapshot();
+      const suffix = snapshot?.dnsSuffix ?? profile.label;
+      const own = new Set<string>();
+      for (const entry of profile.exposed) {
+        const dnsName = suffix ? `${entry.name}.${suffix}` : entry.name;
+        own.add(dnsName.toLowerCase());
+        rows.push({
+          controlUrl: profile.controlUrl,
+          kind: "own",
+          dnsName,
+          port: entry.port,
+          localUrl: entry.localUrl,
+          target: null,
+          ...viewOf(runtime?.exposeStates?.get(dnsName.toLowerCase()) ?? { state: "tunnel-down" }),
+        });
+      }
+      if (!snapshot) continue;
+      for (const pier of snapshot.piers) {
+        // On a device that only owns its names the netmap lists exactly those.
+        if (own.has(pier.dnsName.toLowerCase()) || pier.ipv4 === snapshot.self?.ipv4) continue;
+        const peer = snapshot.peers.find((candidate) => candidate.ipv4 === pier.ipv4);
+        const reachable =
+          !!peer &&
+          pathKind({
+            via: peer.via ?? null,
+            lastHandshakeSecondsAgo: peer.lastHandshakeSecondsAgo ?? null,
+          }) !== "none";
+        rows.push({
+          controlUrl: profile.controlUrl,
+          kind: "served",
+          dnsName: pier.dnsName,
+          port: pier.port,
+          localUrl: null,
+          target: { hostname: peer?.hostname ?? null, ipv4: pier.ipv4 },
+          state: reachable ? "reachable" : "unreachable",
+          detail: null,
+        });
+      }
+    }
+    return rows;
+  }
+
+  /** The certificate and key a name is served with, read fresh -- a renewal needs no restart. */
+  private async certificateFor(runtime: Runtime, fqdn: string): Promise<PemPair | "none" | "expired"> {
+    const choice = chooseCertificate(runtime.profile.certs, fqdn);
+    if (!choice) return "none";
+    if ("expired" in choice) return "expired";
+    return (await readPem(certPaths(this.options.statePath, choice.record.name))) ?? "none";
+  }
+
+  /**
+   * Brings the proxies in line with the state: a listener per port for every
+   * wave whose tunnel is up and that has names a certificate covers, on that
+   * wave's own address -- and none for a wave that is down, gone or has no
+   * names. Safe to call at any time, and one run at a time.
+   */
+  private reconcileExpose(): Promise<void> {
+    // After the one in flight, not instead of it: what called this has just
+    // changed something, and a run that began before that has not seen it.
+    const run = (this.reconciling ?? Promise.resolve()).then(() => this.runReconcile());
+    this.reconciling = run.catch(() => {});
+    return run;
+  }
+
+  private async runReconcile(): Promise<void> {
+    for (const runtime of this.runtimes.values()) {
+      const profile = runtime.profile;
+      const snapshot = await runtime.tunnel?.snapshot().catch(() => undefined);
+      if (profile.exposed.length === 0 || !snapshot) {
+        // Nothing to proxy, or nowhere to listen: whatever was open is closed.
+        await runtime.expose?.close();
+        runtime.expose = undefined;
+        // Readers take a missing entry for "tunnel-down".
+        runtime.exposeStates = new Map();
+        continue;
+      }
+      const suffix = snapshot.dnsSuffix ?? profile.label;
+      if (!suffix) continue;
+      runtime.expose ??= new ExposeListeners({
+        certificate: (fqdn) => this.certificateFor(runtime, fqdn),
+        log: this.logFor(profile),
+      });
+      const targets = profile.exposed.flatMap((entry) => {
+        const local = parseLocalUrl(entry.localUrl);
+        return local ? [{ fqdn: `${entry.name}.${suffix}`, local, port: entry.port }] : [];
+      });
+      try {
+        runtime.exposeStates = await runtime.expose.reconcile(snapshot.self?.ipv4 ?? null, targets);
+      } catch (error) {
+        this.logFor(profile)(`expose: ${describe(error)}`);
+      }
+    }
+    // A wave that was logged out takes its listeners with it.
+    for (const runtime of this.runtimes.values()) {
+      if (!runtime.tunnel && runtime.expose) {
+        await runtime.expose.close();
+        runtime.expose = undefined;
+      }
+    }
+  }
+
   /** What this device holds, across every wave. */
   async certs(): Promise<CertificateStatus[]> {
     const profiles = await this.sync();
@@ -625,6 +997,9 @@ export class Daemon {
     // exact moment does not matter -- being there at all does.
     this.renewals = setInterval(() => void this.renewDue().catch(() => {}), RENEWAL_CHECK_MS);
     void this.renewDue().catch(() => {});
+    // A certificate that arrives, a tunnel that comes up: the listener for a
+    // name opens within seconds of whichever happens last, with nobody asking.
+    this.exposing = setInterval(() => void this.reconcileExpose().catch(() => {}), EXPOSE_CHECK_MS);
     return path;
   }
 
@@ -735,6 +1110,29 @@ export class Daemon {
       case "certs":
         reply({ type: "certs", certs: await this.certs() });
         return;
+      case "expose": {
+        const result = await this.expose(
+          parsed.data.controlUrl,
+          parsed.data.name,
+          parsed.data.localUrl,
+          parsed.data.port,
+        );
+        reply("code" in result ? refusal(result) : { type: "exposed", exposed: result });
+        return;
+      }
+      case "unexpose": {
+        const result = await this.unexpose(parsed.data.controlUrl, parsed.data.name);
+        reply("code" in result ? refusal(result) : { type: "exposed", exposed: result });
+        return;
+      }
+      case "exposed": {
+        const result = await this.exposedList(parsed.data.controlUrl);
+        reply("code" in result ? refusal(result) : { type: "exposed-list", list: result });
+        return;
+      }
+      case "pier-status":
+        reply({ type: "pier-status", rows: await this.pierStatus() });
+        return;
       case "update": {
         const updater = this.options.updater;
         if (!updater) {
@@ -761,10 +1159,12 @@ export class Daemon {
     this.options.updater?.stop();
     if (this.ticker) clearInterval(this.ticker);
     if (this.renewals) clearInterval(this.renewals);
+    if (this.exposing) clearInterval(this.exposing);
     this.watchers.clear();
     this.server?.close();
     // Before the tunnels: a retry timer left behind would keep the process alive.
     for (const runtime of this.runtimes.values()) runtime.cancel?.abort();
+    for (const runtime of this.runtimes.values()) await runtime.expose?.close();
     for (const runtime of this.runtimes.values()) await runtime.tunnel?.stop();
   }
 }

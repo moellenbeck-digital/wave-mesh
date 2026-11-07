@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { nodes, users, waveBilling, waveMembers, waves } from "../db/schema.ts";
+import { nodes, users, waveBilling, waveMembers, wavePiers, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
 import { allocatePrefix } from "../net/addressing.ts";
 import { invitesFor } from "./invites.ts";
@@ -307,12 +307,31 @@ export async function setWaveDomain(
   db: Database,
   selector: string,
   domain: string,
-): Promise<{ id: string; name: string } | { ambiguous: FoundWave[] } | { conflict: "suffix" } | null> {
+): Promise<
+  | { id: string; name: string }
+  | { ambiguous: FoundWave[] }
+  | { conflict: "suffix" }
+  | { conflict: "piers"; names: string[] }
+  | null
+> {
   const normalized = normaliseDnsSuffix(domain);
 
   const found = await resolveWave(db, selector);
   if (found === null || isAmbiguous(found)) return found;
   if (found.dnsSuffix === normalized) return { id: found.id, name: found.name };
+
+  // A name put out through the pier (D12) is a label under the suffix, with a
+  // public record and a certificate on the old one. Moving the zone would leave
+  // both behind, so the names go first -- the owner removes them with
+  // `wave expose --remove`, or an operator with `deny-pier`.
+  const held = await db
+    .select({ name: wavePiers.name })
+    .from(wavePiers)
+    .where(eq(wavePiers.waveId, found.id))
+    .orderBy(asc(wavePiers.name));
+  if (held.length > 0) {
+    return { conflict: "piers", names: held.map((row) => `${row.name}.${found.dnsSuffix}`) };
+  }
 
   // Asked before writing, because the unique index answers with an exception
   // that no caller can tell from a database being down.

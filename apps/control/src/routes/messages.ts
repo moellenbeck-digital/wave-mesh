@@ -72,6 +72,9 @@ const en = {
   notADomain: "That is not a domain",
   domainTaken: "That domain is taken",
   domainTakenBody: (suffix: string) => `Another wave already answers for ${suffix}.`,
+  domainHasPiers: "This wave still has names in the open network",
+  domainHasPiersBody: (names: string[]) =>
+    `Remove ${names.join(", ")} first (\`wave expose --remove <name>\` on the device), then change the domain.`,
   unknownWave: "Unknown wave",
   nothingToChange: "Nothing to change.",
   nothingToRemove: "Nothing to remove.",
@@ -200,6 +203,9 @@ const de: typeof en = {
   notADomain: "Das ist keine Domain",
   domainTaken: "Diese Domain ist vergeben",
   domainTakenBody: (suffix) => `Ein anderer Wave antwortet schon für ${suffix}.`,
+  domainHasPiers: "Dieser Wave hat noch Namen im offenen Netz",
+  domainHasPiersBody: (names) =>
+    `Nimm zuerst ${names.join(", ")} heraus (\`wave expose --remove <name>\` auf dem Gerät), dann ändere die Domain.`,
   unknownWave: "Unbekannter Wave",
   nothingToChange: "Es gibt nichts zu ändern.",
   nothingToRemove: "Es gibt nichts zu entfernen.",

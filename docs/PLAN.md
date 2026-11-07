@@ -318,6 +318,14 @@ und kein Node bekommt je DNS-Credentials.
 Netmap diesem Node gehören (eigener Node-Name oder ein ihm zugewiesener Alias). Damit kann
 kein kompromittierter Node ein Zertifikat für den Namen eines anderen bekommen.
 
+**Pier-Namen (D12):** Zusätzlich gehören einem Gerät genau die Namen, die es in
+`wave_piers` hält, und nur solange `nodes.pier_allowed` gesetzt ist. Die Namen kommen
+bei der Ausstellung aus der Datenbank, nie aus dem Request; kein Wildcard, kein Apex,
+keine Namen anderer Geräte. Nach `wave expose --remove` oder `admin.ts deny-pier` wird
+nichts Neues mehr ausgestellt, ein schon ausgestelltes Zertifikat läuft bis zu seinem
+Ablauf weiter. Das ist bekannt: Ablauf und Erneuerung (ARI, 2/3 der Laufzeit) begrenzen
+den Zeitraum, und der Name ist ohnehin öffentlich.
+
 **Ausstellung on demand, nicht automatisch für alle Nodes** (`wave cert <name>`). Gründe:
 Rate Limits und Certificate Transparency (siehe unten). Nach der ersten Ausstellung
 erneuert der Daemon selbstständig.
@@ -723,7 +731,7 @@ Was daran festliegt:
 - **Öffentlich wird nichts von selbst, und nicht von jedem.** Zwei Schlösser,
   dieselbe Teilung wie beim Wildcard in D7: der Betreiber erlaubt den Pier für
   ein Gerät (`admin.ts allow-pier`), und erst dann schaltet dessen Besitzer
-  einen Namen und einen Port frei (`wave pier 443`). Vorgabe ist aus. Ein
+  einen Namen und einen Port frei (`wave expose <name> <url>`). Vorgabe ist aus. Ein
   Mitglied darf einen Wave nicht im Alleingang ins offene Netz stellen, und ein
   Server darf das nie raten.
 - **Der Pier steht im Wave, und das ist der Preis.** Die Kiste mit der
@@ -794,9 +802,31 @@ A/AAAA-Records über die Provider-API und der manuelle Modus sind gebaut. Zwei
 Festlegungen, die D12 offenließ: der Pier ist der Knoten, den der Betreiber mit
 `admin.ts set-pier` samt öffentlicher Adresse benennt (der Server rät keine
 Adresse und ein Gerät erklärt sich nicht selbst dazu), und unter einer Policy
-öffnet der Anspruch genau *Pier → Gerät, dieser Port*. Es fehlen `wave expose` /
-`wave pier` auf dem Client — das lokale Terminieren mit dem Knoten-Zertifikat und
-der Proxy an eine `localUrl` — und der Lauf gegen einen echten Ingress.
+öffnet der Anspruch genau *Pier → Gerät, dieser Port*.
+
+**Der Client (Ticket #63, zweiter Teil):** `wave expose <name> <http(s)://host:port>`
+legt den Anspruch an (`POST /v1/piers`) und merkt sich, wohin der Name proxyt. Der
+Daemon lauscht auf der Wave-Adresse des Geräts (Port aus der Freigabe, Standard 443),
+beendet TLS mit dem Zertifikat des Geräts für den Namen (D7) und schiebt die
+entschlüsselten Bytes an `localUrl` — auf diesem Gerät oder im LAN. Der Pier sieht davon
+nichts. `--list` zeigt die Namen samt Stand, `--remove <name>` nimmt einen heraus,
+`wave pier status` sagt, warum ein Name noch nicht geht (kein Zertifikat, Tunnel unten,
+Port belegt, bei Ziel-Gerät offline: nicht erreichbar). Beim ersten Aufruf gibt es noch
+kein Zertifikat für den Namen: der Anspruch steht trotzdem, und der nächste Schritt ist
+`wave cert <name>` — der Listener öffnet danach von selbst. `set-domain` lehnt ab,
+solange das Wave Pier-Namen hat. Offen bleiben der Lauf gegen einen echten Ingress,
+Mobile (der Go-Kern kann noch nicht proxyn) und ein `https`-Ziel mit einem Zertifikat,
+dem das Gerät nicht vertraut (die Verbindung zum Dienst wird geprüft; für ein
+selbstsigniertes LAN-Gerät bleibt `http://`).
+
+**Zertifikat für Pier-Namen (Ticket #63, Client-Teil):** Das Knoten-Zertifikat aus D7
+deckte nur `<hostname>.<suffix>`. Damit `wave expose app.wave.example.com …` ohne
+Wildcard geht, stellt der Control-Server einem Gerät auch die Namen aus, die es in
+`wave_piers` hält (geprüft bei der Ausstellung, nur bei gesetztem `pier_allowed`).
+`wave expose` legt den Anspruch auch ohne Zertifikat an und nennt als nächsten Schritt
+`wave cert <name>`; der Daemon öffnet den Listener, sobald ein Zertifikat den Namen
+deckt. Nach dem Entfernen läuft ein ausgestelltes Zertifikat bis zum Ablauf weiter;
+Ablauf und Erneuerung begrenzen den Zeitraum.
 
 ### D13 — Selbstaktualisierung der Clients
 
@@ -1460,7 +1490,7 @@ Damit ist ein Neustart oder ein verpasstes Delta unkritisch.
 | **M9** | Härtung | autoritatives DNS für NS-Delegation, Metriken/Tracing, Rate-Limits, Packaging (deb/rpm/brew), Lasttests, Kernel-WG-Fastpath evaluieren | Betrieb mit >50 Nodes stabil, dokumentiert |
 | **M10** | Mobile | Go-Kern (MagicSock, Disco, Control-Client, Resolver) über `gomobile bind`, NEPacketTunnelProvider (iOS) und VpnService (Android), native UI (D10) | ein Telefon ist gleichzeitig in zwei Waves, mit direktem Pfad und Relay-Fallback |
 | **M11** | Kubernetes | Connector-Deployment (Node im Cluster, kein eingehender Port), Operator für `Ingress`/`HTTPRoute` mit Klasse `wave`, `wave_services` + Adressvergabe, `Netmap.services`, Dienste im Resolver (D11) | ein internes Grafana ist unter `grafana.wave.example.com` aus dem Wave per HTTPS erreichbar und von außen nicht |
-| **M12** | Pier | `apps/pier` (Knoten im Wave, SNI-Router auf 443), `wave_piers` + `Netmap.piers`, öffentliche A/AAAA-Records aus dem Control-Server, `wave pier` und die Freigabe durch den Betreiber (D12) | ein Dienst auf einem Knoten hinter CGNAT ist aus dem offenen Netz per HTTPS erreichbar, mit dem Zertifikat des Knotens, und der Pier sieht keinen Klartext |
+| **M12** | Pier | `apps/pier` (Knoten im Wave, SNI-Router auf 443), `wave_piers` + `Netmap.piers`, öffentliche A/AAAA-Records aus dem Control-Server, `wave expose`, `wave pier status` und die Freigabe durch den Betreiber (D12) | ein Dienst auf einem Knoten hinter CGNAT ist aus dem offenen Netz per HTTPS erreichbar, mit dem Zertifikat des Knotens, und der Pier sieht keinen Klartext |
 | **M13** | Selbstaktualisierung | Version im Binary (`wave version`, im Status und am Server), Ed25519-signiertes Manifest (Version, Kanal, Hashes) im Release-Workflow, Control-Server löst die Kanäle aus `WAVE_UPDATE_CHANNELS` auf (erster Eintrag als Vorgabe) und reicht Archive von GitHub durch, Angebot über `/v1/control`, `wave update`, GitHub-Token nur auf dem Server, Wunschkanal und Schalter im State, Austausch mit Rollback je Plattform, Tray-Neustart (D13) | ein Gerät in einem Wave mit `WAVE_UPDATE_CHANNELS=insiders,stable` steht einen Tag nach dem Release ohne Zutun auf der neuen Version, ein absichtlich kaputtes Release rollt sich von selbst zurück, ein unsigniertes wird verweigert, und ein Build aus einem Kanal, den der Server nicht führt, ebenso |
 | **M14** | Geräte im Cluster | Egress-Kette im Connector (DNAT von Pod-Netz auf Wave-Adressen, masquerade auf `wave0`), Ziele per Gerätename aus der Netzkarte, `ExternalName`-Services mit `wave.dev/egress`, Portvergabe und ConfigMap durch den Operator, NetworkPolicy für die Egress-Ports (D14) | ein Pod erreicht `http://ollama.ai:11434` auf einer Workstation im Wave, nur aus freigegebenen Namespaces und nur, solange die Policy es erlaubt |
 | **M15** | Zwischenablage | `Peer.clipboard` nur in Netzkarten desselben Menschen, Meldung `{ type: "clipboard", receive }` und `nodes.clipboard_receive`, Freigabe des Ports im `packetFilter`, Listener auf der Wave-Adresse im Daemon und im Go-Kern, IPC zum Tray, Plattformweiche `clipboard.ts` (Wayland, NSPasteboard, Win32), Share Extension/App Intent und Benachrichtigung auf den Telefonen (D15) | Text, der auf dem Notebook kopiert wird, lässt sich auf einem zweiten Notebook desselben Menschen sofort einfügen, auf dessen iPhone nach einem Tippen auf die Benachrichtigung, und in die Gegenrichtung über „Teilen → wave“ — ein Gerät eines anderen Mitglieds bekommt nichts, und was ein Passwort-Manager als vertraulich markiert, verlässt das Gerät nicht |

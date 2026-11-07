@@ -193,6 +193,7 @@ describe("several enrolments side by side", () => {
         interfaceName: "wave0",
         listenPort: 41641,
         certs: [],
+        exposed: [],
       },
     ]);
     const next = await ensureProfile(path, "http://new.example");

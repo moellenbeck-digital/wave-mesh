@@ -4,7 +4,7 @@ import { createApp } from "../src/app.ts";
 import { setPassword } from "../src/auth/password.ts";
 import { createProviders } from "../src/auth/providers.ts";
 import type { Database } from "../src/db/client.ts";
-import { nodes, users, waves } from "../src/db/schema.ts";
+import { nodes, users, wavePiers, waves } from "../src/db/schema.ts";
 import { buildNetmap } from "../src/netmap/build.ts";
 import { addMember } from "../src/waves/members.ts";
 import {
@@ -166,6 +166,59 @@ describe("moving a wave onto another domain", () => {
   });
 });
 
+describe("a wave with names in the open network", () => {
+  const claim = (waveId: string, nodeId: string, label: string) =>
+    db.insert(wavePiers).values({ id: `p_${label}`, waveId, nodeId, name: label, port: 443 });
+
+  async function withDevice() {
+    const owner = await user("robin@example.com");
+    const provisioned = await ensureWaveForUser(db, owner, "robin@example.com");
+    const waveId = provisioned.waveId ?? "";
+    await db.insert(nodes).values({
+      id: "n1",
+      waveId,
+      userId: owner,
+      machineKey: "mk",
+      nodeKey: "nk",
+      discoKey: "dk",
+      hostname: "laptop",
+      os: "linux",
+      ipv4: "10.64.0.1",
+      ipv6: "fd7a:1:2::1",
+    });
+    return waveId;
+  }
+
+  test("the domain stays put, with the names that hold it", async () => {
+    const waveId = await withDevice();
+    await claim(waveId, "n1", "blog");
+    await claim(waveId, "n1", "app");
+    const before = await versionOf(waveId);
+
+    expect(await setWaveDomain(db, waveId, "wave.example.com")).toEqual({
+      conflict: "piers",
+      names: [`app.robin.${DEFAULT_DNS_BASE}`, `blog.robin.${DEFAULT_DNS_BASE}`],
+    });
+    expect(await suffixOf(waveId)).toBe(`robin.${DEFAULT_DNS_BASE}`);
+    expect(await versionOf(waveId)).toBe(before ?? 0);
+  });
+
+  test("once the names are gone it moves", async () => {
+    const waveId = await withDevice();
+    await claim(waveId, "n1", "app");
+    expect(await setWaveDomain(db, waveId, "wave.example.com")).toMatchObject({ conflict: "piers" });
+    await db.delete(wavePiers).where(eq(wavePiers.waveId, waveId));
+    expect(await setWaveDomain(db, waveId, "wave.example.com")).toMatchObject({ id: waveId });
+    expect(await suffixOf(waveId)).toBe("wave.example.com");
+  });
+
+  test("asking for the domain it has is not refused", async () => {
+    const waveId = await withDevice();
+    await claim(waveId, "n1", "app");
+    expect(await setWaveDomain(db, waveId, `robin.${DEFAULT_DNS_BASE}`)).toMatchObject({ id: waveId });
+  });
+});
+
 describe("the domain form", () => {
   /** Signs in through the dev provider and makes a wave for the address. */
   async function signIn(email: string): Promise<CookieJar> {
@@ -214,6 +267,31 @@ describe("the domain form", () => {
 
     expect((await post(owner, waveId, "wave.example.com")).status).toBe(303);
     expect(await suffixOf(waveId)).toBe("wave.example.com");
+  });
+
+  test("a wave that still has names in the open network says which, and stays", async () => {
+    const owner = await signIn("robin@example.com");
+    await makeWave(owner, "robin", `robin.${DEFAULT_DNS_BASE}`);
+    const waveId = await waveIdOf(owner);
+    const ownerId = await userIdByEmail("robin@example.com");
+    await db.insert(nodes).values({
+      id: "n1",
+      waveId,
+      userId: ownerId,
+      machineKey: "mk",
+      nodeKey: "nk",
+      discoKey: "dk",
+      hostname: "laptop",
+      os: "linux",
+      ipv4: "10.64.0.1",
+      ipv6: "fd7a:1:2::1",
+    });
+    await db.insert(wavePiers).values({ id: "p1", waveId, nodeId: "n1", name: "app", port: 443 });
+
+    const res = await post(owner, waveId, "wave.example.com");
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain(`app.robin.${DEFAULT_DNS_BASE}`);
+    expect(await suffixOf(waveId)).toBe(`robin.${DEFAULT_DNS_BASE}`);
   });
 
   test("a member may look but not move", async () => {

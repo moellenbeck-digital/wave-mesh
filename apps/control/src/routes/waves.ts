@@ -252,6 +252,10 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     // The wave was found by id a moment ago, so neither can happen here.
     if (!result || "ambiguous" in result) return page(c, (m) => [m.unknownWave, m.nothingToChange], 404);
     if ("conflict" in result) {
+      if (result.conflict === "piers") {
+        const names = result.names;
+        return page(c, (m) => [m.domainHasPiers, m.domainHasPiersBody(names)], 409);
+      }
       return page(c, (m) => [m.domainTaken, m.domainTakenBody(domain)], 409);
     }
 

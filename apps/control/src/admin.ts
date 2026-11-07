@@ -787,7 +787,12 @@ async function main(): Promise<never> {
     const target = await wave(selector);
     const updated = await setWaveDomain(db, target.id, domain);
     if (!updated) return done(1, m.noWaveMatches(selector ?? ""));
-    if ("conflict" in updated) return done(1, m.suffixTaken(domain));
+    if ("conflict" in updated) {
+      return done(
+        1,
+        updated.conflict === "piers" ? m.domainHasPiers(target.name, updated.names) : m.suffixTaken(domain),
+      );
+    }
     console.log(m.namesNow(target.name, domain));
     return done(0, m.nextNetmap);
   }

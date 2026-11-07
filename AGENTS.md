@@ -16,7 +16,7 @@ M5 meinte, gibt es nicht.
 ## Befehle
 
 ```bash
-bun test                 # 904 Tests, kein Docker nötig
+bun test                 # die ganze Suite (PGlite, kein Docker nötig); die Zahl steht im CI-Lauf, nicht hier
 bun run check            # Biome (Lint + Format)
 bun run typecheck        # tsc --noEmit, strict inkl. noUncheckedIndexedAccess
 bun run db:up            # Postgres für die Entwicklung
@@ -65,7 +65,7 @@ User-Namespace neu und legen dort Netns, veth, NAT und TUN an. Voraussetzungen:
 |---|---|
 | `apps/control` | Login (Passwort/OIDC), Node-Registrierung, signierte Netmaps, Mitglieder und Einladungen, `/v1/control` (WS) |
 | `apps/relay` | STUN (UDP) und Relay (WS) in einem Prozess |
-| `apps/client` | ein Binary, alle Rollen: `wave up/status/login/profiles`, `wave daemon`, `wave tray`, `wave install` |
+| `apps/client` | ein Binary, alle Rollen: `wave up/status/login/profiles`, `wave cert`, `wave expose`/`wave pier status`, `wave daemon`, `wave tray`, `wave install` |
 | `packages/ipc` | Protokoll und Client des Steuersockets, von CLI und Tray genutzt |
 | `packages/proto` | Zod-Schemas — der Vertrag zwischen beiden Seiten |
 | `packages/crypto` | Schlüssel, Signaturen, kanonisches JSON, Request-Signierung, DER/CSR/X.509 |
@@ -741,7 +741,8 @@ Was daran festliegt:
   `<hostname>.<dns_suffix>` aus der Netmap, nicht mit dem, was das Gerät
   behauptet. Ein Platzhalter-Suffix unter `.internal` wird abgelehnt, bevor
   irgendetwas bestellt wird — er ist nicht delegierbar, also kann keine CA ihn
-  validieren.
+  validieren. Dazu kommen die Namen, die das Gerät als Pier-Namen hält (D12, siehe
+  „Der Pier“): aus der Datenbank, nur bei gesetztem `pier_allowed`.
 - **Der Wildcard ist die eine Ausnahme, und sie ist keine von der Regel,
   sondern davon, wer entscheidet.** `*.<suffix>` steht für *jeden* Namen im
   Wave — es gibt keinen Test, nach dem er „diesem Gerät gehört". Deshalb
@@ -1947,15 +1948,82 @@ Was daran festliegt:
   dort defaultiert, weil nichts es signiert.
 - **Audit:** `pier.expose`, `pier.unexpose` (Gerät als Akteur) sowie
   `admin.allow-pier`, `admin.deny-pier`, `admin.set-pier`, `admin.clear-pier`.
+- **Zertifikat für die eigenen Pier-Namen** (`checkNames()` in `certs/issue.ts`). Zu
+  `<hostname>.<suffix>` kommen genau die Namen, die das Gerät in `wave_piers` hält —
+  aber nur, solange `pier_allowed` gesetzt ist, und geprüft bei der *Ausstellung*, nicht
+  beim Anlegen. Die Namen kommen aus der Datenbank, nie aus dem Request; kein Wildcard,
+  kein Apex, nichts von anderen Geräten (`allow-wildcard` bleibt das Einzige, was die
+  Wildcard öffnet). Nach `--remove` und `deny-pier` wird nichts Neues ausgestellt, ein
+  bestehendes Zertifikat läuft bis zum Ablauf weiter — bekannt, kein Fehler; Ablauf und
+  Erneuerung begrenzen den Zeitraum. Tests: `test/certificates.test.ts`, „the names a
+  device put out through the pier“.
+
+### Der Client: `wave expose`, `wave pier status`
+
+```bash
+wave expose app.wave.example.com http://localhost:3000   # Anspruch anlegen, Proxy einrichten
+wave cert app.wave.example.com                           # das Zertifikat für den Namen
+wave expose --list                                       # Namen, Erlaubnis, Pier-Adresse, Stand
+wave expose --remove app.wave.example.com
+wave pier status                                         # eigene Namen und, am Pier, die bedienten
+```
+
+Was daran festliegt:
+
+- **Alles am Daemon** (`Daemon.expose()`/`unexpose()`/`exposedList()`/`pierStatus()`,
+  IPC `expose`/`unexpose`/`exposed`/`pier-status`). Der Daemon hält den Tunnel, an den
+  sich der Pier anschließt, und antwortet für den Namen; ohne Dienst sagt die CLI das
+  und tut nichts. Die Prüfungen laufen **vor** dem Server und ändern bei einem Fehler
+  nichts: `exposeLabel()` (genau ein Name unter der Domain des Waves, kein Apex, kein
+  Wildcard, nichts Tieferes), `parseLocalUrl()` (`http(s)://host:port`, Port Pflicht,
+  kein Pfad, keine Zugangsdaten), Port 1–65535, und nicht der eigene Listener hinter
+  dem eigenen Namen. Erst wenn der Server den Anspruch angenommen hat, wird
+  `Profile.exposed` geschrieben. 403 vom Server („`allow-pier`“) wird zu einer
+  übersetzten Meldung mit dem nächsten Schritt (Notice `pier-not-allowed`).
+- **Der Anspruch steht auch ohne Zertifikat.** `wave expose` sagt dann „kein Zertifikat
+  für `<name>`, nächster Schritt: `wave cert <name>`“. Der Server stellt dem Gerät das
+  Zertifikat für seine Pier-Namen aus (siehe oben); ein Wildcard-Zertifikat deckt den
+  Namen ebenso.
+- **Der Listener öffnet, sobald ein Zertifikat den Namen deckt** — exakt oder per
+  Wildcard, nicht abgelaufen (`chooseCertificate()`). `Daemon.reconcileExpose()` läuft
+  alle 5 s und nach `expose`, `unexpose`, `cert` und `pier-status`, nie zwei Läufe
+  gleichzeitig; ein Listener je Port, SNI wählt Namen, Zertifikat und Dienst
+  (`ExposeListeners` in `apps/client/src/expose.ts`). Gebunden **an die Wave-Adresse
+  des Geräts**, nie an `0.0.0.0`: sonst antwortete der Proxy auch im LAN, und der einzige
+  Weg hinein soll der Pier sein. Schlüssel und Kette werden bei jedem Handshake neu
+  gelesen (und nur neu geladen, wenn sich der Inhalt geändert hat): eine Erneuerung
+  braucht keinen Neustart.
+- **Der Proxy bewegt Bytes und versteht kein HTTP.** ALPN nur `http/1.1` (ein Browser mit
+  h2 spräche es sonst mit einem Dienst, der es nicht kann), danach roher TCP-Spleiß an
+  `localUrl`. Der `Host`-Header kommt unverändert beim Dienst an. Ein unbekannter Name
+  bekommt keinen Handshake. Ein `https`-Ziel wird **geprüft** (Systemwurzeln, Name des
+  Ziels); ein LAN-Gerät mit selbstsigniertem Zertifikat wird deshalb nicht erreicht, und das
+  Log sagt, warum — dafür gilt `http://`. Kein „unsicher“-Schalter.
+- **Zustand und Status.** `Profile.exposed` (`name`, `localUrl`, `port`) hält, was nur das
+  Gerät weiß; der Anspruch selbst liegt beim Server. Stände: `listening`,
+  `no-certificate`, `certificate-expired`, `no-address`/`tunnel-down`, `failed` (Port
+  belegt o. Ä., mit dem Grund des Systems), dazu für `--list` `unmapped` (Server kennt
+  den Namen, das Gerät keinen Dienst) und `not-claimed` (Gerät kennt einen Dienst, der
+  Server den Namen nicht mehr — etwa nach `deny-pier`; `--remove` räumt ihn ab). Am
+  Pier-Knoten zeigt `wave pier status` die bedienten Namen mit `reachable`/`unreachable`
+  (kein Pfad, kein Handshake, oder eine Adresse, die kein Peer hat).
+- **`set-domain` lehnt ab, solange das Wave Pier-Namen hat** (`setWaveDomain()` →
+  `{ conflict: "piers", names }`, in `admin.ts` und im Webformular, 409): Records und
+  Zertifikate hängen am alten Suffix. Erst entfernen, dann umziehen.
+- **Nicht gebaut:** Mobile (der Go-Kern proxyt nicht), Quoten, PROXY-Protokoll, ein
+  `uniqueHostname()`, das Pier-Namen kennt (ein Gerät, das nach einem Pier-Namen
+  heißt, bekommt weiter denselben Namen — bei Diensten ist es ebenso), das M5-Opt-in „Name
+  zeigt auf die Wave-Adresse“ (es gibt keines; ein Vermerk genügt).
+- **Tests:** `apps/client/test/expose.test.ts` (Namen, URLs, Zertifikatswahl, Listener,
+  Ende-zu-Ende mit dem echten Pier-Proxy), `daemon-expose.test.ts` (der Daemon gegen einen
+  Fake-Server: Prüfungen, Zustand, Zertifikat dann Listener, `--list`, Status am Pier),
+  `cli-expose.test.ts` (die CLI als Prozess gegen einen echten Daemon am Socket, DE und EN).
 
 **Ungeprüft:** der Pier an einem echten Ingress und einem echten Wave über das
-Internet (die Splice-Tests laufen über Loopback und ein echtes TLS-Handshake mit dem
-Zertifikat des Zielgeräts; das Image ist nicht gebaut, die Kustomize-Bäume nur
-gebaut, nicht angewendet), die Provider-Aufrufe gegen die echten APIs (nur Fakes),
-und `wave expose`/`wave pier` auf dem Client — dieser Teil des Tickets fehlt noch:
-das Gerät, das den Namen freigibt, ruft die Routen heute selbst auf, und das lokale
-Terminieren mit dem Knoten-Zertifikat samt Proxy an eine `localUrl` ist ein eigener
-Auftrag.
+Internet (die Splice- und Client-Tests laufen über Loopback und ein echtes TLS-Handshake
+mit dem Zertifikat des Zielgeräts; das Image ist nicht gebaut), die Provider-Aufrufe
+gegen die echten APIs (nur Fakes), der Daemon mit einem echten Tunnel (der Listener wird
+dort an eine echte Wave-Adresse gebunden, im Test an `127.0.0.1`) und Mobile.
 
 ## Telefone
 

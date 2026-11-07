@@ -13,9 +13,10 @@ import { createApp } from "../src/app.ts";
 import { createProviders } from "../src/auth/providers.ts";
 import { CertificateService } from "../src/certs/issue.ts";
 import type { Database } from "../src/db/client.ts";
-import { certificateOrders, nodes, waveBilling } from "../src/db/schema.ts";
+import { certificateOrders, nodes, waveBilling, wavePiers } from "../src/db/schema.ts";
 import { storeDnsCredential } from "../src/dns/credentials.ts";
 import type { Config } from "../src/env.ts";
+import { newId } from "../src/ids.ts";
 import { type FakeCa, fakeCa } from "./fake-ca.ts";
 import { CookieJar, createTestDb, createWaveAs, testConfig, testSigningKey } from "./helpers.ts";
 
@@ -144,7 +145,7 @@ async function setUp(options: { suffix?: string; credential?: boolean | "manual"
       key: Buffer.from(DNS_SECRET, "base64"),
     });
   }
-  return { machine, node, name: `${node.hostname}.${suffix}` };
+  return { machine, node, jar, name: `${node.hostname}.${suffix}` };
 }
 
 const orderFor = async (machine: Machine, names: string[]) => {
@@ -464,6 +465,94 @@ describe("the wave's wildcard", () => {
 
     const { res } = await orderFor(machine, ["*.wave.example.com"]);
     expect(res.status).toBe(403);
+  });
+});
+
+describe("the names a device put out through the pier", () => {
+  /** What `POST /v1/piers` leaves behind, written directly: the claim is not under test here. */
+  const claim = (nodeId: string, waveId: string, label: string) =>
+    db.insert(wavePiers).values({ id: newId("pier"), waveId, nodeId, name: label, port: 8080 });
+  const allow = (nodeId: string, on = true) =>
+    db.update(nodes).set({ pierAllowed: on }).where(eq(nodes.id, nodeId));
+
+  test("another device gets no certificate for a name that is not its own", async () => {
+    const { node, jar } = await setUp();
+    await allow(node.id);
+    await claim(node.id, node.waveId, "app");
+
+    const other = makeMachine("desktop");
+    await enrol(other, jar);
+
+    const { res, body } = await orderFor(other, ["app.wave.example.com"]);
+    expect(res.status).toBe(403);
+    expect(body.error).toContain("does not belong to this device");
+    expect(ca.issued).toEqual([]);
+  });
+
+  test("a name without a claim is still refused", async () => {
+    const { machine, node } = await setUp();
+    await allow(node.id);
+    await claim(node.id, node.waveId, "app");
+    const { res } = await orderFor(machine, ["other.wave.example.com"]);
+    expect(res.status).toBe(403);
+    expect(ca.issued).toEqual([]);
+  });
+
+  test("a claim is no reason for a wildcard or the zone's own name", async () => {
+    const { machine, node } = await setUp();
+    await allow(node.id);
+    await claim(node.id, node.waveId, "app");
+    for (const name of ["*.wave.example.com", "wave.example.com"]) {
+      const { res, body } = await orderFor(machine, [name]);
+      expect(res.status).toBe(403);
+      expect(body.error).toContain("allow-wildcard");
+    }
+    expect(ca.issued).toEqual([]);
+  });
+
+  test("without the operator's lock nothing is issued, claim or not", async () => {
+    const { machine, node } = await setUp();
+    await claim(node.id, node.waveId, "app");
+    const { res } = await orderFor(machine, ["app.wave.example.com"]);
+    expect(res.status).toBe(403);
+    expect(ca.issued).toEqual([]);
+  });
+
+  test("deny-pier stops it, remove stops it", async () => {
+    const { machine, node } = await setUp();
+    await allow(node.id);
+    await claim(node.id, node.waveId, "app");
+    await allow(node.id, false);
+    expect((await orderFor(machine, ["app.wave.example.com"])).res.status).toBe(403);
+
+    await allow(node.id);
+    await db.delete(wavePiers).where(eq(wavePiers.nodeId, node.id));
+    expect((await orderFor(machine, ["app.wave.example.com"])).res.status).toBe(403);
+    expect(ca.issued).toEqual([]);
+  });
+
+  test("the device's own name and the wildcard grant behave as before", async () => {
+    const { machine, node, name } = await setUp();
+    await allow(node.id);
+    await claim(node.id, node.waveId, "app");
+    const own = await orderFor(machine, [name]);
+    expect(own.res.status).toBe(202);
+    expect((await awaitOrder(machine, own.body.orderId as string)).status).toBe("issued");
+
+    await db.update(nodes).set({ wildcardAllowed: true }).where(eq(nodes.id, node.id));
+    const wild = await orderFor(machine, ["*.wave.example.com", "wave.example.com"]);
+    expect(wild.res.status).toBe(202);
+  });
+
+  test("is issued for the name the device holds, while the lock is open", async () => {
+    const { machine, node } = await setUp();
+    await allow(node.id);
+    await claim(node.id, node.waveId, "app");
+    const { res, body } = await orderFor(machine, ["app.wave.example.com"]);
+    expect(res.status).toBe(202);
+    const finished = await awaitOrder(machine, body.orderId as string);
+    expect(finished.status).toBe("issued");
+    expect(leafOf(finished.chainPem as string).names).toEqual(["app.wave.example.com"]);
   });
 });
 

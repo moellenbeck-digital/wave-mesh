@@ -43,6 +43,7 @@ async function daemonWith(certs: Profile["certs"], log: (message: string) => voi
       interfaceName: "wave0",
       listenPort: 41641,
       certs,
+      exposed: [],
     },
   ]);
   const daemon = new Daemon({ statePath, log });

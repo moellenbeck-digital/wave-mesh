@@ -31,6 +31,7 @@ function profileFor(controlUrl: string): Profile {
     interfaceName: "wave0",
     listenPort: 41641,
     certs: [],
+    exposed: [],
   };
 }
 

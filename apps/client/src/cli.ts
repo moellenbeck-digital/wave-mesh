@@ -7,7 +7,10 @@ import {
   DAEMON_CLOSED,
   DaemonClient,
   DEFAULT_SOCKET_PATH,
+  type ExposedList,
+  type ExposedName,
   type Notice,
+  type PierRow,
   PLATFORM,
   profileKeyOf,
   profileName,
@@ -58,6 +61,9 @@ const { values, positionals } = parseArgs({
     "socket-user": { type: "string" },
     "auth-key": { type: "string", default: process.env.WAVE_AUTH_KEY ?? "" },
     wildcard: { type: "boolean", default: false },
+    "listen-port": { type: "string" },
+    list: { type: "boolean", default: false },
+    remove: { type: "string" },
     "new-wave": { type: "boolean", default: false },
     channel: { type: "string" },
     "auto-update": { type: "string" },
@@ -317,6 +323,119 @@ async function runHere(controlUrl: string, authKey?: string): Promise<number> {
   return 0;
 }
 
+/** What a name that was just put out, or taken out, comes to: the line, where it stands, the records. */
+function printExposed(exposed: ExposedName): void {
+  const m = t();
+  if (exposed.state === "removed") console.log(m.exposeRemoved(exposed.dnsName));
+  else {
+    console.log(m.exposeName(exposed.dnsName, exposed.port, exposed.localUrl));
+    console.log(`  ${m.exposeState(exposed.state, exposed.dnsName, exposed.detail)}`);
+  }
+  if (exposed.dns) {
+    console.log(`  ${m.exposeDns(exposed.dns, exposed.dnsError ?? null)}`);
+    if (exposed.dns === "manual" || exposed.dns === "unconfigured") {
+      for (const record of exposed.records)
+        console.log(m.exposeRecord(record.type, record.name, record.value));
+    }
+  }
+}
+
+function printPierRows(rows: PierRow[]): void {
+  const m = t();
+  if (rows.length === 0) {
+    console.log(m.pierNone);
+    return;
+  }
+  for (const row of rows) {
+    const where =
+      row.kind === "own"
+        ? (row.localUrl ?? "-")
+        : m.pierTarget(row.target?.hostname ?? null, row.target?.ipv4 ?? "?");
+    console.log(
+      `${row.dnsName}  ${row.kind === "own" ? m.pierOwn : m.pierServed}  port ${row.port}  ${where}`,
+    );
+    console.log(`  ${m.exposeState(row.state, row.dnsName, row.detail)}`);
+  }
+}
+
+/**
+ * `wave expose` and `wave pier status`. Both are the daemon's: it holds the
+ * tunnel the pier connects to, and it is the one that answers for the name.
+ */
+async function runExpose(daemon: DaemonClient): Promise<number> {
+  const finish = async <T extends { type: string }>(
+    request: Parameters<DaemonClient["request"]>[0],
+    wanted: T["type"],
+    show: (response: T) => void,
+  ): Promise<number> => {
+    const response = await daemon.request(request, 60_000);
+    daemon.close();
+    if (response.type === "error") {
+      console.error(said(response));
+      return 1;
+    }
+    if (response.type !== wanted) {
+      console.error(t().unexpectedAnswer);
+      return 1;
+    }
+    show(response as unknown as T);
+    return 0;
+  };
+
+  if (command === "pier") {
+    if (positionals[1] !== "status" || positionals.length > 2) {
+      console.error(t().pierUsage);
+      return 1;
+    }
+    return finish<{ type: "pier-status"; rows: PierRow[] }>({ command: "pier-status" }, "pier-status", (r) =>
+      printPierRows(r.rows),
+    );
+  }
+
+  if (values.list) {
+    return finish<{ type: "exposed-list"; list: ExposedList }>(
+      { command: "exposed", controlUrl: values.control },
+      "exposed-list",
+      ({ list }) => {
+        const m = t();
+        console.log(m.exposeAllowed(list.allowed));
+        console.log(m.exposePierAddress(list.pier?.publicIpv4 ?? null, list.pier?.publicIpv6 ?? null));
+        if (list.names.length === 0) console.log(m.exposeNone);
+        for (const name of list.names) printExposed(name);
+      },
+    );
+  }
+
+  if (values.remove !== undefined) {
+    if (positionals.length > 1) {
+      console.error(t().exposeUsage);
+      return 1;
+    }
+    return finish<{ type: "exposed"; exposed: ExposedName }>(
+      { command: "unexpose", controlUrl: values.control, name: values.remove },
+      "exposed",
+      ({ exposed }) => printExposed(exposed),
+    );
+  }
+
+  const [, name, localUrl, ...rest] = positionals;
+  if (!name || !localUrl || rest.length > 0) {
+    console.error(t().exposeUsage);
+    return 1;
+  }
+  const given = values["listen-port"];
+  const port = given === undefined ? undefined : Number(given);
+  if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+    console.error(t().exposeListenPort(given ?? ""));
+    return 1;
+  }
+  return finish<{ type: "exposed"; exposed: ExposedName }>(
+    { command: "expose", controlUrl: values.control, name, localUrl, port },
+    "exposed",
+    ({ exposed }) => printExposed(exposed),
+  );
+}
+
 async function main(): Promise<number> {
   if (values.help || command === "help") {
     console.log(usage);
@@ -435,6 +554,14 @@ async function main(): Promise<number> {
     if (answer) console.log(answer);
     for (const line of describeUpdate(response.update)) console.log(line);
     return 0;
+  }
+
+  if (command === "expose" || command === "pier") {
+    if (!daemon) {
+      console.error(t().exposeNeedsService);
+      return 1;
+    }
+    return runExpose(daemon);
   }
 
   if (command === "login") {

@@ -32,6 +32,14 @@ const en = {
   wave cert  [name…] get a TLS certificate for this device and keep it renewed
   wave certs         list the certificates this device holds
 
+  wave expose <name> <url>  put a name of this wave into the open network and
+                     proxy it to a service here; <url> is http(s)://host:port,
+                     on this device or in its LAN (needs the operator's
+                     allow-pier, and a certificate: wave cert <name>)
+  wave expose --list      the names this device has put out, and where each stands
+  wave expose --remove <name>  take a name out again
+  wave pier status   the pier names and why one does not work yet
+
   wave version    which build this is, and the service's update state
   wave update     install the newest release on offer now, instead of later
                   (--channel <name|server>, --auto-update on|off change settings)
@@ -68,6 +76,7 @@ Options:
   --binary <path>   where the installed binary lives (install; default
                     /usr/local/bin/wave)
   --wildcard        ask for *.<wave domain> (an operator has to allow it first)
+  --listen-port <n> port on the wave address that "wave expose" listens on (default 443)
   --control <url>   also picks the wave for "wave cert" on a multi-wave device
   --channel <name>  update channel to ask for: stable, insiders, develop, or
                     "server" to take each server's default (update, install)
@@ -136,6 +145,70 @@ The language follows the system (LANG, LC_ALL, …); WAVE_LANG=en|de overrides i
   ].join("\n"),
   noCertificates: "no certificates yet — `wave cert` asks for one",
   certUntil: (until: string) => `until ${until}`,
+  exposeNeedsService:
+    "exposing a name needs the service: it holds the tunnel the pier connects to and answers for the name (wave install)",
+  exposeUsage:
+    "usage: wave expose <name> <http(s)://host:port>  |  wave expose --list  |  wave expose --remove <name>",
+  pierUsage: "usage: wave pier status",
+  exposeListenPort: (value: string) => `--listen-port takes a port between 1 and 65535, not ${value}`,
+  exposeName: (dnsName: string, port: number, localUrl: string | null) =>
+    `${dnsName}  port ${port}  ->  ${localUrl ?? "(no service known here)"}`,
+  exposeRemoved: (dnsName: string) => `${dnsName} is out of the open network`,
+  exposeState: (state: string, dnsName: string, detail: string | null) => {
+    switch (state) {
+      case "listening":
+        return "the proxy is listening";
+      case "no-certificate":
+        return `no certificate for ${dnsName}, next step: \`wave cert ${dnsName}\``;
+      case "certificate-expired":
+        return `the certificate for ${dnsName} has expired, next step: \`wave cert ${dnsName}\``;
+      case "no-address":
+      case "tunnel-down":
+        return "the tunnel is not up, so nothing listens yet; `wave up` brings it up";
+      case "failed":
+        return `could not listen: ${detail ?? "unknown reason"}`;
+      case "removed":
+        return "removed";
+      case "unmapped":
+        return `the server has this name but this device has no service for it; \`wave expose ${dnsName} <url>\` sets one`;
+      case "not-claimed":
+        return `the server no longer has this name (the operator may have taken the pier away); \`wave expose --remove ${dnsName}\` clears it here`;
+      case "reachable":
+        return "the device behind it can be reached";
+      case "unreachable":
+        return "the device behind it cannot be reached: offline, or no path yet";
+      default:
+        return state;
+    }
+  },
+  exposeDns: (dns: string, error: string | null) => {
+    switch (dns) {
+      case "published":
+        return "public records: written";
+      case "manual":
+        return "public records: this wave keeps its zone by hand, so somebody has to create:";
+      case "unconfigured":
+        return "public records: the wave has no DNS provider set up, so somebody has to create:";
+      case "failed":
+        return `public records: the provider refused (${error ?? "no reason given"}); the name is kept, and asking again tries again`;
+      default:
+        return `public records: ${dns}`;
+    }
+  },
+  exposeRecord: (type: string, name: string, value: string) => `  ${type}  ${name}  ${value}`,
+  exposeNone: "this device has put no name out",
+  exposeAllowed: (allowed: boolean): string =>
+    allowed
+      ? "pier: the operator has allowed it for this device"
+      : "pier: the operator has not allowed it for this device yet (`admin.ts allow-pier`)",
+  exposePierAddress: (v4: string | null, v6: string | null): string =>
+    v4 || v6
+      ? `pier address: ${[v4, v6].filter(Boolean).join(", ")}`
+      : "pier address: none named yet (`admin.ts set-pier`)",
+  pierNone: "no pier names here",
+  pierOwn: "own",
+  pierServed: "serves",
+  pierTarget: (hostname: string | null, ipv4: string) => `${hostname ?? "unknown device"} (${ipv4})`,
 
   // ---- render.ts ----
   waitingForApproval: "Waiting for approval.",
@@ -250,6 +323,15 @@ const de: typeof en = {
   wave cert  [name…] ein TLS-Zertifikat für dieses Gerät holen und erneuern
   wave certs         die Zertifikate dieses Geräts auflisten
 
+  wave expose <name> <url>  einen Namen dieses Waves ins offene Netz stellen und
+                     an einen Dienst hier weiterreichen; <url> ist
+                     http(s)://host:port, auf diesem Gerät oder in seinem LAN
+                     (braucht allow-pier vom Betreiber und ein Zertifikat:
+                     wave cert <name>)
+  wave expose --list      die Namen, die dieses Gerät freigegeben hat, und wie es um jeden steht
+  wave expose --remove <name>  einen Namen wieder herausnehmen
+  wave pier status   die Pier-Namen und warum einer noch nicht geht
+
   wave version    welcher Build das ist, und der Update-Stand des Dienstes
   wave update     das neueste angebotene Release jetzt installieren statt später
                   (--channel <name|server>, --auto-update on|off ändern Einstellungen)
@@ -286,6 +368,7 @@ Optionen:
   --binary <path>   wo das installierte Binary liegt (install; Vorgabe
                     /usr/local/bin/wave)
   --wildcard        *.<Wave-Domain> anfordern (ein Operator muss es erst erlauben)
+  --listen-port <n> Port auf der Wave-Adresse, auf dem "wave expose" lauscht (Standard 443)
   --control <url>   wählt auf einem Gerät in mehreren Waves auch den für "wave cert"
   --channel <name>  gewünschter Update-Kanal: stable, insiders, develop, oder
                     "server" für die Vorgabe jedes Servers (update, install)
@@ -350,6 +433,70 @@ Die Sprache folgt dem System (LANG, LC_ALL, …); WAVE_LANG=en|de setzt sie fest
   ].join("\n"),
   noCertificates: "noch keine Zertifikate — `wave cert` fordert eins an",
   certUntil: (until) => `bis ${until}`,
+  exposeNeedsService:
+    "einen Namen freizugeben braucht den Dienst: er hält den Tunnel, an den sich der Pier anschließt, und antwortet für den Namen (wave install)",
+  exposeUsage:
+    "Aufruf: wave expose <name> <http(s)://host:port>  |  wave expose --list  |  wave expose --remove <name>",
+  pierUsage: "Aufruf: wave pier status",
+  exposeListenPort: (value) => `--listen-port nimmt einen Port zwischen 1 und 65535, nicht ${value}`,
+  exposeName: (dnsName, port, localUrl) =>
+    `${dnsName}  Port ${port}  ->  ${localUrl ?? "(hier kein Dienst bekannt)"}`,
+  exposeRemoved: (dnsName) => `${dnsName} ist nicht mehr im offenen Netz`,
+  exposeState: (state, dnsName, detail) => {
+    switch (state) {
+      case "listening":
+        return "der Proxy lauscht";
+      case "no-certificate":
+        return `kein Zertifikat für ${dnsName}, nächster Schritt: \`wave cert ${dnsName}\``;
+      case "certificate-expired":
+        return `das Zertifikat für ${dnsName} ist abgelaufen, nächster Schritt: \`wave cert ${dnsName}\``;
+      case "no-address":
+      case "tunnel-down":
+        return "der Tunnel ist nicht oben, also lauscht noch nichts; `wave up` bringt ihn hoch";
+      case "failed":
+        return `Lauschen nicht möglich: ${detail ?? "Grund unbekannt"}`;
+      case "removed":
+        return "entfernt";
+      case "unmapped":
+        return `der Server kennt den Namen, dieses Gerät aber keinen Dienst dafür; \`wave expose ${dnsName} <url>\` legt einen fest`;
+      case "not-claimed":
+        return `der Server kennt den Namen nicht mehr (vielleicht hat der Betreiber den Pier entzogen); \`wave expose --remove ${dnsName}\` räumt ihn hier ab`;
+      case "reachable":
+        return "das Gerät dahinter ist erreichbar";
+      case "unreachable":
+        return "das Gerät dahinter ist nicht erreichbar: offline oder noch kein Pfad";
+      default:
+        return state;
+    }
+  },
+  exposeDns: (dns, error) => {
+    switch (dns) {
+      case "published":
+        return "öffentliche Records: geschrieben";
+      case "manual":
+        return "öffentliche Records: dieser Wave pflegt seine Zone von Hand, also muss jemand anlegen:";
+      case "unconfigured":
+        return "öffentliche Records: der Wave hat keinen DNS-Anbieter eingerichtet, also muss jemand anlegen:";
+      case "failed":
+        return `öffentliche Records: der Anbieter lehnt ab (${error ?? "ohne Angabe"}); der Name bleibt, und noch einmal fragen versucht es erneut`;
+      default:
+        return `öffentliche Records: ${dns}`;
+    }
+  },
+  exposeRecord: (type, name, value) => `  ${type}  ${name}  ${value}`,
+  exposeNone: "dieses Gerät hat keinen Namen freigegeben",
+  exposeAllowed: (allowed) =>
+    allowed
+      ? "Pier: der Betreiber hat ihn für dieses Gerät erlaubt"
+      : "Pier: der Betreiber hat ihn für dieses Gerät noch nicht erlaubt (`admin.ts allow-pier`)",
+  exposePierAddress: (v4, v6) =>
+    v4 || v6
+      ? `Adresse des Piers: ${[v4, v6].filter(Boolean).join(", ")}`
+      : "Adresse des Piers: noch keine benannt (`admin.ts set-pier`)",
+  pierNone: "hier gibt es keine Pier-Namen",
+  pierOwn: "eigen",
+  pierServed: "bedient",
+  pierTarget: (hostname, ipv4) => `${hostname ?? "unbekanntes Gerät"} (${ipv4})`,
 
   waitingForApproval: "Wartet auf Freigabe.",
   openLink: "Öffne diesen Link, um dieses Gerät zu verbinden:",
