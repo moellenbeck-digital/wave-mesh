@@ -42,6 +42,7 @@ COPY packages/i18n/package.json packages/i18n/
 COPY packages/ipc/package.json packages/ipc/
 COPY packages/magicsock/package.json packages/magicsock/
 COPY packages/proto/package.json packages/proto/
+COPY packages/sni/package.json packages/sni/
 # --omit=optional cuts dbus-next's `usocket`, and with it the whole node-gyp
 # tree underneath. @wave/client pulls in @wave/tray because one binary carries
 # every role, but a connector never draws an icon, and node-gyp's own

@@ -1,0 +1,58 @@
+# Ein Pier tritt einem Wave bei.
+#
+#   cp secret.env.example secret.env   # den Pre-Auth-Key eintragen
+#   kubectl apply -k .
+#
+# Danach, auf der Shell des Control-Servers, die Schlösser öffnen:
+#   bun apps/control/src/admin.ts set-pier   <wave> wave-pier-0 --ipv4 <öffentliche Adresse>
+#   bun apps/control/src/admin.ts allow-pier <wave> <gerät>
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/moellenbeck-digital/wave-mesh/wave-reverse-proxy
+    newTag: "REPLACE_WITH_IMAGE_TAG"
+
+configMapGenerator:
+  - name: wave-pier-config
+    namespace: wave-pier
+    behavior: merge
+    literals:
+      - WAVE_CONTROL_URL=https://control.example.com
+
+patches:
+  # Die Speicherklasse für die Anmeldung; siehe das Overlay des Connectors für
+  # die Gründe, sie hier und nicht in der Basis zu nennen.
+  - target: { kind: StatefulSet, name: wave-pier }
+    patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: wave-pier
+        namespace: wave-pier
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: state
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: local-path
+              resources:
+                requests:
+                  storage: 1Gi
+
+secretGenerator:
+  - name: wave-auth
+    namespace: wave-pier
+    envs:
+      - secret.env
+
+  # Der Zugang zu privaten Images, siehe deployment/README.md.
+  - name: ghcr
+    namespace: wave-pier
+    type: kubernetes.io/dockerconfigjson
+    files:
+      - .dockerconfigjson=dockerconfig.json

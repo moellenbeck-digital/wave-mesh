@@ -1,4 +1,11 @@
-import { CHALLENGE_TTL_SECONDS, type DnsProvider, DnsProviderError, zoneCandidates } from "./provider.ts";
+import {
+  ADDRESS_TTL_SECONDS,
+  addressRecordType,
+  CHALLENGE_TTL_SECONDS,
+  type DnsProvider,
+  DnsProviderError,
+  zoneCandidates,
+} from "./provider.ts";
 
 const API = "https://api.cloudflare.com/client/v4";
 
@@ -60,6 +67,9 @@ export function cloudflareProvider(token: string, http: typeof fetch = fetch): D
     throw new DnsProviderError(`cloudflare: no zone of this account answers for ${recordName}`);
   };
 
+  const recordsAt = async (zone: string, type: string, name: string) =>
+    call<Record[]>(`/zones/${zone}/dns_records?type=${type}&name=${encodeURIComponent(name)}`);
+
   return {
     kind: "cloudflare",
 
@@ -80,6 +90,32 @@ export function cloudflareProvider(token: string, http: typeof fetch = fetch): D
         // Cloudflare stores the value unquoted; compare both, because a record
         // put there by hand may well carry the quotes.
         if (record.content !== value && record.content !== `"${value}"`) continue;
+        await call(`/zones/${zone}/dns_records/${record.id}`, { method: "DELETE" });
+      }
+    },
+
+    async setAddress(name, address) {
+      const zone = await zoneOf(name);
+      const type = addressRecordType(address);
+      const existing = await recordsAt(zone, type, name);
+      let present = false;
+      for (const record of existing) {
+        if (record.content === address && !present) {
+          present = true;
+          continue;
+        }
+        await call(`/zones/${zone}/dns_records/${record.id}`, { method: "DELETE" });
+      }
+      if (present) return;
+      await call(`/zones/${zone}/dns_records`, {
+        method: "POST",
+        body: JSON.stringify({ type, name, content: address, ttl: ADDRESS_TTL_SECONDS }),
+      });
+    },
+
+    async removeAddress(name, type) {
+      const zone = await zoneOf(name);
+      for (const record of await recordsAt(zone, type, name)) {
         await call(`/zones/${zone}/dns_records/${record.id}`, { method: "DELETE" });
       }
     },

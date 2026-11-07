@@ -34,6 +34,7 @@ import { machineRoutes } from "./routes/machine.ts";
 import { pageMessages } from "./routes/messages.ts";
 import { safeNext } from "./routes/next.ts";
 import { passwordRoutes } from "./routes/password.ts";
+import { pierRoutes } from "./routes/piers.ts";
 import { serviceRoutes } from "./routes/services.ts";
 import { updateRoutes } from "./routes/update.ts";
 import { waveRoutes } from "./routes/waves.ts";
@@ -67,6 +68,8 @@ export interface AppDeps {
    * does that, so a test app never polls anything on its own.
    */
   releases?: ReleaseFeed;
+  /** How the DNS providers are reached when a name goes to the pier. Only the tests replace it. */
+  dnsFetch?: typeof fetch;
 }
 
 type Vars = { user: SessionUser | null };
@@ -77,7 +80,16 @@ function sameToken(a: string | undefined, b: string | undefined): boolean {
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
-export function createApp({ db, config, providers, signingKey, webFetch, certs, releases }: AppDeps) {
+export function createApp({
+  db,
+  config,
+  providers,
+  signingKey,
+  webFetch,
+  certs,
+  releases,
+  dnsFetch,
+}: AppDeps) {
   const app = new Hono<{ Variables: Vars }>();
 
   /**
@@ -133,6 +145,7 @@ export function createApp({ db, config, providers, signingKey, webFetch, certs, 
   app.route("/", machineRoutes({ db, config, signingKey, hub, nonces }));
   app.route("/", certRoutes({ db, certs: certs ?? new CertificateService({ db, config }), nonces }));
   app.route("/", serviceRoutes({ db, hub, nonces }));
+  app.route("/", pierRoutes({ db, config, hub, nonces, http: dnsFetch }));
   app.route("/", updateRoutes({ db, releases: updates, nonces }));
   app.route("/", waveRoutes({ db, config, hub }));
   app.route("/", billingRoutes({ db, config, hub }));

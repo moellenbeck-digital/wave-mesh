@@ -1,0 +1,21 @@
+# Der Pier-Knoten (D12): ein Name aus dem Wave im offenen Netz.
+#
+# Ein eigener Wurzelbaum neben server/ und cluster/: er läuft auf einer
+# öffentlich erreichbaren Maschine, die sonst nichts tut -- ein Pier ist ein
+# Bastion-Host des Waves.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: wave-pier
+
+resources:
+  - namespace.yaml
+  - pier.yaml
+
+configMapGenerator:
+  - name: wave-pier-config
+    literals:
+      # Welcher Wave. Dieselbe Adresse, die `wave login` bekäme.
+      - WAVE_CONTROL_URL=https://wave.example.com
+      # Wo der Pier im Pod lauscht. Der Service legt 443 darauf.
+      - WAVE_PIER_PORT=8443

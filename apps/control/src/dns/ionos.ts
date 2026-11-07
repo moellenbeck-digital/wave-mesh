@@ -1,4 +1,10 @@
-import { type DnsProvider, DnsProviderError, zoneCandidates } from "./provider.ts";
+import {
+  type AddressType,
+  addressRecordType,
+  type DnsProvider,
+  DnsProviderError,
+  zoneCandidates,
+} from "./provider.ts";
 
 const API = "https://api.hosting.ionos.com/dns/v1";
 
@@ -69,12 +75,13 @@ export function ionosProvider(apiKey: string, http: typeof fetch = fetch): DnsPr
     throw new DnsProviderError(`ionos: no zone of this account answers for ${recordName}`);
   };
 
-  /** The TXT records already sitting at this name, which is all we may touch. */
-  const txtAt = async (zone: Zone, name: string): Promise<Record[]> => {
-    const query = `recordName=${encodeURIComponent(name)}&recordType=TXT`;
+  /** The records of one type already sitting at this name, which is all we may touch. */
+  const recordsAt = async (zone: Zone, name: string, type: "TXT" | AddressType): Promise<Record[]> => {
+    const query = `recordName=${encodeURIComponent(name)}&recordType=${type}`;
     const { records } = await call<{ records?: Record[] }>(`/zones/${zone.id}?${query}`);
-    return (records ?? []).filter((record) => record.type === "TXT" && record.name === name);
+    return (records ?? []).filter((record) => record.type === type && record.name === name);
   };
+  const txtAt = (zone: Zone, name: string) => recordsAt(zone, name, "TXT");
 
   return {
     kind: "ionos",
@@ -99,6 +106,33 @@ export function ionosProvider(apiKey: string, http: typeof fetch = fetch): DnsPr
         // IONOS hands TXT content back quoted, unlike the other three. Both
         // forms are compared so a record put there by hand is found too.
         if (record.content !== value && record.content !== `"${value}"`) continue;
+        await call(`/zones/${zone.id}/records/${record.id}`, { method: "DELETE" });
+      }
+    },
+
+    async setAddress(name, address) {
+      const zone = await zoneOf(name);
+      const type = addressRecordType(address);
+      let present = false;
+      for (const record of await recordsAt(zone, name, type)) {
+        if (record.content === address && !present) {
+          present = true;
+          continue;
+        }
+        await call(`/zones/${zone.id}/records/${record.id}`, { method: "DELETE" });
+      }
+      if (present) return;
+      await call(`/zones/${zone.id}/records`, {
+        method: "POST",
+        body: JSON.stringify([
+          { name, type, content: address, ttl: IONOS_TTL_SECONDS, prio: 0, disabled: false },
+        ]),
+      });
+    },
+
+    async removeAddress(name, type) {
+      const zone = await zoneOf(name);
+      for (const record of await recordsAt(zone, name, type)) {
         await call(`/zones/${zone.id}/records/${record.id}`, { method: "DELETE" });
       }
     },

@@ -510,6 +510,8 @@ describe("verifying a domain", () => {
       removeTxt: async (name: string, value: string) => {
         removed.push(`${name}=${value}`);
       },
+      setAddress: async () => {},
+      removeAddress: async () => {},
     };
 
     await verifyZoneAccess(provider, "wave.example.com");

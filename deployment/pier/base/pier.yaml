@@ -1,0 +1,152 @@
+# Der Pier-Knoten (D12): ein Name aus dem Wave im offenen Netz.
+#
+# Zwei Container in einem Pod, weil sie derselbe Teilnehmer sind: der Daemon
+# hält den Tunnel und die signierte Netmap, der Pier liest aus ihr, welche Namen
+# draußen stehen, und spleißt die Verbindungen dorthin. Sie teilen sich eine
+# Anmeldung, eine Zustandsdatei und eine Identität.
+#
+# Der Pier hält **keinen Schlüssel und kein Zertifikat** und terminiert nichts:
+# er liest die SNI aus dem ClientHello und schiebt danach nur Bytes. Die Sitzung
+# endet auf dem Gerät hinter dem Namen, mit dessen eigenem Zertifikat (D7).
+#
+# Ein Pier ist ein Knoten im Wave mit öffentlicher Adresse. Solange Policies ihn
+# nicht zurückhalten, ist seine Übernahme ein Fuß in der Tür zum ganzen Wave --
+# er gehört auf eine eigene Maschine bzw. in einen eigenen Cluster, und sonst
+# läuft dort nichts.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wave-pier
+  labels:
+    app.kubernetes.io/name: wave-pier
+    app.kubernetes.io/part-of: wave-mesh
+spec:
+  # Ein StatefulSet aus demselben Grund wie beim Connector: die Anmeldung liegt
+  # auf einem Volume, und der Knoten heißt `wave-pier-0` statt einer neuen
+  # Zufallsendung nach jedem Rollout, die eine Leiche in der Geräteliste
+  # hinterlässt.
+  serviceName: wave-pier
+  # Genau einer. Der Wave hat einen Pier (`admin.ts set-pier`), und ein zweiter
+  # Knoten wäre ein zweiter Ort, an dem derselbe Name ankäme.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wave-pier
+  template:
+    metadata:
+      labels:
+        app: wave-pier
+        app.kubernetes.io/name: wave-pier
+    spec:
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr
+      containers:
+        - name: daemon
+          image: ghcr.io/moellenbeck-digital/wave-mesh/wave-reverse-proxy
+          command: ["bun", "apps/client/src/cli.ts", "daemon"]
+          envFrom:
+            - configMapRef:
+                name: wave-pier-config
+            - secretRef:
+                name: wave-auth
+          securityContext:
+            # Root, und das ist der Punkt: der Daemon legt ein TUN-Gerät an und
+            # setzt Adressen und Routen. Mehr als NET_ADMIN und /dev/net/tun
+            # braucht er nicht -- STUN und der Relay-Fallback tragen den Tunnel
+            # ohne eingehenden Port hinaus.
+            capabilities:
+              add: ["NET_ADMIN"]
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/wave }
+            - { name: run, mountPath: /run/wave }
+            - { name: tun, mountPath: /dev/net/tun }
+          # Mit dem Pre-Auth-Key tritt der Pod ohne Browser bei; `up` tut das
+          # absichtlich nie selbst. Läuft bei jedem Start, ein Gerät, das schon
+          # im Wave ist, verbraucht dabei keinen Zug des Schlüssels.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - >-
+                    for i in $(seq 1 30); do
+                      bun /app/apps/client/src/cli.ts login "$WAVE_CONTROL_URL"
+                      --auth-key "$WAVE_AUTH_KEY" && exit 0; sleep 2;
+                    done
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+
+        - name: pier
+          image: ghcr.io/moellenbeck-digital/wave-mesh/wave-reverse-proxy
+          command: ["bun", "apps/pier/src/main.ts"]
+          envFrom:
+            - configMapRef:
+                name: wave-pier-config
+          env:
+            # Die eigene Adresse des Pods, nie 0.0.0.0: der Pod teilt sein Netz
+            # mit wave0, und überall gebunden antwortete der Pier auch auf
+            # seiner Wave-Adresse -- jeder Peer könnte über ihn einen Namen
+            # erreichen, den eine Policy ihm verwehrt hätte.
+            - name: WAVE_PIER_HOST
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+          ports:
+            - { name: tls, containerPort: 8443, protocol: TCP }
+          volumeMounts:
+            - { name: run, mountPath: /run/wave }
+          # Tunnel oben, Relay (falls angeboten) verbunden, und der Listener
+          # nimmt eine Verbindung an. Ein Pier mit totem Tunnel weist jeden
+          # Namen ab und sieht von außen wie ein funktionierender aus.
+          livenessProbe:
+            exec:
+              command: ["bun", "apps/pier/src/health.ts"]
+            initialDelaySeconds: 120
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 5
+          readinessProbe:
+            tcpSocket: { port: tls }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tun
+          hostPath: { path: /dev/net/tun, type: CharDevice }
+
+  volumeClaimTemplates:
+    # Die Anmeldung: Maschinenschlüssel, Node-Id und der gepinnte
+    # Signaturschlüssel des Servers. Welche Klasse es sein soll, sagt das
+    # Overlay; hier steht keine, damit die Vorgabe des Clusters greift.
+    - metadata:
+        name: state
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Das Ziel des Ingress. 443 draußen, 8443 im Pod: der Pier bindet über 1024 und
+# braucht deshalb keine Capability.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wave-pier
+  labels:
+    app.kubernetes.io/name: wave-pier
+    app.kubernetes.io/part-of: wave-mesh
+spec:
+  type: ClusterIP
+  selector:
+    app: wave-pier
+  ports:
+    - { name: tls, port: 443, targetPort: tls, protocol: TCP }

@@ -74,6 +74,31 @@ export const Service = z.looseObject({
 });
 export type Service = z.infer<typeof Service>;
 
+/**
+ * A name a device has put into the open network through the pier (D12).
+ *
+ * The pier node reads the SNI of an incoming connection, looks the name up in
+ * this list and splices the connection to `ipv4` on `port` through the tunnel.
+ * It holds no key and terminates nothing: the session ends on the device named
+ * here, with its own certificate (D7).
+ *
+ * The address is the target's own wave address, which is already in the
+ * `allowedIps` of its peer entry -- the list says *which* name goes *where*,
+ * the peers say *how* to get there.
+ */
+export const Pier = z.looseObject({
+  /** The label under the wave's suffix, e.g. "app". */
+  name: z.string().min(1),
+  dnsName: z.string().min(1),
+  /** The device that answers for the name. Always a peer (or self) of this netmap. */
+  nodeId: NodeId,
+  ipv4: Ipv4,
+  ipv6: Ipv6,
+  /** The TCP port on the device the connection is spliced to. */
+  port: z.number().int().min(1).max(65535),
+});
+export type Pier = z.infer<typeof Pier>;
+
 export const DnsConfig = z.looseObject({
   /** e.g. "wave.example.com" -- always a domain the wave owner controls. */
   suffix: z.string().min(1),
@@ -147,6 +172,15 @@ export const Netmap = z.looseObject({
    * thing to every reader here, and only one of them survives a signature.
    */
   services: z.array(Service).optional(),
+  /**
+   * Names the pier node serves to the open network (D12).
+   *
+   * Sent to the pier node itself and to the device that owns the name, nobody
+   * else. Optional and **without a default**, exactly like `services`: a wave
+   * without piers sends no field, and a reader that invented an empty list
+   * would canonicalise a different document than the one that was signed.
+   */
+  piers: z.array(Pier).optional(),
   /**
    * What this node lets in over the tunnel, when its wave has a policy (M7).
    *

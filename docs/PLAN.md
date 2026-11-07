@@ -788,6 +788,16 @@ Grenze sitzen kann), und ob es neben HTTPS weitere TLS-Dienste geben soll —
 SMTP oder IMAP mit STARTTLS lassen sich nicht nach SNI routen, weil die
 Verbindung im Klartext beginnt.
 
+**Stand der Umsetzung (Ticket #63):** Pier-Knoten (`apps/pier`, Image
+`wave-reverse-proxy`), `Netmap.piers`, `wave_piers`, die beiden Schlösser, die
+A/AAAA-Records über die Provider-API und der manuelle Modus sind gebaut. Zwei
+Festlegungen, die D12 offenließ: der Pier ist der Knoten, den der Betreiber mit
+`admin.ts set-pier` samt öffentlicher Adresse benennt (der Server rät keine
+Adresse und ein Gerät erklärt sich nicht selbst dazu), und unter einer Policy
+öffnet der Anspruch genau *Pier → Gerät, dieser Port*. Es fehlen `wave expose` /
+`wave pier` auf dem Client — das lokale Terminieren mit dem Knoten-Zertifikat und
+der Proxy an eine `localUrl` — und der Lauf gegen einen echten Ingress.
+
 ### D13 — Selbstaktualisierung der Clients
 
 **Problem:** Ein Client, der einmal installiert ist, bleibt auf seiner Version

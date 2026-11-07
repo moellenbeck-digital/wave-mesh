@@ -28,6 +28,7 @@ import {
 } from "../waves/invites.ts";
 import { canManage, changeRole, listMembers, removeMember, roleOf } from "../waves/members.ts";
 import { ownerOfNode, removeNode, renameNode } from "../waves/nodes.ts";
+import { unpublishPiersOfNode } from "../waves/pier-dns.ts";
 import {
   createWave,
   deleteWave,
@@ -459,6 +460,12 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
 
+    // Before the row goes: its names cascade with it, and with them the only
+    // record of which public records to take out of the zone.
+    await unpublishPiersOfNode(
+      { db, dnsSecret: config.dnsSecret },
+      { waveId, nodeId: c.req.param("nodeId") },
+    );
     const removed = await removeNode(db, waveId, c.req.param("nodeId"));
     // Already gone, or never in this wave -- the same answer either way, for
     // the same reason a wave one is not in looks like one that does not exist.

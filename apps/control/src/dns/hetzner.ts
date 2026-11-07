@@ -1,4 +1,6 @@
 import {
+  ADDRESS_TTL_SECONDS,
+  addressRecordType,
   CHALLENGE_TTL_SECONDS,
   type DnsProvider,
   DnsProviderError,
@@ -79,6 +81,43 @@ export function hetznerProvider(token: string, http: typeof fetch = fetch): DnsP
       for (const record of records) {
         if (record.type !== "TXT" || record.name !== wanted) continue;
         if (record.value !== value && record.value !== `"${value}"`) continue;
+        await call(`/records/${record.id}`, { method: "DELETE" });
+      }
+    },
+
+    async setAddress(name, address) {
+      const zone = await zoneOf(name);
+      const type = addressRecordType(address);
+      const wanted = relativeName(name, zone.name);
+      const { records } = await call<{ records: Record[] }>(`/records?zone_id=${zone.id}`);
+      let present = false;
+      for (const record of records) {
+        if (record.type !== type || record.name !== wanted) continue;
+        if (record.value === address && !present) {
+          present = true;
+          continue;
+        }
+        await call(`/records/${record.id}`, { method: "DELETE" });
+      }
+      if (present) return;
+      await call("/records", {
+        method: "POST",
+        body: JSON.stringify({
+          zone_id: zone.id,
+          type,
+          name: wanted,
+          value: address,
+          ttl: ADDRESS_TTL_SECONDS,
+        }),
+      });
+    },
+
+    async removeAddress(name, type) {
+      const zone = await zoneOf(name);
+      const { records } = await call<{ records: Record[] }>(`/records?zone_id=${zone.id}`);
+      const wanted = relativeName(name, zone.name);
+      for (const record of records) {
+        if (record.type !== type || record.name !== wanted) continue;
         await call(`/records/${record.id}`, { method: "DELETE" });
       }
     },

@@ -1,0 +1,334 @@
+import { isIP } from "node:net";
+import type { FilterRule } from "@wave/proto";
+import { and, asc, eq, isNotNull, ne, or, sql } from "drizzle-orm";
+import type { Database } from "../db/client.ts";
+import { nodes, wavePiers, waveServices, waves } from "../db/schema.ts";
+import { newId } from "../ids.ts";
+import { serviceLabel } from "./services.ts";
+
+/**
+ * Names in the open network, through the pier (D12).
+ *
+ * Two locks, and both are checked here and nowhere else: an operator allows the
+ * pier for a device (`nodes.pier_allowed`), and only then may that device claim
+ * a name and a port. A row in `wave_piers` is the claim. What the pier does with
+ * it -- read the SNI, look the name up, splice -- lives in `apps/pier`; what the
+ * zone says about it lives in `pier-dns.ts`.
+ *
+ * Names share one namespace with the devices and the services. No index spans
+ * three tables, so every write takes the same row lock on the wave that
+ * `syncServices()` does, which is also where `netmap_version` is serialised.
+ */
+
+export interface PierRow {
+  id: string;
+  name: string;
+  nodeId: string;
+  port: number;
+}
+
+/** The node an operator made the pier, and the addresses the world reaches it at. */
+export interface PierHost {
+  id: string;
+  hostname: string;
+  /** Wave address, which is what the other devices route to. */
+  waveIpv4: string;
+  waveIpv6: string;
+  /** Public address, configured with `admin.ts set-pier`. At least one is set. */
+  publicIpv4: string | null;
+  publicIpv6: string | null;
+}
+
+/** Something a person has to fix, with the status the route answers. */
+export interface PierRefusal {
+  error: string;
+  status: 400 | 403 | 404 | 409;
+}
+
+export type SetPierResult =
+  | { pier: PierRow; host: PierHost; dnsName: string; changed: boolean }
+  | PierRefusal;
+
+type NodeRow = typeof nodes.$inferSelect;
+
+export const toPierHost = (node: NodeRow): PierHost | null =>
+  node.pierIpv4 || node.pierIpv6
+    ? {
+        id: node.id,
+        hostname: node.hostname,
+        waveIpv4: node.ipv4,
+        waveIpv6: node.ipv6,
+        publicIpv4: node.pierIpv4,
+        publicIpv6: node.pierIpv6,
+      }
+    : null;
+
+/** The pier of a wave, if an operator has set one. */
+export async function findPierHost(db: Database, waveId: string): Promise<PierHost | null> {
+  const rows = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.waveId, waveId), or(isNotNull(nodes.pierIpv4), isNotNull(nodes.pierIpv6))))
+    .limit(1);
+  const row = rows[0];
+  return row ? toPierHost(row) : null;
+}
+
+/**
+ * A public name has to be somewhere the internet can resolve it. `.internal` is
+ * the placeholder a wave keeps until it has a domain of its own, and it can
+ * never be delegated -- so no record could ever make a name under it reachable.
+ */
+const isPublicSuffix = (suffix: string): boolean => suffix !== "internal" && !suffix.endsWith(".internal");
+
+/**
+ * Lets a device claim `name` for `port`, or changes the port of a claim it has.
+ *
+ * Everything the 409 stands for is decided under the lock: the name may be the
+ * device's own hostname, but never another device's, never a service's, and
+ * never a name some other device has already put out.
+ */
+export async function setPier(
+  db: Database,
+  input: { waveId: string; nodeId: string; name: string; port: number },
+): Promise<SetPierResult> {
+  return db.transaction(async (tx) => {
+    const waveRows = await tx.select().from(waves).where(eq(waves.id, input.waveId)).limit(1).for("update");
+    const wave = waveRows[0];
+    if (!wave) return { error: "the wave is gone", status: 404 };
+
+    const siblings = await tx.select().from(nodes).where(eq(nodes.waveId, input.waveId));
+    const self = siblings.find((node) => node.id === input.nodeId);
+    if (!self) return { error: "unknown node", status: 404 };
+
+    // The operator's lock comes first: a device that may not hear a different
+    // answer for a name that is taken than for one that is free.
+    if (!self.pierAllowed) {
+      return {
+        error: `the pier is not allowed for ${self.hostname}; an operator grants it with \`admin.ts allow-pier\``,
+        status: 403,
+      };
+    }
+
+    // Only the wave's own zone, and only names inside it -- a name from
+    // elsewhere would be a record and a route for a domain this wave does not own.
+    const label = serviceLabel(input.name, wave.dnsSuffix);
+    if (!label) return { error: `${input.name} is not a name under ${wave.dnsSuffix}`, status: 400 };
+    if (!isPublicSuffix(wave.dnsSuffix)) {
+      return {
+        error: `${wave.dnsSuffix} is a placeholder domain and cannot be reached from the open network; give the wave a domain of its own first`,
+        status: 409,
+      };
+    }
+
+    const host = siblings.map(toPierHost).find((entry): entry is PierHost => entry !== null);
+    if (!host) {
+      return {
+        error: "this wave has no pier; an operator sets one with `admin.ts set-pier`",
+        status: 409,
+      };
+    }
+
+    const fqdn = `${label}.${wave.dnsSuffix}`;
+    if (siblings.some((node) => node.hostname === label && node.id !== self.id)) {
+      return { error: `${fqdn} is another device in this wave`, status: 409 };
+    }
+    const services = await tx.select().from(waveServices).where(eq(waveServices.waveId, input.waveId));
+    if (services.some((service) => service.name === label)) {
+      return { error: `${fqdn} is a service in this wave`, status: 409 };
+    }
+    const existing = await tx.select().from(wavePiers).where(eq(wavePiers.waveId, input.waveId));
+    const same = existing.find((pier) => pier.name === label);
+    if (same && same.nodeId !== self.id) {
+      return { error: `${fqdn} is already put out by another device`, status: 409 };
+    }
+
+    let changed: boolean;
+    let row: PierRow;
+    if (same) {
+      changed = same.port !== input.port;
+      if (changed) {
+        await tx
+          .update(wavePiers)
+          .set({ port: input.port, updatedAt: new Date() })
+          .where(eq(wavePiers.id, same.id));
+      }
+      row = { id: same.id, name: same.name, nodeId: same.nodeId, port: input.port };
+    } else {
+      changed = true;
+      row = { id: newId("pier"), name: label, nodeId: self.id, port: input.port };
+      await tx.insert(wavePiers).values({ ...row, waveId: input.waveId });
+    }
+
+    if (changed) {
+      await tx
+        .update(waves)
+        .set({ netmapVersion: sql`${waves.netmapVersion} + 1` })
+        .where(eq(waves.id, input.waveId));
+    }
+    return { pier: row, host, dnsName: fqdn, changed };
+  });
+}
+
+export async function listPiers(db: Database, waveId: string, nodeId?: string): Promise<PierRow[]> {
+  return db
+    .select({ id: wavePiers.id, name: wavePiers.name, nodeId: wavePiers.nodeId, port: wavePiers.port })
+    .from(wavePiers)
+    .where(
+      nodeId ? and(eq(wavePiers.waveId, waveId), eq(wavePiers.nodeId, nodeId)) : eq(wavePiers.waveId, waveId),
+    )
+    .orderBy(asc(wavePiers.name));
+}
+
+/**
+ * Takes one claim back -- only a device's own, so one device cannot end
+ * another's. Null when there was nothing to remove.
+ */
+export async function removePier(
+  db: Database,
+  input: { waveId: string; nodeId: string; name: string },
+): Promise<PierRow | null> {
+  const gone = await db
+    .delete(wavePiers)
+    .where(
+      and(
+        eq(wavePiers.waveId, input.waveId),
+        eq(wavePiers.nodeId, input.nodeId),
+        eq(wavePiers.name, input.name),
+      ),
+    )
+    .returning({ id: wavePiers.id, name: wavePiers.name, nodeId: wavePiers.nodeId, port: wavePiers.port });
+  const row = gone[0];
+  if (!row) return null;
+  await bumpNetmap(db, input.waveId);
+  return row;
+}
+
+/**
+ * Takes every claim of one device back: what `deny-pier` does, because a lock
+ * that is closed and leaves the door open is no lock.
+ */
+export async function removePiersOf(db: Database, waveId: string, nodeId: string): Promise<PierRow[]> {
+  const gone = await db
+    .delete(wavePiers)
+    .where(and(eq(wavePiers.waveId, waveId), eq(wavePiers.nodeId, nodeId)))
+    .returning({ id: wavePiers.id, name: wavePiers.name, nodeId: wavePiers.nodeId, port: wavePiers.port });
+  if (gone.length > 0) await bumpNetmap(db, waveId);
+  return gone;
+}
+
+const bumpNetmap = (db: Database, waveId: string) =>
+  db
+    .update(waves)
+    .set({ netmapVersion: sql`${waves.netmapVersion} + 1` })
+    .where(eq(waves.id, waveId));
+
+/**
+ * The first lock, opened or closed for one device. Closing it is the caller's
+ * to follow with `removePiersOf()`: the flag decides who may *claim*, and a
+ * claim made before it was withdrawn must not outlive it.
+ */
+export async function setPierAllowed(
+  db: Database,
+  waveId: string,
+  nodeId: string,
+  allowed: boolean,
+): Promise<{ hostname: string } | null> {
+  const updated = await db
+    .update(nodes)
+    .set({ pierAllowed: allowed })
+    .where(and(eq(nodes.waveId, waveId), eq(nodes.id, nodeId)))
+    .returning({ hostname: nodes.hostname });
+  return updated[0] ?? null;
+}
+
+export type SetPierHostResult = { host: PierHost } | { conflict: string } | { invalid: string };
+
+/**
+ * Makes one node the pier of its wave, with the addresses the world reaches it
+ * at -- configured, never guessed: behind an ingress the node cannot know them.
+ *
+ * One pier per wave. A second node would be a second answer to "where is this
+ * name", and the zone can only hold one of them.
+ */
+export async function setPierHost(
+  db: Database,
+  input: { waveId: string; nodeId: string; ipv4?: string; ipv6?: string },
+): Promise<SetPierHostResult> {
+  if (input.ipv4 === undefined && input.ipv6 === undefined) {
+    return { invalid: "a pier needs a public address, IPv4 or IPv6 or both" };
+  }
+  if (input.ipv4 !== undefined && isIP(input.ipv4) !== 4)
+    return { invalid: `${input.ipv4} is not an IPv4 address` };
+  if (input.ipv6 !== undefined && isIP(input.ipv6) !== 6)
+    return { invalid: `${input.ipv6} is not an IPv6 address` };
+
+  return db.transaction(async (tx) => {
+    await tx.select().from(waves).where(eq(waves.id, input.waveId)).limit(1).for("update");
+    const other = await tx
+      .select({ hostname: nodes.hostname })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.waveId, input.waveId),
+          ne(nodes.id, input.nodeId),
+          or(isNotNull(nodes.pierIpv4), isNotNull(nodes.pierIpv6)),
+        ),
+      )
+      .limit(1);
+    if (other[0]) {
+      return {
+        conflict: `${other[0].hostname} is already the pier of this wave; \`admin.ts clear-pier\` it first`,
+      };
+    }
+    const updated = await tx
+      .update(nodes)
+      .set({ pierIpv4: input.ipv4 ?? null, pierIpv6: input.ipv6 ?? null })
+      .where(and(eq(nodes.waveId, input.waveId), eq(nodes.id, input.nodeId)))
+      .returning();
+    const host = updated[0] ? toPierHost(updated[0]) : null;
+    if (!host) return { invalid: "unknown node" };
+    await tx
+      .update(waves)
+      .set({ netmapVersion: sql`${waves.netmapVersion} + 1` })
+      .where(eq(waves.id, input.waveId));
+    return { host };
+  });
+}
+
+/** Ends the pier of a wave; its claims stay, and wait for a new one. */
+export async function clearPierHost(db: Database, waveId: string): Promise<PierHost | null> {
+  const before = await findPierHost(db, waveId);
+  if (!before) return null;
+  await db
+    .update(nodes)
+    .set({ pierIpv4: null, pierIpv6: null })
+    .where(and(eq(nodes.waveId, waveId), eq(nodes.id, before.id)));
+  await bumpNetmap(db, waveId);
+  return before;
+}
+
+/**
+ * What a device that owns names lets the pier do, under a policy (M7).
+ *
+ * A policy is default deny, and the pier is no member the policy has heard of.
+ * The claim is itself the grant -- two locks and a named port -- so it opens
+ * exactly that: the pier's wave address to this device's address on this port,
+ * TCP, and nothing else. Without a policy nothing is added: everything is let in
+ * already, and a rule here would turn "no policy" into "some policy".
+ */
+export function pierFilter(
+  host: Pick<PierHost, "waveIpv4" | "waveIpv6">,
+  self: { ipv4: string; ipv6: string },
+  piers: Pick<PierRow, "port">[],
+): FilterRule[] {
+  const ports = [...new Set(piers.map((pier) => pier.port))].sort((a, b) => a - b);
+  if (ports.length === 0) return [];
+  return [
+    {
+      src: [`${host.waveIpv4}/32`, `${host.waveIpv6}/128`],
+      dst: [`${self.ipv4}/32`, `${self.ipv6}/128`],
+      ports: ports.map((port) => ({ proto: "tcp" as const, from: port, to: port })),
+    },
+  ];
+}

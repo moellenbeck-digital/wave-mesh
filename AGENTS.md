@@ -8,8 +8,10 @@ Erledigt: M0–M6 sowie M11, M10 (bis auf den Lauf auf echter Hardware, siehe
 Arbeit brauchten: Schreibzugriff auf die echte Zone. Der Server schreibt jetzt
 über eine Provider-API hinein, und genau das ist zugleich die Verifikation —
 wer die Zone schreiben kann, besitzt sie (siehe „Zertifikate"). Offen bleiben
-die optionalen öffentlichen A/AAAA-Records, die CNAME-Delegation (braucht
-autoritatives DNS, also M9) und die Aliase aus D6.
+die CNAME-Delegation (braucht autoritatives DNS, also M9) und die Aliase aus D6.
+Die öffentlichen A/AAAA-Records gibt es inzwischen für den Pier (M12, siehe „Der
+Pier“); eine zweite Art, einen Namen auf die Wave-Adresse zu veröffentlichen, die
+M5 meinte, gibt es nicht.
 
 ## Befehle
 
@@ -70,10 +72,12 @@ User-Namespace neu und legen dort Netns, veth, NAT und TUN an. Voraussetzungen:
 | `packages/disco` | authentifizierte Discovery-Pakete (X25519 + XChaCha20-Poly1305) |
 | `packages/magicsock` | UDP-Multiplexer vor WireGuard, STUN-Client, Relay-Client |
 | `packages/dns` | DNS-Codec und Split-DNS-Resolver |
+| `packages/sni` | den Namen vom Anfang einer Verbindung lesen (SNI, `Host`), ohne sie zu öffnen — Connector-Egress und Pier |
 | `packages/i18n` | welche Sprache jemand liest: Cookie, `Accept-Language`, Systemsprache, Rückfall Englisch |
 | `apps/tray` | Tray-Icon: Linux über D-Bus, macOS über `bun:ffi` und Cocoa |
 | `apps/connector` | Cluster-Seite von D11: leitet die Dienstadressen des Waves an den internen Ingress-Controller weiter |
 | `apps/operator` | liest `Ingress`/`HTTPRoute` der Klasse `wave` und meldet die Namen dem Control-Server |
+| `apps/pier` | Pier-Knoten (D12, Image `wave-reverse-proxy`): liest die SNI, schlägt den Namen in `Netmap.piers` nach und spleißt per WireGuard an das Gerät |
 | `apps/web` | Next.js-Oberfläche: Anmeldung, Wave- und Geräteübersicht, Gerätefreigabe, Mitglieder und Einladungen |
 | `mobile/core` | der Go-Kern für iOS und Android (D10) — dieselben Verträge, ein Tunnel, N Waves |
 | `mobile/ios`, `mobile/android` | die Plattform-Hosts: `NEPacketTunnelProvider` und `VpnService`, beide absichtlich dünn |
@@ -1841,6 +1845,118 @@ Operator gegen einen erfundenen API-Server —, aber nie in einem echten Cluster
 gefahren; von den Kustomize-Bäumen ist geprüft, dass sie bauen, mehr nicht. Das
 ist derselbe Stand wie beim Windows-Tray: benannt, nicht verschwiegen.
 
+## Der Pier (D12/M12)
+
+**Ein Name aus dem Wave im offenen Netz — ohne dass der Pier etwas lesen kann.** Ein
+Gerät gibt einen Namen unter der Domain des Waves frei; ein Browser im Internet
+löst ihn auf die öffentliche Adresse des **Pier-Knotens** auf, der die SNI aus dem
+ClientHello liest, den Namen in der signierten Netmap nachschlägt und die
+TCP-Verbindung über WireGuard an die Wave-Adresse des Geräts spleißt. TLS endet auf
+dem Gerät, mit dessen eigenem Zertifikat aus D7 (`wave cert`).
+
+```bash
+# Betreiber, auf dem Server
+bun apps/control/src/admin.ts set-pier   <wave> <hostname|node-id> --ipv4 <öffentlich> [--ipv6 <öffentlich>]
+bun apps/control/src/admin.ts allow-pier <wave> <hostname|node-id>     # erstes Schloss
+bun apps/control/src/admin.ts deny-pier  <wave> <hostname|node-id>     # nimmt die Namen mit
+bun apps/control/src/admin.ts clear-pier <wave>
+
+# Pier-Knoten (Image wave-reverse-proxy), wie ein Connector mit Pre-Auth-Key
+cd deployment/pier/overlays/example
+```
+
+Der Weg eines Namens: `POST /v1/piers` `{ name, port }` (Maschinenschlüssel, wie
+die Dienst- und Zertifikatsrouten) → `setPier()` → Zeile in `wave_piers`,
+`netmapVersion` hoch → `publishPierName()` schreibt A/AAAA → `buildNetmap()` trägt
+`piers` in die Netmap des Piers und des Besitzers ein. `DELETE /v1/piers/:name`
+macht das rückgängig, `GET /v1/piers` sagt, was ein Gerät darf und freigegeben hat.
+
+Was daran festliegt:
+
+- **Zwei Schlösser, beide in `setPier()`.** `nodes.pier_allowed` (Vorgabe aus,
+  nur der Betreiber) entscheidet, wer *beanspruchen* darf; die Zeile in
+  `wave_piers` ist der Anspruch. Die Erlaubnis zu entziehen **räumt die Namen ab**
+  (`removePiersOf()`, samt Records) — ein geschlossenes Schloss, das die Tür offen
+  lässt, ist keins. Das Schloss wird vor dem Namenskonflikt geprüft: ein Gerät
+  ohne Erlaubnis erfährt nichts darüber, welche Namen vergeben sind.
+- **Der Pier ist genau ein Knoten je Wave und wird gesagt, nie geraten.**
+  `nodes.pier_ipv4/pier_ipv6` tragen die öffentliche Adresse; ein Knoten mit einer
+  von beiden *ist* der Pier (`admin.ts set-pier`). Der Server sieht hinter einem
+  Ingress nicht, unter welcher Adresse die Welt den Pier erreicht, und ein Gerät
+  darf sich nicht selbst zum Pier erklären. Ein zweiter Pier wird abgelehnt (ein
+  Name hätte zwei Orte). Ohne Pier ist jede Freigabe 409.
+- **Der Name teilt den Namensraum mit Geräten und Diensten.** 409, wenn er ein
+  anderes Gerät, einen Dienst oder den Anspruch eines anderen Geräts trifft; der
+  eigene Hostname ist erlaubt (`laptop.wave.example.com` ist der Normalfall in
+  D12). Umgekehrt weist `syncServices()` einen Namen ab, den ein Pier trägt. Alles
+  unter derselben Zeilensperre auf `waves` wie die Dienste. Fremde Domains: 400.
+  Ein Wave auf dem Platzhalter `*.wave.internal` kann nichts veröffentlichen — 409,
+  denn dessen Namen lassen sich nie delegieren.
+- **`Netmap.piers` ist optional, `looseObject`, ohne `.default()`** — dieselbe
+  Regel wie bei `services`, aus demselben Grund (siehe „Dienste im Wave“). Der
+  Server lässt das Feld **weg**, solange es nichts zu sagen gibt: ein Wave ohne
+  Piers signiert exakt das Dokument von vorher (`test/piers.test.ts` prüft Hin- und
+  Rückweg mit der Signatur). Der Pier-Knoten bekommt alle Namen, der Besitzer nur
+  seine eigenen, alle anderen nichts.
+- **Unter einer Policy ist der Anspruch die Freigabe.** Der Pier und das Gerät
+  sehen einander (sonst wäre der WireGuard-Peer weg und die Antworten fielen),
+  und das Gerät bekommt eine Filterregel *Pier → Gerät, TCP, genau dieser Port*
+  (`pierFilter()`). Mehr nicht; ohne Policy kommt nichts dazu. Ein Gerät, das noch
+  nicht bestätigt ist (`approved = false`), steht in keiner Netmap — also auch
+  seine Namen nicht.
+- **Der Record zeigt auf den Pier, nie auf die Wave-Adresse.** `DnsProvider` kennt
+  zusätzlich `setAddress(name, adresse)` (macht sie zum *einzigen* A- bzw.
+  AAAA-Record am Namen, idempotent) und `removeAddress(name, typ)` — bewusst nur
+  das, über Cloudflare, Hetzner, IONOS und INWX. Ein Pier ohne IPv6 löscht einen
+  alten AAAA statt ihn stehenzulassen. Die Antwort sagt, wie es um die Records
+  steht: `published`, `manual` (der Wave pflegt seine Zone von Hand: Antwort nennt
+  die Records, wie bei dns-01), `unconfigured` (keine Zugangsdaten) oder `failed`
+  (Provider lehnt ab — der Anspruch steht, noch einmal fragen schreibt neu). Ein
+  Entzug, `deny-pier`, `clear-pier` und das Entfernen eines Geräts nehmen die
+  Records mit; Letzteres *vor* dem Löschen, weil die Zeilen sonst mit dem Gerät
+  verschwinden. **Eine zweite Art, einen Namen öffentlich auf die Wave-Adresse zu
+  stellen (das andere Opt-in aus M5), gibt es nicht** — der Ausschluss je Name ist
+  damit trivial erfüllt; wer es baut, muss ihn in `setPier()` durchsetzen.
+- **Der Pier terminiert nichts und hält keinen Schlüssel** (`apps/pier/src/proxy.ts`).
+  Er liest die SNI (`@wave/sni`, derselbe Parser wie der Connector-Egress) und
+  schiebt danach Bytes, das ClientHello eingeschlossen. Unbekannter Name, fehlende
+  SNI, kein TLS, Ziel weg, zu viele Verbindungen, Client sagt nichts: **Verbindung
+  schließen, kein TLS-Alert, keine Fehlerseite** — beides setzte Terminierung bzw.
+  verriete einem Scanner, welche Namen es gibt. Was los ist, steht im Log
+  (Ablehnungen höchstens einmal je 30 s, mit Zähler).
+- **Der Pier verlässt den Wave nie.** `pierTable()` nimmt einen Namen nur, wenn
+  seine Adresse die eines Peers (oder des Knotens selbst) ist — ein beschädigter
+  Eintrag, der auf einen Metadatendienst oder einen LAN-Host zeigte, machte ihn
+  sonst zur offenen Tür ins eigene Netz.
+- **Gebunden an eine benannte Adresse, nie an `0.0.0.0`** (`WAVE_PIER_HOST`, im Pod
+  `status.podIP`; ohne sie verweigert der Pier den Start). Der Pod teilt sein Netz
+  mit `wave0`: überall gebunden, könnte jeder Peer über die Wave-Adresse des Piers
+  einen Namen erreichen, den eine Policy ihm verwehrt. Er lauscht im Pod auf 8443
+  (`WAVE_PIER_PORT`), der Service legt 443 darauf.
+- **Der Pier-Knoten ist ein Bastion-Host.** Er ist Mitglied des Waves mit
+  öffentlicher Adresse; bei vollem Mesh und ohne Policy ist seine Übernahme ein Fuß
+  in der Tür zum ganzen Wave. Eigene Maschine bzw. eigener Cluster, sonst läuft
+  dort nichts.
+- **Die Kante gehört dem Pier.** Ein Ingress leitet *alles* auf TCP 443 per
+  SNI-Durchleitung an `wave-pier` (`deployment/pier/base/ingress.example.yaml`,
+  Traefik `IngressRouteTCP`, nicht Teil der Kustomization). Die Adresse dieses
+  Ingress ist die, die `set-pier` bekommt. Nur TCP und TLS: kein `h3` im HTTPS-RR,
+  keine ECH-Konfiguration — beides nähme dem Pier den Namen.
+- **Der Daemon reicht `piers` über das IPC** (`ProfileStatus.piers`,
+  `PierView`): der Pier liest sie wie der Connector die Dienste, und das Feld ist
+  dort defaultiert, weil nichts es signiert.
+- **Audit:** `pier.expose`, `pier.unexpose` (Gerät als Akteur) sowie
+  `admin.allow-pier`, `admin.deny-pier`, `admin.set-pier`, `admin.clear-pier`.
+
+**Ungeprüft:** der Pier an einem echten Ingress und einem echten Wave über das
+Internet (die Splice-Tests laufen über Loopback und ein echtes TLS-Handshake mit dem
+Zertifikat des Zielgeräts; das Image ist nicht gebaut, die Kustomize-Bäume nur
+gebaut, nicht angewendet), die Provider-Aufrufe gegen die echten APIs (nur Fakes),
+und `wave expose`/`wave pier` auf dem Client — dieser Teil des Tickets fehlt noch:
+das Gerät, das den Namen freigibt, ruft die Routen heute selbst auf, und das lokale
+Terminieren mit dem Knoten-Zertifikat samt Proxy an eine `localUrl` ist ein eigener
+Auftrag.
+
 ## Telefone
 
 Auf iOS und Android läuft vom Bun-Client nichts: kein `Bun.spawn`, also kein
@@ -2839,9 +2955,10 @@ GitHub Container Registry:
 | Relay | `ghcr.io/moellenbeck-digital/wave-mesh/relay` | `apps/relay/Dockerfile` |
 | Web | `ghcr.io/moellenbeck-digital/wave-mesh/web` | `apps/web/Dockerfile` |
 | Connector | `ghcr.io/moellenbeck-digital/wave-mesh/connector` | `apps/connector/Dockerfile` |
+| Pier | `ghcr.io/moellenbeck-digital/wave-mesh/wave-reverse-proxy` | `apps/pier/Dockerfile` |
 
 Der Build-Kontext ist **das Repo-Wurzelverzeichnis**, nicht das App-Verzeichnis
-— alle vier hängen an den Workspace-Paketen und stehen nicht für sich. Das
+— alle hängen an den Workspace-Paketen und stehen nicht für sich. Das
 Connector-Image trägt drei Kommandos (Daemon, Connector, Operator), weil sie
 derselbe Teilnehmer sind; welches läuft, entscheidet der Container.
 
