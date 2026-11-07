@@ -6,7 +6,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-### Neue Funktionen
+*Noch nichts seit v0.15.0.*
+
+---
+
+## ✅ Stable v0.15.0 (07.11.2026)
+
+### Neue Funktionen (gegenüber v0.14.0)
 
 - **DNS-Provider im Browser:** Eigentümer und Admins richten auf der neuen
   Seite „Zertifikate“ (`/waves/<id>/dns`) ein, wie ihr Wave die
