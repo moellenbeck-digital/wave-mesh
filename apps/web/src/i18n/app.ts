@@ -131,6 +131,7 @@ const en = {
   domainChangeHint:
     "Every device is then called {pattern}. Connected devices pick that up with the next netmap; a certificate is only possible for a domain you own.",
   accessLink: "Access: who reaches whom →",
+  certificatesLink: "Certificates: DNS provider →",
   devicesTitle: "Devices",
   wavePaused:
     "This wave is paused because its subscription is not active. Devices stay enrolled but reach nobody until it is again.",
@@ -302,6 +303,7 @@ const de: typeof en = {
   domainChangeHint:
     "Danach heißt jedes Gerät {pattern}. Verbundene Geräte übernehmen das mit der nächsten Netzkarte; ein Zertifikat gibt es nur für eine Domain, die dir gehört.",
   accessLink: "Zugriff: wer wen erreicht →",
+  certificatesLink: "Zertifikate: DNS-Provider →",
   devicesTitle: "Geräte",
   wavePaused:
     "Dieser Wave ist pausiert, weil sein Abo nicht aktiv ist. Die Geräte bleiben angemeldet, erreichen aber niemanden, bis es wieder aktiv ist.",

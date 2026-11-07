@@ -276,3 +276,25 @@ export async function fetchAudit(waveId: string, limit = 30): Promise<AuditEntry
   if (!res.ok) return [];
   return ((await res.json()) as { entries: AuditEntry[] }).entries;
 }
+
+/** How a wave answers dns-01 (D7), as `/api/waves/:id/dns` reports it -- never the credential itself. */
+export type DnsProviderKind = "cloudflare" | "hetzner" | "ionos" | "inwx" | "manual";
+
+export interface DnsSettings {
+  dnsSuffix: string;
+  /** Under `.wave.internal`: no certificate can exist, so no provider either. */
+  placeholder: boolean;
+  provider: DnsProviderKind | null;
+  updatedAt: string | null;
+  /** False without WAVE_DNS_SECRET on the server: only `manual` can be stored. */
+  sealing: boolean;
+  providers: DnsProviderKind[];
+}
+
+/** Null is a wave the caller may not manage -- or is not in. */
+export async function fetchDns(waveId: string): Promise<DnsSettings | null> {
+  const res = await controlFetch(`/api/waves/${encodeURIComponent(waveId)}/dns`);
+  if (res.status === 403 || res.status === 404) return null;
+  if (!res.ok) throw new Error(`control server answered ${res.status} for the DNS provider of ${waveId}`);
+  return (await res.json()) as DnsSettings;
+}

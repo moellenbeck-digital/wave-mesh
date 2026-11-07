@@ -876,8 +876,28 @@ die jede JWS-Signatur verifiziert, jede Nonce verbraucht und eine Challenge nur
 gelten lässt, wenn der Record wirklich in der (ebenfalls nachgebauten) Zone
 steht. Was fehlt, ist ein Lauf gegen das echte Staging-Verzeichnis mit einer
 echten Domain; die E2E-Skripte decken Zertifikate nicht ab, weil dafür eine
-erreichbare Zone nötig wäre. Eine Oberfläche gibt es dafür ebenfalls noch
-nicht — Provider und Zertifikate stehen nur auf der Shell des Servers.
+erreichbare Zone nötig wäre.
+
+**Den Provider setzen auch Eigentümer und Admins im Browser**, auf der Seite
+`/waves/<id>/dns` (Link „Zertifikate: DNS-Provider“ in der Wave-Karte), über
+`GET`/`PUT`/`DELETE /api/waves/:id/dns`. Was daran festliegt:
+
+- **Shell und Browser sind ein Weg.** Beide gehen durch
+  `configureDnsProvider()` (`dns/credentials.ts`): Platzhalter, fehlender
+  `WAVE_DNS_SECRET`, fehlende Zugangsdaten und ein Token, der die Zone nicht
+  schreiben kann, werden in derselben Reihenfolge abgelehnt. Eine zweite
+  Fassung der Regeln wäre die Tür, durch die ein ungeprüfter Token käme.
+- **JSON, nicht Formular.** Der häufigste Fehler ist ein Token, der nicht
+  schreiben darf; der Grund gehört neben das Feld, mit dem Getippten noch
+  darin. Geschützt ist der `PUT` wie die Policy: `SameSite=Lax` und ein
+  JSON-Content-Type, den kein fremdes Formular senden kann (sonst 415).
+- **Die Zugangsdaten gehen nur hinein.** `GET` nennt Provider, Datum, ob der
+  Server versiegeln kann (`sealing`) und ob der Suffix ein Platzhalter ist —
+  nie den Token. Das Audit trägt `dns.provider` mit dem Namen des Providers
+  bzw. `dns.provider.remove`, nie das Getippte. Ein Mitglied bekommt 403, wer
+  nicht im Wave ist 404.
+- **Ohne `WAVE_DNS_SECRET` bietet die Seite nur `manual` an**, statt nach dem
+  Tippen abzulehnen.
 
 ## Selbstaktualisierung
 

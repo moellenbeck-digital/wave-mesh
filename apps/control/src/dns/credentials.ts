@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { dnsCredentials } from "../db/schema.ts";
+import { isPlaceholderSuffix } from "../waves/provision.ts";
 import { cloudflareProvider } from "./cloudflare.ts";
 import { hetznerProvider } from "./hetzner.ts";
 import { inwxProvider } from "./inwx.ts";
@@ -144,4 +145,53 @@ export async function verifyZoneAccess(provider: DnsProvider, dnsSuffix: string)
   const value = randomBytes(16).toString("base64url");
   await provider.setTxt(name, value);
   await provider.removeTxt(name, value);
+}
+
+/** Why a provider was not set; the caller puts it in words for its reader. */
+export type ConfigureRefusal =
+  | { refused: "placeholder" }
+  | { refused: "no-secret" }
+  | { refused: "no-credential" }
+  | { refused: "cannot-write"; reason: string };
+
+/**
+ * Sets how a wave answers dns-01, the one way for the shell and the browser.
+ *
+ * Both paths have to refuse the same things in the same order, or the browser
+ * becomes the door that stores a token nobody tried: the placeholder before
+ * anything is asked for (no zone anywhere could hold the record), the missing
+ * key before a token is touched (it would have to be stored in the clear), and
+ * a credential that cannot write the zone before it is stored -- in provider
+ * mode that write *is* the proof of owning the domain (D6).
+ */
+export async function configureDnsProvider(
+  db: Database,
+  input: {
+    waveId: string;
+    dnsSuffix: string;
+    kind: ProviderKind;
+    credential?: string;
+    key?: Buffer;
+    http?: typeof fetch;
+  },
+): Promise<{ ok: true } | ConfigureRefusal> {
+  if (isPlaceholderSuffix(input.dnsSuffix)) return { refused: "placeholder" };
+  if (!isAutomaticKind(input.kind)) {
+    await storeDnsCredential(db, { waveId: input.waveId, provider: input.kind });
+    return { ok: true };
+  }
+  if (!input.key) return { refused: "no-secret" };
+  if (!input.credential) return { refused: "no-credential" };
+  try {
+    await verifyZoneAccess(buildProvider(input.kind, input.credential, input.http), input.dnsSuffix);
+  } catch (error) {
+    return { refused: "cannot-write", reason: error instanceof Error ? error.message : String(error) };
+  }
+  await storeDnsCredential(db, {
+    waveId: input.waveId,
+    provider: input.kind,
+    token: input.credential,
+    key: input.key,
+  });
+  return { ok: true };
 }

@@ -151,6 +151,15 @@ const en = {
   apiNoPolicy: "no policy",
   apiExpectedTags: "expected { tags: [...] }",
   apiNoSuchDevice: "no such device",
+  apiUnknownProvider: (kinds: string) => `the DNS provider must be one of ${kinds}`,
+  apiPlaceholderSuffix: (suffix: string) =>
+    `${suffix} is a placeholder that no certificate can be issued for. Move the wave onto a domain of your own first.`,
+  apiNoDnsSecret:
+    "This server cannot store provider credentials: WAVE_DNS_SECRET is not set. Ask its operator, or choose manual.",
+  apiNoCredential: "The credentials are missing.",
+  apiCredentialCannotWrite: (suffix: string, reason: string) =>
+    `With these credentials no record could be written in ${suffix}: ${reason}`,
+  apiNoProvider: "no DNS provider set",
 } satisfies Messages;
 
 const de: typeof en = {
@@ -288,6 +297,15 @@ const de: typeof en = {
   apiNoPolicy: "keine Policy",
   apiExpectedTags: "{ tags: [...] } erwartet",
   apiNoSuchDevice: "Gerät nicht gefunden",
+  apiUnknownProvider: (kinds) => `der DNS-Provider muss einer von ${kinds} sein`,
+  apiPlaceholderSuffix: (suffix) =>
+    `${suffix} ist ein Platzhalter, für den es kein Zertifikat geben kann. Zieh den Wave zuerst auf eine eigene Domain um.`,
+  apiNoDnsSecret:
+    "Dieser Server kann keine Zugangsdaten speichern: WAVE_DNS_SECRET ist nicht gesetzt. Frag den Betreiber oder nimm manuell.",
+  apiNoCredential: "Die Zugangsdaten fehlen.",
+  apiCredentialCannotWrite: (suffix, reason) =>
+    `Mit diesen Zugangsdaten ließ sich in ${suffix} kein Record schreiben: ${reason}`,
+  apiNoProvider: "kein DNS-Provider gesetzt",
 };
 
 export type PageMessages = typeof en;

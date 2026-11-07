@@ -112,6 +112,11 @@ Trägt ein Wave ein DNS-Suffix, das dir gehört, bekommen seine Geräte gültige
 Let's-Encrypt-Zertifikate auf ihre Namen. Beantwortet wird die
 dns-01-Challenge auf einem von zwei Wegen, einmal je Wave gewählt:
 
+Eigentümer und Admins wählen den Provider in der Oberfläche: „Zertifikate:
+DNS-Provider“ in der Wave-Karte. Der Server probiert die Zugangsdaten sofort
+(ein TXT-Record wird geschrieben und wieder entfernt) und speichert sie erst
+dann, verschlüsselt. Auf der Shell geht dasselbe:
+
 ```bash
 # auf dem Server, einmal je Wave
 bun apps/control/src/admin.ts set-dns-provider meinwave manual      # ohne Zugangsdaten

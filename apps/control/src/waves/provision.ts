@@ -56,6 +56,10 @@ function randomIpv6Prefix(): string {
  */
 export const DEFAULT_DNS_BASE = "wave.internal";
 
+/** A suffix under the placeholder: not delegable, so no CA can ever validate a name in it. */
+export const isPlaceholderSuffix = (suffix: string): boolean =>
+  suffix === DEFAULT_DNS_BASE || suffix.endsWith(`.${DEFAULT_DNS_BASE}`);
+
 /** A domain name: at least two labels, no scheme, no trailing dot. */
 const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 

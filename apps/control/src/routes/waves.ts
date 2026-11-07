@@ -15,6 +15,8 @@ import { SeatLimitError } from "../billing/seats.ts";
 import { billingStateOf } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { users, waves } from "../db/schema.ts";
+import { configureDnsProvider, findDnsCredential, removeDnsCredential } from "../dns/credentials.ts";
+import { isAutomaticKind, isProviderKind, PROVIDER_KINDS } from "../dns/provider.ts";
 import type { Config } from "../env.ts";
 import { type Locale, localeOf } from "../i18n.ts";
 import {
@@ -33,6 +35,7 @@ import {
   createWave,
   deleteWave,
   InvalidInputError,
+  isPlaceholderSuffix,
   mayCreateWaves,
   normaliseDnsSuffix,
   normaliseWaveName,
@@ -616,6 +619,108 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
     await audit(db, waveId, userActor(auth.user), { action: "acl.remove" });
     await hub?.broadcast(waveId);
     return c.json({ policy: null });
+  });
+
+  /**
+   * How the wave answers dns-01, for whoever manages it -- the same setting as
+   * `admin.ts set-dns-provider`, so that moving onto a real domain and getting
+   * certificates for it no longer needs the operator's shell.
+   *
+   * The credential itself never comes back out: what is sealed stays sealed,
+   * and the page only learns which provider holds it and since when.
+   */
+  const dnsView = async (waveId: string) => {
+    const [wave] = await db
+      .select({ suffix: waves.dnsSuffix })
+      .from(waves)
+      .where(eq(waves.id, waveId))
+      .limit(1);
+    const stored = await findDnsCredential(db, waveId);
+    return {
+      dnsSuffix: wave?.suffix ?? "",
+      placeholder: isPlaceholderSuffix(wave?.suffix ?? ""),
+      provider: stored?.provider ?? null,
+      updatedAt: stored?.updatedAt.toISOString() ?? null,
+      // Without the key only `manual` can be chosen; the page says so up front
+      // instead of after somebody has typed a token.
+      sealing: config.dnsSecret !== undefined,
+      providers: PROVIDER_KINDS,
+    };
+  };
+
+  app.get("/api/waves/:id/dns", async (c) => {
+    const waveId = c.req.param("id");
+    const auth = await authorize(c, waveId, "manage");
+    if (auth instanceof Response) return auth;
+    return c.json(await dnsView(waveId));
+  });
+
+  /**
+   * JSON rather than a form post, like the policy: a token that cannot write the
+   * zone is the common mistake, and the page has to say why next to the field,
+   * with what was typed still there -- not on a bare error page.
+   */
+  app.put("/api/waves/:id/dns", async (c) => {
+    const waveId = c.req.param("id");
+    const auth = await authorize(c, waveId, "manage");
+    if (auth instanceof Response) return auth;
+    if (!isJson(c)) return c.json({ error: say(c).apiExpectedJson }, 415);
+
+    const body = (await c.req.json().catch(() => undefined)) as Record<string, unknown> | undefined;
+    if (!body || typeof body !== "object") return c.json({ error: say(c).apiNotJson }, 400);
+    const kind = String(body.provider ?? "");
+    if (!isProviderKind(kind))
+      return c.json({ error: say(c).apiUnknownProvider(PROVIDER_KINDS.join(", ")) }, 400);
+
+    // Whatever the provider calls its credential, it is one string when sealed:
+    // INWX has an account instead of a token, and keeps it as JSON (`inwx.ts`).
+    const field = (name: string) =>
+      typeof body[name] === "string" ? (body[name] as string).trim().slice(0, 4096) : "";
+    let credential: string | undefined;
+    if (kind === "inwx") {
+      const user = field("user");
+      const password = typeof body.password === "string" ? body.password.slice(0, 4096) : "";
+      const totpSecret = field("totpSecret").replace(/\s+/g, "");
+      if (user && password)
+        credential = JSON.stringify({ user, password, ...(totpSecret ? { totpSecret } : {}) });
+    } else if (isAutomaticKind(kind)) {
+      credential = field("token") || undefined;
+    }
+
+    const [wave] = await db
+      .select({ suffix: waves.dnsSuffix })
+      .from(waves)
+      .where(eq(waves.id, waveId))
+      .limit(1);
+    const suffix = wave?.suffix ?? "";
+    const result = await configureDnsProvider(db, {
+      waveId,
+      dnsSuffix: suffix,
+      kind,
+      credential,
+      key: config.dnsSecret,
+      http: dnsFetch,
+    });
+    if ("refused" in result) {
+      const m = say(c);
+      if (result.refused === "placeholder") return c.json({ error: m.apiPlaceholderSuffix(suffix) }, 409);
+      if (result.refused === "no-secret") return c.json({ error: m.apiNoDnsSecret }, 409);
+      if (result.refused === "no-credential") return c.json({ error: m.apiNoCredential }, 400);
+      return c.json({ error: m.apiCredentialCannotWrite(suffix, result.reason) }, 422);
+    }
+
+    // Which provider, never what was typed for it.
+    await audit(db, waveId, userActor(auth.user), { action: "dns.provider", target: kind });
+    return c.json(await dnsView(waveId));
+  });
+
+  app.delete("/api/waves/:id/dns", async (c) => {
+    const waveId = c.req.param("id");
+    const auth = await authorize(c, waveId, "manage");
+    if (auth instanceof Response) return auth;
+    if (!(await removeDnsCredential(db, waveId))) return c.json({ error: say(c).apiNoProvider }, 404);
+    await audit(db, waveId, userActor(auth.user), { action: "dns.provider.remove" });
+    return c.json(await dnsView(waveId));
   });
 
   app.get("/api/waves/:id/audit", async (c) => {

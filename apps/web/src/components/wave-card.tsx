@@ -137,6 +137,15 @@ export function WaveCard({
           <a href={`/waves/${wave.id}/access`} className="text-accent">
             {t.accessLink}
           </a>
+          {/* Daneben und nicht im Klappbereich der Domain: der Provider ist
+              der zweite Schritt nach dem Umzug, und wer ihn sucht, sucht
+              „Zertifikate“, nicht „Domain“. */}
+          <span aria-hidden className="mx-3 text-slate">
+            ·
+          </span>
+          <a href={`/waves/${wave.id}/dns`} className="text-accent">
+            {t.certificatesLink}
+          </a>
         </p>
       ) : null}
 

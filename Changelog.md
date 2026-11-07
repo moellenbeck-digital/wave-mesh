@@ -8,6 +8,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Neue Funktionen
 
+- **DNS-Provider im Browser:** Eigentümer und Admins richten auf der neuen
+  Seite „Zertifikate“ (`/waves/<id>/dns`) ein, wie ihr Wave die
+  dns-01-Challenge beantwortet: Cloudflare, Hetzner, IONOS, INWX oder manuell.
+  Die Zugangsdaten werden vor dem Speichern gegen die Zone geprüft, verschlüsselt
+  abgelegt und nie wieder angezeigt; bisher ging das nur mit
+  `admin.ts set-dns-provider` auf dem Server.
+
 - **Pier: ein Name aus dem Wave im offenen Netz:** Ein Gerät kann einen Namen
   in der Pier-Zone des Waves (`app.pier.wave.example.com`) aus dem Internet
   erreichbar machen, ohne eingehenden Port, feste Adresse oder Portfreigabe im

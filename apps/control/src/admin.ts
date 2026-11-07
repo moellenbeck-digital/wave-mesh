@@ -24,13 +24,7 @@ import { ensureSeatFor, SeatLimitError } from "./billing/seats.ts";
 import { billingStateOf } from "./billing/subscriptions.ts";
 import { createDb } from "./db/client.ts";
 import { certificateOrders, nodes, users, waveMembers } from "./db/schema.ts";
-import {
-  buildProvider,
-  findDnsCredential,
-  removeDnsCredential,
-  storeDnsCredential,
-  verifyZoneAccess,
-} from "./dns/credentials.ts";
+import { configureDnsProvider, findDnsCredential, removeDnsCredential } from "./dns/credentials.ts";
 import { type AutomaticKind, isAutomaticKind, isProviderKind, PROVIDER_KINDS } from "./dns/provider.ts";
 import { loadConfig } from "./env.ts";
 import { createAuthKey, listAuthKeys, revokeAuthKey } from "./waves/auth-keys.ts";
@@ -51,6 +45,7 @@ import {
   DEFAULT_DNS_BASE,
   deleteWave,
   ensureWaveForUser,
+  isPlaceholderSuffix,
   mayCreateWaves,
   normaliseDnsSuffix,
   normaliseWaveName,
@@ -353,43 +348,40 @@ async function main(): Promise<never> {
     if (!kind || !isProviderKind(kind)) return done(1, m.providerMustBe(PROVIDER_KINDS.join(", ")));
     const target = await wave(selector);
 
-    // Refused before anything is asked for: `.internal` cannot be delegated,
-    // so there is no zone anywhere that anybody could write this record in.
-    if (target.dnsSuffix === DEFAULT_DNS_BASE || target.dnsSuffix.endsWith(`.${DEFAULT_DNS_BASE}`)) {
+    // Checked before anything is asked for, by the same function the web page
+    // uses -- see `configureDnsProvider` for the order of the refusals.
+    const settle = (credential?: string) =>
+      configureDnsProvider(db, {
+        waveId: target.id,
+        dnsSuffix: target.dnsSuffix,
+        kind,
+        credential,
+        key: config.dnsSecret,
+      });
+    if (isPlaceholderSuffix(target.dnsSuffix))
       return done(1, m.placeholderSuffix(target.name, target.dnsSuffix));
-    }
 
     // The way out of needing a provider at all: the server names the record and
     // waits until it is there. Nothing is stored and nothing is verified here
     // -- creating the record *is* the proof that the zone is yours, and it
     // happens once per certificate instead of once here.
     if (!isAutomaticKind(kind)) {
-      await storeDnsCredential(db, { waveId: target.id, provider: kind });
+      await settle();
       console.log(m.manualMode(target.name));
       console.log(m.manualRecord);
       return done(0, m.manualRenewals);
     }
 
-    if (!config.dnsSecret) {
-      return done(1, m.noDnsSecret);
+    if (!config.dnsSecret) return done(1, m.noDnsSecret);
+    const result = await settle(await readCredential(kind, target.dnsSuffix));
+    if ("refused" in result) {
+      if (result.refused === "cannot-write")
+        return done(1, m.credentialCannotWrite(target.dnsSuffix, result.reason));
+      if (result.refused === "no-secret") return done(1, m.noDnsSecret);
+      if (result.refused === "placeholder")
+        return done(1, m.placeholderSuffix(target.name, target.dnsSuffix));
+      return done(1, m.noCredential);
     }
-
-    const token = await readCredential(kind, target.dnsSuffix);
-    if (!token) return done(1, m.noCredential);
-
-    // Tried before it is stored, and this is also the domain verification D6
-    // asks for: in provider mode, being able to write the zone is the proof of
-    // owning it. A credential that cannot is not one to keep.
-    try {
-      await verifyZoneAccess(buildProvider(kind, token), target.dnsSuffix);
-    } catch (error) {
-      return done(
-        1,
-        m.credentialCannotWrite(target.dnsSuffix, error instanceof Error ? error.message : String(error)),
-      );
-    }
-
-    await storeDnsCredential(db, { waveId: target.id, provider: kind, token, key: config.dnsSecret });
     console.log(m.writesThrough(target.name, target.dnsSuffix, kind));
     return done(0, m.devicesCanAskCerts);
   }
