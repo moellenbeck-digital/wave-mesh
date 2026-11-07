@@ -1,0 +1,16 @@
+{
+  "name": "@wave/pier",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "wave-pier": "./src/main.ts"
+  },
+  "dependencies": {
+    "@wave/ipc": "workspace:*",
+    "@wave/sni": "workspace:*"
+  },
+  "devDependencies": {
+    "@wave/crypto": "workspace:*"
+  }
+}

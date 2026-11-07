@@ -150,6 +150,19 @@ export const ServiceView = z.object({
 });
 export type ServiceView = z.infer<typeof ServiceView>;
 
+/**
+ * A name a device has put into the open network through the pier (D12), as the
+ * pier node -- and the device that owns it -- read it from the netmap.
+ */
+export const PierView = z.object({
+  name: z.string(),
+  dnsName: z.string(),
+  /** The wave address of the device that answers for the name. */
+  ipv4: z.string(),
+  port: z.number().int().min(1).max(65535),
+});
+export type PierView = z.infer<typeof PierView>;
+
 export const ProfileStatus = z.object({
   /**
    * The enrolment's key, what commands take to mean exactly this wave: the
@@ -193,6 +206,13 @@ export const ProfileStatus = z.object({
     .nullable()
     .default(null),
   dnsSuffix: z.string().nullable().default(null),
+  /**
+   * The names the pier serves, when this device is the pier node, or the ones
+   * it has put out itself (D12). Empty for everybody else -- the netmap does
+   * not tell them. Optional rather than defaulted, so a daemon from before the
+   * pier and a status built by hand both stay valid.
+   */
+  piers: z.array(PierView).optional(),
   relay: z.object({ url: z.string(), connected: z.boolean() }).nullable().default(null),
   peers: z
     .array(
@@ -339,6 +359,7 @@ export interface SnapshotLike {
     services?: Array<{ name: string; dnsName: string; ipv4: string; url: string }>;
   };
   dnsSuffix?: string;
+  piers?: Array<{ name: string; dnsName: string; ipv4: string; port: number }>;
   relay?: { url: string; connected: boolean };
   peers: Array<{
     hostname: string;
@@ -385,6 +406,7 @@ export function profileStatusFromSnapshot(
     addresses: snapshot.addresses,
     self: snapshot.self ?? null,
     dnsSuffix: snapshot.dnsSuffix ?? null,
+    piers: snapshot.piers ?? [],
     relay: snapshot.relay ?? null,
     peers: snapshot.peers.map((peer) => ({
       hostname: peer.hostname,

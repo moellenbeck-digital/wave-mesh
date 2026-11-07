@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@wave/dns": "workspace:*",
-    "@wave/ipc": "workspace:*"
+    "@wave/ipc": "workspace:*",
+    "@wave/sni": "workspace:*"
   }
 }

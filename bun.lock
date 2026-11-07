@@ -37,6 +37,7 @@
       "dependencies": {
         "@wave/dns": "workspace:*",
         "@wave/ipc": "workspace:*",
+        "@wave/sni": "workspace:*",
       },
     },
     "apps/control": {
@@ -75,6 +76,20 @@
         "@wave/client": "workspace:*",
         "@wave/crypto": "workspace:*",
         "@wave/proto": "workspace:*",
+      },
+    },
+    "apps/pier": {
+      "name": "@wave/pier",
+      "version": "0.0.0",
+      "bin": {
+        "wave-pier": "./src/main.ts",
+      },
+      "dependencies": {
+        "@wave/ipc": "workspace:*",
+        "@wave/sni": "workspace:*",
+      },
+      "devDependencies": {
+        "@wave/crypto": "workspace:*",
       },
     },
     "apps/relay": {
@@ -171,6 +186,10 @@
       "dependencies": {
         "zod": "^4.1.13",
       },
+    },
+    "packages/sni": {
+      "name": "@wave/sni",
+      "version": "0.0.0",
     },
   },
   "overrides": {
@@ -425,9 +444,13 @@
 
     "@wave/operator": ["@wave/operator@workspace:apps/operator"],
 
+    "@wave/pier": ["@wave/pier@workspace:apps/pier"],
+
     "@wave/proto": ["@wave/proto@workspace:packages/proto"],
 
     "@wave/relay": ["@wave/relay@workspace:apps/relay"],
+
+    "@wave/sni": ["@wave/sni@workspace:packages/sni"],
 
     "@wave/tray": ["@wave/tray@workspace:apps/tray"],
 

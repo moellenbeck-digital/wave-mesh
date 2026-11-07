@@ -440,6 +440,8 @@ export interface TunnelSnapshot {
     services: Array<{ name: string; dnsName: string; ipv4: string; url: string }>;
   };
   dnsSuffix?: string;
+  /** Names put into the open network (D12): all of them on the pier node, one's own elsewhere. */
+  piers: Array<{ name: string; dnsName: string; ipv4: string; port: number }>;
   relay?: { url: string; connected: boolean };
   peers: Array<{
     hostname: string;
@@ -774,6 +776,12 @@ export class Tunnel {
           }
         : undefined,
       dnsSuffix: netmap?.dns.suffix,
+      piers: (netmap?.piers ?? []).map((pier) => ({
+        name: pier.name,
+        dnsName: pier.dnsName,
+        ipv4: pier.ipv4,
+        port: pier.port,
+      })),
       relay: this.relay ? { url: this.relay.url, connected: this.relay.client.connected } : undefined,
       peers: (netmap?.peers ?? []).map((peer) => {
         const path = paths.get(peer.nodeKey);

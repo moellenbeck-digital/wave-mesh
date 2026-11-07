@@ -520,7 +520,7 @@ describe("what the netmap says", () => {
         ipv6: wave.laptop.ipv6,
         port: 8443,
       },
-    ]);
+    ] as Netmap["piers"]);
     const target = netmap.peers.find((peer) => peer.id === wave.laptop.id);
     expect(target?.allowedIps).toContain(`${wave.laptop.ipv4}/32`);
   });
@@ -532,7 +532,7 @@ describe("what the netmap says", () => {
 
     const netmap = await netmapOf(wave.laptop.id);
     expect(netmap.piers?.map((pier) => pier.name)).toEqual(["app"]);
-    expect(netmap.peers.map((peer) => peer.id)).toContain(wave.pier.id);
+    expect(netmap.peers.map((peer) => peer.id as string)).toContain(wave.pier.id);
   });
 
   test("nobody else is told", async () => {
@@ -611,10 +611,10 @@ describe("what the netmap says", () => {
       await expose(wave, "app", 8443);
 
       const pier = await netmapOf(wave.pier.id);
-      expect(pier.peers.map((peer) => peer.id)).toEqual([wave.laptop.id]);
+      expect(pier.peers.map((peer) => peer.id as string)).toEqual([wave.laptop.id]);
 
       const laptop = await netmapOf(wave.laptop.id);
-      expect(laptop.peers.map((peer) => peer.id)).toEqual([wave.pier.id]);
+      expect(laptop.peers.map((peer) => peer.id as string)).toEqual([wave.pier.id]);
       expect(laptop.packetFilter).toEqual([
         {
           src: [`${wave.pier.ipv4}/32`, `${wave.pier.ipv6}/128`],
