@@ -88,6 +88,42 @@ describe("netmap", () => {
     expect(Object.keys(parsed).sort()).toEqual(Object.keys(sent).sort());
   });
 
+  const pier = {
+    name: "app",
+    dnsName: "app.wave.example.com",
+    nodeId: "n_1",
+    ipv4: "100.64.0.2",
+    ipv6: "fd7a:1::2",
+    port: 8443,
+  };
+
+  // An older server never sends `piers`: the netmap must come back with the
+  // keys it went in with, or its signature would no longer match.
+  test("a netmap without piers comes back without piers", () => {
+    const parsed = Netmap.parse(netmap);
+    expect("piers" in parsed).toBe(false);
+    expect(parsed.piers).toBeUndefined();
+  });
+
+  test("a netmap with piers keeps them, and a pier keeps fields it does not know", () => {
+    const sent = { ...netmap, piers: [{ ...pier, futureField: "kept" }] };
+    const parsed = Netmap.parse(sent);
+    expect(parsed.piers?.[0]?.dnsName).toBe("app.wave.example.com");
+    expect(Object.keys(parsed).sort()).toEqual(Object.keys(sent).sort());
+    expect(parsed.piers?.[0]).toEqual(sent.piers[0]);
+  });
+
+  // The other direction: an empty list is not the same document as no list.
+  test("an empty piers list stays an empty list", () => {
+    expect(Netmap.parse({ ...netmap, piers: [] }).piers).toEqual([]);
+  });
+
+  test("rejects a pier with a port out of range or an address that is none", () => {
+    expect(Netmap.safeParse({ ...netmap, piers: [{ ...pier, port: 0 }] }).success).toBe(false);
+    expect(Netmap.safeParse({ ...netmap, piers: [{ ...pier, port: 70000 }] }).success).toBe(false);
+    expect(Netmap.safeParse({ ...netmap, piers: [{ ...pier, ipv4: "100.64.0.300" }] }).success).toBe(false);
+  });
+
   test("rejects a peer without allowed IPs", () => {
     const broken = { ...netmap, peers: [{ ...peer, allowedIps: [] }] };
     expect(Netmap.safeParse(broken).success).toBe(false);
