@@ -4,6 +4,8 @@ import {
   CertOrderAccepted,
   CertOrderStatus,
   type Netmap,
+  PierList,
+  PierResponse,
   PollResponse,
   RegisterResponse,
   ServiceSyncResponse,
@@ -107,6 +109,21 @@ export class ControlClient {
   /** How that order is going. Issuance takes as long as the CA takes. */
   async certOrder(orderId: string): Promise<CertOrderStatus> {
     return CertOrderStatus.parse(await this.request("GET", `/v1/cert/order/${orderId}`));
+  }
+
+  /** Puts a name into the open network through the pier (D12). The operator's lock decides. */
+  async exposePier(name: string, port: number): Promise<PierResponse> {
+    return PierResponse.parse(await this.request("POST", "/v1/piers", { name, port }));
+  }
+
+  /** Takes a name out again; the server removes its public records with it. */
+  async unexposePier(name: string): Promise<PierResponse> {
+    return PierResponse.parse(await this.request("DELETE", `/v1/piers/${encodeURIComponent(name)}`));
+  }
+
+  /** Whether this device may use the pier, and the names it has put out. */
+  async piers(): Promise<PierList> {
+    return PierList.parse(await this.request("GET", "/v1/piers"));
   }
 
   /**

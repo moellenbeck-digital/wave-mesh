@@ -215,6 +215,7 @@ describe("the loop", () => {
       interfaceName: "wave0",
       listenPort: 41641,
       certs: [],
+      exposed: [],
     };
   };
 

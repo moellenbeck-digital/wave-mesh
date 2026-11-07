@@ -9,7 +9,6 @@ import {
   leafOf,
 } from "@wave/crypto";
 import { eq } from "drizzle-orm";
-import { newId } from "../src/ids.ts";
 import { createApp } from "../src/app.ts";
 import { createProviders } from "../src/auth/providers.ts";
 import { CertificateService } from "../src/certs/issue.ts";
@@ -17,6 +16,7 @@ import type { Database } from "../src/db/client.ts";
 import { certificateOrders, nodes, waveBilling, wavePiers } from "../src/db/schema.ts";
 import { storeDnsCredential } from "../src/dns/credentials.ts";
 import type { Config } from "../src/env.ts";
+import { newId } from "../src/ids.ts";
 import { type FakeCa, fakeCa } from "./fake-ca.ts";
 import { CookieJar, createTestDb, createWaveAs, testConfig, testSigningKey } from "./helpers.ts";
 

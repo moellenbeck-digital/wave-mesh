@@ -71,6 +71,26 @@ export const Request = z.discriminatedUnion("command", [
   }),
   z.object({ command: z.literal("certs") }),
   /**
+   * Puts one of this device's names into the open network through the pier
+   * (D12) and proxies it to a service here. The daemon checks the name and the
+   * URL before it asks the server, and keeps the URL: only this device knows
+   * what is behind the name.
+   */
+  z.object({
+    command: z.literal("expose"),
+    controlUrl: z.string().optional(),
+    name: z.string(),
+    localUrl: z.string(),
+    /** The port on the wave address the pier splices to. Without one: 443. */
+    port: z.number().int().min(1).max(65535).optional(),
+  }),
+  /** Takes the name out again, on the server and here. */
+  z.object({ command: z.literal("unexpose"), controlUrl: z.string().optional(), name: z.string() }),
+  /** What this device has put out, as the server and the daemon each know it. */
+  z.object({ command: z.literal("exposed"), controlUrl: z.string().optional() }),
+  /** The pier names this device answers for or serves, and how each stands. */
+  z.object({ command: z.literal("pier-status") }),
+  /**
    * Self-updates (D13). Without fields it only reports. `channel` and
    * `autoUpdate` change the settings -- the channel is a wish the control
    * servers may overrule, null hands it back to them. `install` installs the
@@ -310,10 +330,88 @@ export const CertWaiting = z.object({
 });
 export type CertWaiting = z.infer<typeof CertWaiting>;
 
+/**
+ * Where one pier name stands on this device. For its own names `listening` is
+ * the only state in which the name works and every other one says what is
+ * missing; the last two are for the names a pier node splices to others.
+ */
+export const ExposeState = z.enum([
+  "listening",
+  "no-certificate",
+  "certificate-expired",
+  "no-address",
+  "tunnel-down",
+  "failed",
+  /** The name was just taken out. */
+  "removed",
+  /** The server has the name, this device has no service for it. */
+  "unmapped",
+  /** This device has a service for the name, the server no longer has the name. */
+  "not-claimed",
+  /** `served` rows: the device behind the name can be reached through the tunnel. */
+  "reachable",
+  /** `served` rows: it cannot -- offline, or no path yet. */
+  "unreachable",
+]);
+export type ExposeState = z.infer<typeof ExposeState>;
+
+/** One name this device has put out, with what the server said about its public records. */
+export const ExposedName = z.object({
+  controlUrl: z.string(),
+  name: z.string(),
+  dnsName: z.string(),
+  port: z.number().int().min(1).max(65535),
+  /** The service behind it; null for a claim the server has and this device does not remember. */
+  localUrl: z.string().nullable().default(null),
+  state: ExposeState,
+  /** Why not, when `state` is `failed`: the system's own words. */
+  detail: z.string().nullable().default(null),
+  /** The public records: `published`, `manual`, `unconfigured` or `failed`. Absent when not asked. */
+  dns: z.string().optional(),
+  /** What somebody has to create by hand, when `dns` is `manual` or `unconfigured`. */
+  records: z.array(z.object({ type: z.string(), name: z.string(), value: z.string() })).default([]),
+  dnsError: z.string().optional(),
+});
+export type ExposedName = z.infer<typeof ExposedName>;
+
+/** `wave expose --list`: what the operator allows, and the names. */
+export const ExposedList = z.object({
+  controlUrl: z.string(),
+  /** Whether the operator has allowed the pier for this device. */
+  allowed: z.boolean(),
+  /** Where the world reaches the pier; null while no pier is named. */
+  pier: z.object({ publicIpv4: z.string().nullable(), publicIpv6: z.string().nullable() }).nullable(),
+  names: z.array(ExposedName),
+});
+export type ExposedList = z.infer<typeof ExposedList>;
+
+/**
+ * One line of `wave pier status`. `own` is a name this device answers for,
+ * with the state of its listener; `served` is a name this device -- as the
+ * pier node -- splices to another one, with whether that device can be reached.
+ */
+export const PierRow = z.object({
+  controlUrl: z.string(),
+  kind: z.enum(["own", "served"]),
+  dnsName: z.string(),
+  port: z.number().int().min(1).max(65535),
+  /** `own`: the service behind it. */
+  localUrl: z.string().nullable().default(null),
+  /** `served`: the device it goes to, and its wave address. */
+  target: z.object({ hostname: z.string().nullable(), ipv4: z.string() }).nullable().default(null),
+  /** `own`: the listener. `served`: `listening` when the device can be reached, `failed` when not. */
+  state: ExposeState,
+  detail: z.string().nullable().default(null),
+});
+export type PierRow = z.infer<typeof PierRow>;
+
 export const Response = z.discriminatedUnion("type", [
   z.object({ type: z.literal("status"), status: Status }),
   z.object({ type: z.literal("certs"), certs: z.array(CertificateStatus) }),
   z.object({ type: z.literal("cert-waiting"), waiting: CertWaiting }),
+  z.object({ type: z.literal("exposed"), exposed: ExposedName }),
+  z.object({ type: z.literal("exposed-list"), list: ExposedList }),
+  z.object({ type: z.literal("pier-status"), rows: z.array(PierRow) }),
   z.object({
     type: z.literal("update"),
     update: UpdateStatus,

@@ -57,6 +57,17 @@ export const CertRecord = z.object({
 });
 export type CertRecord = z.infer<typeof CertRecord>;
 
+/** One name put out through the pier, and the service on this side of it. */
+export const ExposedEntry = z.object({
+  /** The label under the wave's suffix, as the server stores it. */
+  name: z.string(),
+  /** `http(s)://host:port`, on this device or in its LAN. */
+  localUrl: z.string(),
+  /** The port the daemon listens on, on the wave address; what the pier splices to. */
+  port: z.number().int().min(1).max(65535),
+});
+export type ExposedEntry = z.infer<typeof ExposedEntry>;
+
 export const Profile = NodeState.extend({
   /**
    * Tells apart further enrolments at the same server. One server can run
@@ -77,6 +88,12 @@ export const Profile = NodeState.extend({
    * certificates themselves, and nothing ever sends them anywhere.
    */
   certs: z.array(CertRecord).default([]),
+  /**
+   * The names this device has put into the open network (D12), each with where
+   * the daemon proxies it. The claim itself lives on the control server; what
+   * only this device knows is the `localUrl` behind it.
+   */
+  exposed: z.array(ExposedEntry).default([]),
 });
 export type Profile = z.infer<typeof Profile>;
 
@@ -172,7 +189,7 @@ async function loadState(path: string): Promise<{ profiles: Profile[]; update: U
   const legacy = NodeState.safeParse(raw);
   if (legacy.success)
     return {
-      profiles: [{ ...legacy.data, id: null, label: null, autoStart: true, certs: [] }],
+      profiles: [{ ...legacy.data, id: null, label: null, autoStart: true, certs: [], exposed: [] }],
       update: defaultUpdate(),
     };
 
@@ -342,6 +359,7 @@ export async function ensureProfile(
     nodeId: null,
     netmapPublicKey: null,
     certs: [],
+    exposed: [],
     interfaceName: defaults.interfaceName ?? slot.interfaceName,
     listenPort: defaults.listenPort ?? slot.listenPort,
   };

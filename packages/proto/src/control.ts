@@ -129,6 +129,24 @@ export const PierResponse = z.object({
 });
 export type PierResponse = z.infer<typeof PierResponse>;
 
+/**
+ * What `GET /v1/piers` says to a device: whether the operator allows the pier
+ * for it, where the world reaches the pier, and the names it has put out.
+ */
+export const PierList = z.object({
+  allowed: z.boolean(),
+  /** The pier's public addresses; null while the operator has named no pier. */
+  pier: z.object({ publicIpv4: z.string().nullable(), publicIpv6: z.string().nullable() }).nullable(),
+  piers: z.array(
+    z.object({
+      name: z.string().min(1),
+      dnsName: z.string().min(1),
+      port: z.number().int().min(1).max(65535),
+    }),
+  ),
+});
+export type PierList = z.infer<typeof PierList>;
+
 export const CertOrderRequest = z.object({
   /** PEM-encoded CSR. The private key stays on the node, always. */
   csr: z.string().startsWith("-----BEGIN CERTIFICATE REQUEST-----"),

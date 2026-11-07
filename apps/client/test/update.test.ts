@@ -273,6 +273,7 @@ function profile(controlUrl: string): Profile {
     listenPort: 41641,
     autoStart: true,
     certs: [],
+    exposed: [],
   };
 }
 
