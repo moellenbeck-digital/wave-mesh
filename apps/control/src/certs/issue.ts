@@ -3,7 +3,14 @@ import { and, eq } from "drizzle-orm";
 import { AcmeClient, type Order } from "../acme/client.ts";
 import { generateAccountKey } from "../acme/jose.ts";
 import type { Database } from "../db/client.ts";
-import { acmeAccounts, type CertChallenge, certificateOrders, nodes, waves } from "../db/schema.ts";
+import {
+  acmeAccounts,
+  type CertChallenge,
+  certificateOrders,
+  nodes,
+  wavePiers,
+  waves,
+} from "../db/schema.ts";
 import { type DnsMode, loadDnsMode } from "../dns/credentials.ts";
 import { lookupTxtAtAuthority, type TxtLookup } from "../dns/lookup.ts";
 import { type DnsProvider, PROVIDER_KINDS } from "../dns/provider.ts";
@@ -95,11 +102,24 @@ export class CertificateService {
     const found = rows[0];
     if (!found) return { error: "unknown node", status: 403 };
 
+    // The names come from the table and never from the request, and only while
+    // the operator's lock is still open: a claim left over from before
+    // `deny-pier` is not a reason to issue anything.
+    const pierNames = found.node.pierAllowed
+      ? (
+          await this.db
+            .select({ name: wavePiers.name })
+            .from(wavePiers)
+            .where(eq(wavePiers.nodeId, input.nodeId))
+        ).map((row) => `${row.name}.${found.wave.dnsSuffix}`)
+      : [];
+
     const refusal = checkNames({
       names: input.names,
       hostname: found.node.hostname,
       dnsSuffix: found.wave.dnsSuffix,
       wildcardAllowed: found.node.wildcardAllowed,
+      pierNames,
     });
     if (refusal) return refusal;
 
@@ -456,12 +476,21 @@ const sameNames = (a: string[], b: string[]): boolean =>
  * this device (`admin.ts allow-wildcard`), and then it also carries the zone's
  * own name -- a machine that fronts the wildcard fronts the apex too, and
  * refusing it would only force a second certificate with the same reach.
+ *
+ * The other addition is the names this device has put out through the pier
+ * (D12), and only those: each of them is already decided by `allow-pier`, the
+ * namespace check and the operator's pier, and is public by then. They are
+ * looked up when the order is placed, so `--remove` and `deny-pier` stop new
+ * certificates at once. One already issued runs until it expires; expiry and
+ * renewal bound that window.
  */
 export function checkNames(input: {
   names: string[];
   hostname: string;
   dnsSuffix: string;
   wildcardAllowed?: boolean;
+  /** Full names this device holds in `wave_piers`, empty unless `pier_allowed`. */
+  pierNames?: string[];
 }): OrderRefusal | null {
   if (input.names.length === 0) return { error: "no names requested", status: 400 };
 
@@ -477,6 +506,7 @@ export function checkNames(input: {
   const suffix = input.dnsSuffix.toLowerCase();
   const own = `${input.hostname}.${suffix}`.toLowerCase();
   const wildcard = `*.${suffix}`;
+  const piers = new Set((input.pierNames ?? []).map((name) => name.toLowerCase()));
 
   const seen = new Set<string>();
   for (const raw of input.names) {
@@ -486,7 +516,7 @@ export function checkNames(input: {
     if (seen.has(name)) return { error: `${raw} is listed twice`, status: 400 };
     seen.add(name);
 
-    if (name === own) continue;
+    if (name === own || piers.has(name)) continue;
     if (name === wildcard || name === suffix) {
       if (input.wildcardAllowed) continue;
       return {

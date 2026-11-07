@@ -1947,6 +1947,15 @@ Was daran festliegt:
   dort defaultiert, weil nichts es signiert.
 - **Audit:** `pier.expose`, `pier.unexpose` (Gerät als Akteur) sowie
   `admin.allow-pier`, `admin.deny-pier`, `admin.set-pier`, `admin.clear-pier`.
+- **Zertifikat für die eigenen Pier-Namen** (`checkNames()` in `certs/issue.ts`). Zu
+  `<hostname>.<suffix>` kommen genau die Namen, die das Gerät in `wave_piers` hält —
+  aber nur, solange `pier_allowed` gesetzt ist, und geprüft bei der *Ausstellung*, nicht
+  beim Anlegen. Die Namen kommen aus der Datenbank, nie aus dem Request; kein Wildcard,
+  kein Apex, nichts von anderen Geräten (`allow-wildcard` bleibt das Einzige, was die
+  Wildcard öffnet). Nach `--remove` und `deny-pier` wird nichts Neues ausgestellt, ein
+  bestehendes Zertifikat läuft bis zum Ablauf weiter — bekannt, kein Fehler; Ablauf und
+  Erneuerung begrenzen den Zeitraum. Tests: `test/certificates.test.ts`, „the names a
+  device put out through the pier“.
 
 **Ungeprüft:** der Pier an einem echten Ingress und einem echten Wave über das
 Internet (die Splice-Tests laufen über Loopback und ein echtes TLS-Handshake mit dem

@@ -318,6 +318,14 @@ und kein Node bekommt je DNS-Credentials.
 Netmap diesem Node gehören (eigener Node-Name oder ein ihm zugewiesener Alias). Damit kann
 kein kompromittierter Node ein Zertifikat für den Namen eines anderen bekommen.
 
+**Pier-Namen (D12):** Zusätzlich gehören einem Gerät genau die Namen, die es in
+`wave_piers` hält, und nur solange `nodes.pier_allowed` gesetzt ist. Die Namen kommen
+bei der Ausstellung aus der Datenbank, nie aus dem Request; kein Wildcard, kein Apex,
+keine Namen anderer Geräte. Nach `wave expose --remove` oder `admin.ts deny-pier` wird
+nichts Neues mehr ausgestellt, ein schon ausgestelltes Zertifikat läuft bis zu seinem
+Ablauf weiter. Das ist bekannt: Ablauf und Erneuerung (ARI, 2/3 der Laufzeit) begrenzen
+den Zeitraum, und der Name ist ohnehin öffentlich.
+
 **Ausstellung on demand, nicht automatisch für alle Nodes** (`wave cert <name>`). Gründe:
 Rate Limits und Certificate Transparency (siehe unten). Nach der ersten Ausstellung
 erneuert der Daemon selbstständig.
@@ -797,6 +805,15 @@ Adresse und ein Gerät erklärt sich nicht selbst dazu), und unter einer Policy
 öffnet der Anspruch genau *Pier → Gerät, dieser Port*. Es fehlen `wave expose` /
 `wave pier` auf dem Client — das lokale Terminieren mit dem Knoten-Zertifikat und
 der Proxy an eine `localUrl` — und der Lauf gegen einen echten Ingress.
+
+**Zertifikat für Pier-Namen (Ticket #63, Client-Teil):** Das Knoten-Zertifikat aus D7
+deckte nur `<hostname>.<suffix>`. Damit `wave expose app.wave.example.com …` ohne
+Wildcard geht, stellt der Control-Server einem Gerät auch die Namen aus, die es in
+`wave_piers` hält (geprüft bei der Ausstellung, nur bei gesetztem `pier_allowed`).
+`wave expose` legt den Anspruch auch ohne Zertifikat an und nennt als nächsten Schritt
+`wave cert <name>`; der Daemon öffnet den Listener, sobald ein Zertifikat den Namen
+deckt. Nach dem Entfernen läuft ein ausgestelltes Zertifikat bis zum Ablauf weiter;
+Ablauf und Erneuerung begrenzen den Zeitraum.
 
 ### D13 — Selbstaktualisierung der Clients
 
