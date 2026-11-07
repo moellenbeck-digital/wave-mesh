@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { isIP, connect as netConnect, type Server, type Socket } from "node:net";
 import { createSecureContext, createServer, type SecureContext, connect as tlsConnect } from "node:tls";
-import type { CertRecord } from "./state.ts";
+import type { CertRecord, ExposedEntry } from "./state.ts";
 
 /**
  * The device's side of `wave expose` (D12).
@@ -20,17 +20,21 @@ import type { CertRecord } from "./state.ts";
 const LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /**
- * The label under the wave's suffix, or null for anything that is not exactly
- * one name below it. Bare (`app`) or full (`app.wave.example.com`), never the
+ * The label under the pier zone, or null for anything that is not exactly one
+ * name below it. Bare (`app`) or full (`app.pier.wave.example.com`), never the
  * zone itself, a wildcard, a deeper name or somebody else's domain -- the same
  * line the server draws, drawn here first so a mistake changes nothing.
  */
-export function exposeLabel(given: string, dnsSuffix: string): string | null {
+export function exposeLabel(given: string, zone: string): string | null {
   const name = given.trim().toLowerCase().replace(/\.$/, "");
-  const suffix = dnsSuffix.toLowerCase();
+  const suffix = zone.toLowerCase();
   const label = name.endsWith(`.${suffix}`) ? name.slice(0, -(suffix.length + 1)) : name;
   return LABEL.test(label) ? label : null;
 }
+
+/** The full name of an exposed entry: the server's answer, or rebuilt for an entry from before it was kept. */
+export const exposedDnsName = (entry: Pick<ExposedEntry, "name" | "dnsName">, zone: string): string =>
+  entry.dnsName ?? `${entry.name}.${zone}`;
 
 export interface LocalTarget {
   /** The URL as it will be stored: scheme, host and port, nothing else. */

@@ -8,7 +8,7 @@ import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { nodes, wavePiers, waveServices, waves } from "../db/schema.ts";
 import { resolverAddressFor } from "../net/addressing.ts";
-import { pierFilter, toPierHost } from "../waves/piers.ts";
+import { pierFilter, pierZone, toPierHost } from "../waves/piers.ts";
 import { serviceUrl } from "../waves/services.ts";
 import { boundCandidates } from "./candidates.ts";
 
@@ -101,20 +101,15 @@ export async function buildNetmap(
   const targetOf = (nodeId: string) =>
     nodeId === self.node.id ? self.node : allPeerRows.find((row) => row.id === nodeId);
   const isPierHost = pierHost?.id === self.node.id;
-  const allPiers = pierHost
-    ? (
-        await db
-          .select()
-          .from(wavePiers)
-          .where(eq(wavePiers.waveId, self.wave.id))
-          .orderBy(asc(wavePiers.name))
-      ).filter((pier) => targetOf(pier.nodeId))
-    : [];
-  const pierRows = isPierHost ? allPiers : allPiers.filter((pier) => pier.nodeId === self.node.id);
+  const zone = pierZone(self.wave);
+  const allPiers = (
+    await db.select().from(wavePiers).where(eq(wavePiers.waveId, self.wave.id)).orderBy(asc(wavePiers.name))
+  ).filter((pier) => targetOf(pier.nodeId));
+  const ownPiers = allPiers.filter((pier) => pier.nodeId === self.node.id);
   const pierPeers = new Set<string>(
     isPierHost
-      ? pierRows.map((pier) => pier.nodeId).filter((id) => id !== self.node.id)
-      : pierRows.length > 0 && pierHost
+      ? allPiers.map((pier) => pier.nodeId).filter((id) => id !== self.node.id)
+      : ownPiers.length > 0 && pierHost
         ? [pierHost.id]
         : [],
   );
@@ -131,7 +126,13 @@ export async function buildNetmap(
   const suspended = await isSuspended(db, self.wave.id);
   const peerRows = suspended ? [] : reachable;
   const services = suspended ? [] : offered;
-  const piers = suspended ? [] : pierRows;
+  // Who hears of a name: the pier node of every one, because it splices them;
+  // everybody else of their own and of those owned by a peer they may reach --
+  // inside the wave the name resolves to the owner's wave address, the direct
+  // way, and a name whose owner this node cannot reach would resolve to an
+  // address that answers nothing.
+  const listed = new Set([self.node.id, ...peerRows.map((peer) => peer.id)]);
+  const piers = suspended ? [] : isPierHost ? allPiers : allPiers.filter((pier) => listed.has(pier.nodeId));
 
   return {
     version: self.wave.netmapVersion,
@@ -169,7 +170,7 @@ export async function buildNetmap(
             const target = targetOf(pier.nodeId) as NodeRow;
             return {
               name: pier.name,
-              dnsName: `${pier.name}.${self.wave.dnsSuffix}`,
+              dnsName: `${pier.name}.${zone}`,
               nodeId: pier.nodeId as Pier["nodeId"],
               ipv4: target.ipv4,
               ipv6: target.ipv6,
@@ -178,6 +179,10 @@ export async function buildNetmap(
           }),
         }
       : {}),
+    // Where the pier zone is and which node splices it, while the wave has a
+    // pier. Left out otherwise, so a wave without one signs the document it
+    // always did.
+    ...(pierHost && !suspended ? { pier: { nodeId: pierHost.id as Pier["nodeId"], zone } } : {}),
     // Only under a policy: absent is "no policy" and lets everything in, while
     // an empty list is "deny all but replies" -- the field must not appear by
     // accident, so it is spread in rather than set to undefined.
@@ -187,7 +192,7 @@ export async function buildNetmap(
             ...inboundFilter(policy.compiled, self.node, allPeerRows, allServices),
             // What the pier may send to a device that has put a name out. Not
             // for the pier node itself: it is only ever the sender.
-            ...(pierHost && !isPierHost && !suspended ? pierFilter(pierHost, self.node, pierRows) : []),
+            ...(pierHost && !isPierHost && !suspended ? pierFilter(pierHost, self.node, ownPiers) : []),
           ],
         }
       : {}),

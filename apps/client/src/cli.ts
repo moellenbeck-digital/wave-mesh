@@ -323,20 +323,13 @@ async function runHere(controlUrl: string, authKey?: string): Promise<number> {
   return 0;
 }
 
-/** What a name that was just put out, or taken out, comes to: the line, where it stands, the records. */
+/** What a name that was just put out, or taken out, comes to: the line and where it stands. */
 function printExposed(exposed: ExposedName): void {
   const m = t();
   if (exposed.state === "removed") console.log(m.exposeRemoved(exposed.dnsName));
   else {
     console.log(m.exposeName(exposed.dnsName, exposed.port, exposed.localUrl));
     console.log(`  ${m.exposeState(exposed.state, exposed.dnsName, exposed.detail)}`);
-  }
-  if (exposed.dns) {
-    console.log(`  ${m.exposeDns(exposed.dns, exposed.dnsError ?? null)}`);
-    if (exposed.dns === "manual" || exposed.dns === "unconfigured") {
-      for (const record of exposed.records)
-        console.log(m.exposeRecord(record.type, record.name, record.value));
-    }
   }
 }
 
@@ -399,7 +392,9 @@ async function runExpose(daemon: DaemonClient): Promise<number> {
       ({ list }) => {
         const m = t();
         console.log(m.exposeAllowed(list.allowed));
-        console.log(m.exposePierAddress(list.pier?.publicIpv4 ?? null, list.pier?.publicIpv6 ?? null));
+        console.log(
+          m.exposePierAddress(list.pier?.publicIpv4 ?? null, list.pier?.publicIpv6 ?? null, list.zone),
+        );
         if (list.names.length === 0) console.log(m.exposeNone);
         for (const name of list.names) printExposed(name);
       },

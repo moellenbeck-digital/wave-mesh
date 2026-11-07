@@ -319,7 +319,8 @@ Netmap diesem Node gehören (eigener Node-Name oder ein ihm zugewiesener Alias).
 kein kompromittierter Node ein Zertifikat für den Namen eines anderen bekommen.
 
 **Pier-Namen (D12):** Zusätzlich gehören einem Gerät genau die Namen, die es in
-`wave_piers` hält, und nur solange `nodes.pier_allowed` gesetzt ist. Die Namen kommen
+`wave_piers` hält — `<label>.<pier-zone>`, etwa `app.pier.wave.example.com` —, und nur
+solange `nodes.pier_allowed` gesetzt ist. Die Namen kommen
 bei der Ausstellung aus der Datenbank, nie aus dem Request; kein Wildcard, kein Apex,
 keine Namen anderer Geräte. Nach `wave expose --remove` oder `admin.ts deny-pier` wird
 nichts Neues mehr ausgestellt, ein schon ausgestelltes Zertifikat läuft bis zu seinem
@@ -675,7 +676,7 @@ genau diesen Namen ohnehin schon hat.
 ```mermaid
 graph TB
   subgraph Netz["offenes Netz"]
-    B["Browser<br/>https://laptop.wave.example.com"]
+    B["Browser<br/>https://app.pier.wave.example.com"]
   end
 
   subgraph Host["öffentlicher Host"]
@@ -695,8 +696,8 @@ graph TB
   B ==>|"TCP 443, TLS unangetastet"| F
   F ==>|"WireGuard → 10.77.0.5:443"| N
   N ==> S
-  B -.->|"A/AAAA: wo ist laptop?"| Z
-  C -.->|"A/AAAA über Provider-API"| Z
+  B -.->|"A/AAAA: wo ist app.pier?"| Z
+  C -.->|"*.pier: A/AAAA, einmal bei set-pier"| Z
   C -.->|signierte Netmap| F
   C -.->|signierte Netmap| N
 ```
@@ -722,12 +723,25 @@ Was daran festliegt:
   Pier gibt keine Sitzung preis. Möglich ist das **nur wegen D7** — ohne ein
   öffentlich gültiges Zertifikat auf dem Knoten müsste die Kante terminieren,
   und dann läge dort alles offen.
-- **Der öffentliche A/AAAA-Record ist der offene Punkt aus M5, endlich mit
-  einem Zweck.** Der Control-Server schreibt `laptop.wave.example.com` auf die
-  öffentliche Adresse des Piers — über die Provider-API oder im manuellen
-  Modus als Aufforderung, genau wie bei der dns-01-Challenge (D6). Und er zeigt
-  dann eben **nicht** auf die Wave-Adresse: die beiden Opt-ins aus M5 schließen
-  sich je Name aus, denn ein Name kann nur eines von beidem bedeuten.
+- **Die Pier-Namen haben eine eigene Zone, und die hat einen Wildcard-Record.**
+  Unter dem Suffix des Waves liegt `pier.<suffix>` (das Label wählt der
+  Betreiber mit `set-pier --label`), und jeder freigegebene Name ist genau ein
+  Label darunter: `app.pier.wave.example.com`. `set-pier` schreibt einmal
+  `*.pier.<suffix>` auf die öffentliche Adresse des Piers — über die
+  Provider-API oder im manuellen Modus als Aufforderung, genau wie bei der
+  dns-01-Challenge (D6) —, und eine Freigabe schreibt danach nichts mehr ins
+  DNS. Ein Name, den niemand beansprucht hat, landet damit auch beim Pier, und
+  der schließt die Verbindung wortlos, wie bei jedem Scanner. Der Record zeigt
+  **nie** auf die Wave-Adresse. Drei Dinge kauft die eigene Zone: kein DNS-Schreiben
+  je Freigabe (und kein Aufräumen danach), keinen gemeinsamen Namensraum mit
+  Geräten und Diensten, und einen Namen, an dem man sieht, dass er öffentlich
+  ist. Der Preis: `laptop.wave.example.com` ist nicht mehr innen wie außen
+  derselbe Name — außen heißt er `laptop.pier.wave.example.com`.
+- **Innen löst derselbe Name direkt auf.** Die Pier-Zone liegt unter dem Suffix,
+  Anfragen dafür gehen also an den Resolver des Waves, und der beantwortet
+  einen Pier-Namen mit der Wave-Adresse des Besitzers. Jedes Gerät bekommt dafür
+  die Pier-Namen der Peers, die es erreichen darf, in `Netmap.piers`; der
+  Umweg über den Pier entfällt, das Zertifikat auf dem Gerät gilt für beide Wege.
 - **Öffentlich wird nichts von selbst, und nicht von jedem.** Zwei Schlösser,
   dieselbe Teilung wie beim Wildcard in D7: der Betreiber erlaubt den Pier für
   ein Gerät (`admin.ts allow-pier`), und erst dann schaltet dessen Besitzer
@@ -797,8 +811,10 @@ SMTP oder IMAP mit STARTTLS lassen sich nicht nach SNI routen, weil die
 Verbindung im Klartext beginnt.
 
 **Stand der Umsetzung (Ticket #63):** Pier-Knoten (`apps/pier`, Image
-`wave-reverse-proxy`), `Netmap.piers`, `wave_piers`, die beiden Schlösser, die
-A/AAAA-Records über die Provider-API und der manuelle Modus sind gebaut. Zwei
+`wave-pier`), `Netmap.piers`, `wave_piers`, die beiden Schlösser, der
+Wildcard-Record der Pier-Zone über die Provider-API und der manuelle Modus sind
+gebaut. Die eigene Zone kam nach dem ersten Entwurf (ein Record je Name unter
+dem Suffix des Waves) und vor dem ersten Release dazu. Zwei
 Festlegungen, die D12 offenließ: der Pier ist der Knoten, den der Betreiber mit
 `admin.ts set-pier` samt öffentlicher Adresse benennt (der Server rät keine
 Adresse und ein Gerät erklärt sich nicht selbst dazu), und unter einer Policy
@@ -814,14 +830,14 @@ nichts. `--list` zeigt die Namen samt Stand, `--remove <name>` nimmt einen herau
 Port belegt, bei Ziel-Gerät offline: nicht erreichbar). Beim ersten Aufruf gibt es noch
 kein Zertifikat für den Namen: der Anspruch steht trotzdem, und der nächste Schritt ist
 `wave cert <name>` — der Listener öffnet danach von selbst. `set-domain` lehnt ab,
-solange das Wave Pier-Namen hat. Offen bleiben der Lauf gegen einen echten Ingress,
+solange das Wave Pier-Namen oder einen Pier hat. Offen bleiben der Lauf gegen einen echten Ingress,
 Mobile (der Go-Kern kann noch nicht proxyn) und ein `https`-Ziel mit einem Zertifikat,
 dem das Gerät nicht vertraut (die Verbindung zum Dienst wird geprüft; für ein
 selbstsigniertes LAN-Gerät bleibt `http://`).
 
 **Zertifikat für Pier-Namen (Ticket #63, Client-Teil):** Das Knoten-Zertifikat aus D7
-deckte nur `<hostname>.<suffix>`. Damit `wave expose app.wave.example.com …` ohne
-Wildcard geht, stellt der Control-Server einem Gerät auch die Namen aus, die es in
+deckte nur `<hostname>.<suffix>`. Damit `wave expose app …` (`app.pier.wave.example.com`)
+geht — ein Wildcard des Waves deckt die Pier-Zone ohnehin nicht, er reicht nur ein Label tief —, stellt der Control-Server einem Gerät auch die Namen aus, die es in
 `wave_piers` hält (geprüft bei der Ausstellung, nur bei gesetztem `pier_allowed`).
 `wave expose` legt den Anspruch auch ohne Zertifikat an und nennt als nächsten Schritt
 `wave cert <name>`; der Daemon öffnet den Listener, sobald ein Zertifikat den Namen

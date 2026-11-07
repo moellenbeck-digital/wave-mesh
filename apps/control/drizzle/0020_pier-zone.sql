@@ -1,0 +1,1 @@
+ALTER TABLE "waves" ADD COLUMN "pier_label" text DEFAULT 'pier' NOT NULL;

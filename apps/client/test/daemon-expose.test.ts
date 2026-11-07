@@ -15,7 +15,7 @@ import { type Fixture, freePort, service as startService, setUp as startUp } fro
  * service, on loopback.
  */
 
-const NAME = "app.wave.example.com";
+const NAME = "app.pier.wave.example.com";
 
 const fixture: Fixture = { cleanup: [] };
 const cleanup = fixture.cleanup;
@@ -32,13 +32,15 @@ const isNotice = (value: unknown): value is { code: string; params: Record<strin
   typeof value === "object" && value !== null && "code" in value;
 
 describe("what is checked before the server is asked", () => {
-  test("a name outside the wave, a bad URL: refused, nothing asked, nothing kept", async () => {
+  test("a name outside the pier zone, a bad URL: refused, nothing asked, nothing kept", async () => {
     const { daemon, statePath, control: server } = await setUp();
     const cases: Array<[string, string, string]> = [
       ["app.example.org", "http://localhost:3000", "expose-bad-name"],
-      ["wave.example.com", "http://localhost:3000", "expose-bad-name"],
-      ["*.wave.example.com", "http://localhost:3000", "expose-bad-name"],
-      ["a.b.wave.example.com", "http://localhost:3000", "expose-bad-name"],
+      // Under the wave's domain, but not under the pier zone.
+      ["app.wave.example.com", "http://localhost:3000", "expose-bad-name"],
+      ["pier.wave.example.com", "http://localhost:3000", "expose-bad-name"],
+      ["*.pier.wave.example.com", "http://localhost:3000", "expose-bad-name"],
+      ["a.b.pier.wave.example.com", "http://localhost:3000", "expose-bad-name"],
       ["app", "localhost:3000", "expose-bad-url"],
       ["app", "http://localhost", "expose-bad-url"],
       ["app", "http://user:pw@localhost:3000", "expose-bad-url"],
@@ -72,12 +74,11 @@ describe("what is checked before the server is asked", () => {
     expect(server.piers.size).toBe(0);
   });
 
-  test("a wave whose domain is not known yet cannot be asked", async () => {
-    const { daemon, statePath } = await setUp({ dnsSuffix: undefined });
-    const [profile] = await loadProfiles(statePath);
-    await saveProfiles(statePath, [{ ...(profile as NonNullable<typeof profile>), label: null }]);
-    const result = await daemon.expose(undefined, "app", "http://localhost:3000");
-    expect(isNotice(result) && result.code).toBe("expose-wave-unknown");
+  test("without the zone in a netmap, the server names it", async () => {
+    const { daemon, control: server } = await setUp({ pier: undefined });
+    const result = await daemon.expose(undefined, "app.pier.wave.example.com", "http://localhost:3000");
+    expect(isNotice(result)).toBe(false);
+    expect(server.pierCalls).toEqual(["GET /v1/piers", "POST /v1/piers"]);
   });
 });
 
@@ -89,10 +90,10 @@ describe("putting a name out", () => {
 
     const result = await daemon.expose(undefined, "app", `http://127.0.0.1:${svc.port}`, port);
     if (isNotice(result)) throw new Error(englishText(result));
-    expect(result).toMatchObject({ dnsName: NAME, port, state: "no-certificate", dns: "published" });
+    expect(result).toMatchObject({ dnsName: NAME, port, state: "no-certificate" });
     expect(server.piers.get("app")).toBe(port);
     expect((await loadProfiles(statePath))[0]?.exposed).toEqual([
-      { name: "app", localUrl: `http://127.0.0.1:${svc.port}`, port },
+      { name: "app", dnsName: NAME, localUrl: `http://127.0.0.1:${svc.port}`, port },
     ]);
   });
 
@@ -103,7 +104,7 @@ describe("putting a name out", () => {
     await daemon.expose(undefined, "app", `http://127.0.0.1:${svc.port}`, port);
     expect((await daemon.pierStatus())[0]?.state).toBe("no-certificate");
 
-    // `wave cert app.wave.example.com`: the server now issues for the pier name.
+    // `wave cert app.pier.wave.example.com`: the server issues for the pier name.
     const issued = await daemon.cert(undefined, [NAME]);
     if (isNotice(issued) || "waiting" in issued) throw new Error("no certificate");
     // The fake CA made its own key instead of certifying the request's; a real
@@ -229,10 +230,11 @@ describe("listing and status", () => {
   test("on the pier node, the names it serves and whether each device can be reached", async () => {
     const { daemon } = await setUp({
       self: { hostname: "pier", dnsName: "pier.wave.example.com", ipv4: "10.64.0.1", ipv6: "", services: [] },
+      pier: { zone: "pier.wave.example.com", self: true },
       piers: [
         { name: "app", dnsName: NAME, ipv4: "10.64.0.2", port: 443 },
-        { name: "blog", dnsName: "blog.wave.example.com", ipv4: "10.64.0.3", port: 443 },
-        { name: "gone", dnsName: "gone.wave.example.com", ipv4: "10.64.0.9", port: 443 },
+        { name: "blog", dnsName: "blog.pier.wave.example.com", ipv4: "10.64.0.3", port: 443 },
+        { name: "gone", dnsName: "gone.pier.wave.example.com", ipv4: "10.64.0.9", port: 443 },
       ],
       peers: [
         {
@@ -255,8 +257,15 @@ describe("listing and status", () => {
     const rows: PierRow[] = await daemon.pierStatus();
     const row = (dnsName: string) => rows.find((entry) => entry.dnsName === dnsName);
     expect(row(NAME)).toMatchObject({ kind: "served", state: "reachable", target: { hostname: "laptop" } });
-    expect(row("blog.wave.example.com")).toMatchObject({ kind: "served", state: "unreachable" });
+    expect(row("blog.pier.wave.example.com")).toMatchObject({ kind: "served", state: "unreachable" });
     // An address no peer has: nothing to splice to.
-    expect(row("gone.wave.example.com")).toMatchObject({ kind: "served", state: "unreachable" });
+    expect(row("gone.pier.wave.example.com")).toMatchObject({ kind: "served", state: "unreachable" });
+  });
+
+  test("elsewhere the names of other devices are only for the resolver, and serve nothing here", async () => {
+    const { daemon } = await setUp({
+      piers: [{ name: "blog", dnsName: "blog.pier.wave.example.com", ipv4: "10.64.0.3", port: 443 }],
+    });
+    expect(await daemon.pierStatus()).toEqual([]);
   });
 });

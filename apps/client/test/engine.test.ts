@@ -9,6 +9,7 @@ import {
   readWhenFilled,
   resolveInterfaceName,
   resolverMoved,
+  resolverRecords,
   type Started,
   TUN_DEVICE,
   TUN_LOADERS,
@@ -17,6 +18,38 @@ import {
   watchOutput,
 } from "../src/engine.ts";
 import type { LinkBackend } from "../src/link.ts";
+
+describe("resolverRecords", () => {
+  const node = (hostname: string, last: number) => ({
+    dnsName: `${hostname}.wave.example.com`,
+    ipv4: `10.64.0.${last}`,
+    ipv6: `fd7a::${last}`,
+  });
+
+  test("answers a pier name with the owner's wave address, the direct way", () => {
+    const netmap = {
+      self: node("nas", 1),
+      peers: [node("laptop", 2)],
+      services: [{ dnsName: "grafana.wave.example.com", ipv4: "10.64.1.1", ipv6: "fd7a::1:1" }],
+      piers: [
+        { name: "app", dnsName: "app.pier.wave.example.com", ipv4: "10.64.0.2", ipv6: "fd7a::2", port: 443 },
+      ],
+    } as unknown as Parameters<typeof resolverRecords>[0];
+    expect(resolverRecords(netmap)).toEqual([
+      { name: "nas.wave.example.com", ipv4: "10.64.0.1", ipv6: "fd7a::1" },
+      { name: "laptop.wave.example.com", ipv4: "10.64.0.2", ipv6: "fd7a::2" },
+      { name: "grafana.wave.example.com", ipv4: "10.64.1.1", ipv6: "fd7a::1:1" },
+      { name: "app.pier.wave.example.com", ipv4: "10.64.0.2", ipv6: "fd7a::2" },
+    ]);
+  });
+
+  test("a netmap without services or piers has only its nodes", () => {
+    const netmap = { self: node("nas", 1), peers: [] } as unknown as Parameters<typeof resolverRecords>[0];
+    expect(resolverRecords(netmap)).toEqual([
+      { name: "nas.wave.example.com", ipv4: "10.64.0.1", ipv6: "fd7a::1" },
+    ]);
+  });
+});
 
 describe("usesDynamicName", () => {
   test("Linux keeps the name it was given", () => {

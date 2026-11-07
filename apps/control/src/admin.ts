@@ -40,18 +40,12 @@ import { addMember, listMembers, removeMember } from "./waves/members.ts";
 import { findNode, listNodes, removeNode, setWildcardAllowed } from "./waves/nodes.ts";
 import {
   type PierDnsOutcome,
-  publishPierName,
-  unpublishPierName,
-  unpublishPiersOfNode,
+  publishPierZone,
+  unpublishPierZone,
+  unpublishPierZoneOfNode,
+  wildcardOf,
 } from "./waves/pier-dns.ts";
-import {
-  clearPierHost,
-  findPierHost,
-  listPiers,
-  removePiersOf,
-  setPierAllowed,
-  setPierHost,
-} from "./waves/piers.ts";
+import { clearPierHost, removePiersOf, setPierAllowed, setPierHost } from "./waves/piers.ts";
 import {
   createWave,
   DEFAULT_DNS_BASE,
@@ -254,7 +248,7 @@ const usage = `${m.usageTitle}
   ${invocation} revoke-auth-key     <wave> <id>
   ${invocation} allow-wildcard      <wave> <hostname|node-id>
   ${invocation} deny-wildcard       <wave> <hostname|node-id>
-  ${invocation} set-pier            <wave> <hostname|node-id> [--ipv4 <addr>] [--ipv6 <addr>]
+  ${invocation} set-pier            <wave> <hostname|node-id> [--ipv4 <addr>] [--ipv6 <addr>] [--label pier]
   ${invocation} clear-pier          <wave>
   ${invocation} allow-pier          <wave> <hostname|node-id>
   ${invocation} deny-pier           <wave> <hostname|node-id>
@@ -321,7 +315,7 @@ async function account(email: string): Promise<{ id: string } | null> {
   return rows[0] ?? null;
 }
 
-/** What happened to the public records of one name, in words an operator can act on. */
+/** What happened to the pier's wildcard record, in words an operator can act on. */
 function reportPierDns(
   fqdn: string,
   wave: string,
@@ -519,17 +513,10 @@ async function main(): Promise<never> {
     }
 
     // A closed lock that leaves the door open is no lock: what the device had
-    // put out goes with the permission, and so do its records in the zone.
+    // put out goes with the permission. The zone is untouched -- the wildcard
+    // belongs to the pier, and a name nobody claims is closed there.
     const taken = await removePiersOf(db, target.id, found.id);
-    const pierHost = await findPierHost(db, target.id);
     console.log(m.pierDenied(found.hostname, taken.length));
-    for (const pier of taken) {
-      const outcome = await unpublishPierName(
-        { db, dnsSecret: config.dnsSecret },
-        { waveId: target.id, fqdn: `${pier.name}.${target.dnsSuffix}`, host: pierHost },
-      );
-      reportPierDns(`${pier.name}.${target.dnsSuffix}`, target.name, "unpublish", outcome);
-    }
     // The running server pushes nothing for a shell change; the heartbeat does.
     return done(0);
   }
@@ -539,7 +526,7 @@ async function main(): Promise<never> {
     const positional: string[] = [];
     for (let at = 0; at < rest.length; at++) {
       const entry = rest[at] ?? "";
-      if (entry === "--ipv4" || entry === "--ipv6") at++;
+      if (entry === "--ipv4" || entry === "--ipv6" || entry === "--label") at++;
       else positional.push(entry);
     }
     const [selector, host] = positional;
@@ -550,32 +537,42 @@ async function main(): Promise<never> {
     };
     const ipv4 = flagValue("--ipv4");
     const ipv6 = flagValue("--ipv6");
+    const label = flagValue("--label");
     if (ipv4 === undefined && ipv6 === undefined) return done(1, m.pierNeedsAddress);
 
     const target = await wave(selector);
     const found = await findNode(db, target.id, host);
     if (!found) return done(1, m.noDevice(host, target.name));
 
-    const set = await setPierHost(db, { waveId: target.id, nodeId: found.id, ipv4, ipv6 });
+    const set = await setPierHost(db, { waveId: target.id, nodeId: found.id, ipv4, ipv6, label });
     if ("invalid" in set) return done(1, set.invalid);
     if ("conflict" in set) return done(1, set.conflict);
 
     console.log(
-      m.pierSet(found.hostname, [set.host.publicIpv4, set.host.publicIpv6].filter(Boolean).join(", ")),
+      m.pierSet(
+        found.hostname,
+        [set.host.publicIpv4, set.host.publicIpv6].filter(Boolean).join(", "),
+        set.zone,
+      ),
     );
-    // Names claimed before this pier (or under another address) must point here.
-    for (const pier of await listPiers(db, target.id)) {
-      const fqdn = `${pier.name}.${target.dnsSuffix}`;
+    const dns = { db, dnsSecret: config.dnsSecret };
+    // A zone that moved leaves its old wildcard behind otherwise.
+    if (set.previousZone) {
       reportPierDns(
-        fqdn,
+        wildcardOf(set.previousZone),
         target.name,
-        "publish",
-        await publishPierName(
-          { db, dnsSecret: config.dnsSecret },
-          { waveId: target.id, fqdn, host: set.host },
-        ),
+        "unpublish",
+        await unpublishPierZone(dns, { waveId: target.id, zone: set.previousZone, host: set.host }),
       );
     }
+    // Written every time, changed or not: setting the pier again is how a
+    // record that could not be written the first time gets written.
+    reportPierDns(
+      wildcardOf(set.zone),
+      target.name,
+      "publish",
+      await publishPierZone(dns, { waveId: target.id, zone: set.zone, host: set.host }),
+    );
     return done(0, m.pierSetWarning);
   }
 
@@ -584,21 +581,18 @@ async function main(): Promise<never> {
     const cleared = await clearPierHost(db, target.id);
     if (!cleared) return done(1, m.noPierHost(target.name));
 
-    console.log(m.pierCleared(cleared.hostname));
-    // Nothing answers for these names any more, so their records go too; the
-    // claims stay and are written again when there is a pier to point at.
-    for (const pier of await listPiers(db, target.id)) {
-      const fqdn = `${pier.name}.${target.dnsSuffix}`;
-      reportPierDns(
-        fqdn,
-        target.name,
-        "unpublish",
-        await unpublishPierName(
-          { db, dnsSecret: config.dnsSecret },
-          { waveId: target.id, fqdn, host: cleared },
-        ),
-      );
-    }
+    console.log(m.pierCleared(cleared.host.hostname));
+    // Nothing answers for the zone any more, so its record goes too; the
+    // claims stay and work again as soon as there is a pier.
+    reportPierDns(
+      wildcardOf(cleared.zone),
+      target.name,
+      "unpublish",
+      await unpublishPierZone(
+        { db, dnsSecret: config.dnsSecret },
+        { waveId: target.id, zone: cleared.zone, host: cleared.host },
+      ),
+    );
     return done(0);
   }
 
@@ -790,7 +784,11 @@ async function main(): Promise<never> {
     if ("conflict" in updated) {
       return done(
         1,
-        updated.conflict === "piers" ? m.domainHasPiers(target.name, updated.names) : m.suffixTaken(domain),
+        updated.conflict === "piers"
+          ? m.domainHasPiers(target.name, updated.names)
+          : updated.conflict === "pier"
+            ? m.domainHasPier(target.name, updated.hostname, updated.zone)
+            : m.suffixTaken(domain),
       );
     }
     console.log(m.namesNow(target.name, domain));
@@ -871,12 +869,11 @@ async function main(): Promise<never> {
     if (!found) return done(1, m.noDevice(host, target.name));
 
     // Before the row goes, while its names are still known.
-    for (const { fqdn, outcome } of await unpublishPiersOfNode(
+    const zone = await unpublishPierZoneOfNode(
       { db, dnsSecret: config.dnsSecret },
       { waveId: target.id, nodeId: found.id },
-    )) {
-      reportPierDns(fqdn, target.name, "unpublish", outcome);
-    }
+    );
+    if (zone) reportPierDns(zone.name, target.name, "unpublish", zone.outcome);
     await removeNode(db, target.id, found.id);
     console.log(m.deviceRemoved(found.hostname, target.name));
     // The running server has the sockets, this process does not -- a device

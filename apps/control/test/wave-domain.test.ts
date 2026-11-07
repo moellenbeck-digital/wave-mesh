@@ -197,7 +197,7 @@ describe("a wave with names in the open network", () => {
 
     expect(await setWaveDomain(db, waveId, "wave.example.com")).toEqual({
       conflict: "piers",
-      names: [`app.robin.${DEFAULT_DNS_BASE}`, `blog.robin.${DEFAULT_DNS_BASE}`],
+      names: [`app.pier.robin.${DEFAULT_DNS_BASE}`, `blog.pier.robin.${DEFAULT_DNS_BASE}`],
     });
     expect(await suffixOf(waveId)).toBe(`robin.${DEFAULT_DNS_BASE}`);
     expect(await versionOf(waveId)).toBe(before ?? 0);
@@ -210,6 +210,18 @@ describe("a wave with names in the open network", () => {
     await db.delete(wavePiers).where(eq(wavePiers.waveId, waveId));
     expect(await setWaveDomain(db, waveId, "wave.example.com")).toMatchObject({ id: waveId });
     expect(await suffixOf(waveId)).toBe("wave.example.com");
+  });
+
+  test("a pier holds it too: its wildcard hangs under the old suffix", async () => {
+    const waveId = await withDevice();
+    await db.update(nodes).set({ pierIpv4: "203.0.113.10" }).where(eq(nodes.id, "n1"));
+    expect(await setWaveDomain(db, waveId, "wave.example.com")).toEqual({
+      conflict: "pier",
+      hostname: "laptop",
+      zone: `pier.robin.${DEFAULT_DNS_BASE}`,
+    });
+    await db.update(nodes).set({ pierIpv4: null }).where(eq(nodes.id, "n1"));
+    expect(await setWaveDomain(db, waveId, "wave.example.com")).toMatchObject({ id: waveId });
   });
 
   test("asking for the domain it has is not refused", async () => {
@@ -290,7 +302,7 @@ describe("the domain form", () => {
 
     const res = await post(owner, waveId, "wave.example.com");
     expect(res.status).toBe(409);
-    expect(await res.text()).toContain(`app.robin.${DEFAULT_DNS_BASE}`);
+    expect(await res.text()).toContain(`app.pier.robin.${DEFAULT_DNS_BASE}`);
     expect(await suffixOf(waveId)).toBe(`robin.${DEFAULT_DNS_BASE}`);
   });
 

@@ -84,10 +84,12 @@ export type Service = z.infer<typeof Service>;
  *
  * The address is the target's own wave address, which is already in the
  * `allowedIps` of its peer entry -- the list says *which* name goes *where*,
- * the peers say *how* to get there.
+ * the peers say *how* to get there. Every other device's resolver answers the
+ * name with the same address: inside the wave it is reached directly, not by
+ * the detour through the pier.
  */
 export const Pier = z.looseObject({
-  /** The label under the wave's suffix, e.g. "app". */
+  /** The label under the pier zone, e.g. "app". */
   name: z.string().min(1),
   dnsName: z.string().min(1),
   /** The device that answers for the name. Always a peer (or self) of this netmap. */
@@ -98,6 +100,17 @@ export const Pier = z.looseObject({
   port: z.number().int().min(1).max(65535),
 });
 export type Pier = z.infer<typeof Pier>;
+
+/**
+ * The zone the pier serves and the node that splices it (D12), e.g.
+ * `pier.wave.example.com`: one wildcard record points all of it at the pier,
+ * and every name put out is one label below it.
+ */
+export const PierZone = z.looseObject({
+  nodeId: NodeId,
+  zone: z.string().min(1),
+});
+export type PierZone = z.infer<typeof PierZone>;
 
 export const DnsConfig = z.looseObject({
   /** e.g. "wave.example.com" -- always a domain the wave owner controls. */
@@ -175,12 +188,15 @@ export const Netmap = z.looseObject({
   /**
    * Names the pier node serves to the open network (D12).
    *
-   * Sent to the pier node itself and to the device that owns the name, nobody
-   * else. Optional and **without a default**, exactly like `services`: a wave
-   * without piers sends no field, and a reader that invented an empty list
-   * would canonicalise a different document than the one that was signed.
+   * All of them to the pier node; to every other device its own and those of
+   * the peers it may reach, which its resolver answers with the owner's wave
+   * address. Optional and **without a default**, exactly like `services`: a
+   * wave without piers sends no field, and a reader that invented an empty
+   * list would canonicalise a different document than the one that was signed.
    */
   piers: z.array(Pier).optional(),
+  /** Where the pier zone is, while the wave has a pier. Optional, no default, like `piers`. */
+  pier: PierZone.optional(),
   /**
    * What this node lets in over the tunnel, when its wave has a policy (M7).
    *

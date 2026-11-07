@@ -29,6 +29,7 @@ import { up as bringUp, type EngineOptions, type Tunnel } from "./engine.ts";
 import {
   chooseCertificate,
   ExposeListeners,
+  exposedDnsName,
   exposeLabel,
   type ListenerState,
   type PemPair,
@@ -111,6 +112,20 @@ function serverReason(error: HttpError): string {
     }
   }
   return error.message;
+}
+
+/**
+ * The pier zone as far as this device can tell without asking: the netmap's,
+ * or -- for a tunnel that is down -- the default label under the wave's
+ * domain. Only ever used to name entries that carry no full name of their own.
+ */
+function pierZoneFallback(
+  snapshot: { pier?: { zone: string }; dnsSuffix?: string } | undefined,
+  profile: Profile,
+): string | null {
+  if (snapshot?.pier) return snapshot.pier.zone;
+  const suffix = snapshot?.dnsSuffix ?? profile.label;
+  return suffix ? `pier.${suffix}` : null;
 }
 
 /** A listener's state as the pair the IPC carries: the state, and the system's words when it failed. */
@@ -622,6 +637,21 @@ export class Daemon {
     };
   }
 
+  /**
+   * The zone this wave's pier names live in (D12): the live netmap's while the
+   * tunnel is up and the wave has a pier, otherwise the server's word for it.
+   * Asked rather than assumed, because the label is the operator's to choose.
+   */
+  private async pierZoneOf(profile: Profile, hostname: string | null): Promise<string | Notice> {
+    const snapshot = await this.runtimes.get(profileKey(profile))?.tunnel?.snapshot();
+    if (snapshot?.pier) return snapshot.pier.zone;
+    try {
+      return (await new ControlClient(profile).piers()).zone;
+    } catch (error) {
+      return this.pierFailure(error, profile, "", hostname);
+    }
+  }
+
   /** What a refusal from the pier routes means to this device's owner. */
   private async pierFailure(
     error: unknown,
@@ -657,13 +687,14 @@ export class Daemon {
   ): Promise<ExposedName | Notice> {
     const profile = await this.oneProfile(wanted);
     if ("code" in profile) return profile;
-    const { suffix, hostname } = await this.suffixOf(profile);
-    if (!suffix) return this.refuse(notice("expose-wave-unknown"));
-
-    const label = exposeLabel(name, suffix);
-    if (!label) return this.refuse(notice("expose-bad-name", { name, suffix }));
+    const { hostname } = await this.suffixOf(profile);
     const local = parseLocalUrl(localUrl);
     if (!local) return this.refuse(notice("expose-bad-url", { url: localUrl }));
+    const zone = await this.pierZoneOf(profile, hostname);
+    if (typeof zone !== "string") return zone;
+
+    const label = exposeLabel(name, zone);
+    if (!label) return this.refuse(notice("expose-bad-name", { name, suffix: zone }));
 
     // The device's own listener behind its own name would proxy to itself.
     const runtime = this.runtimes.get(profileKey(profile));
@@ -684,7 +715,7 @@ export class Daemon {
     const current = (await this.sync()).find((entry) => profileKey(entry) === key) ?? profile;
     const exposed = [
       ...current.exposed.filter((entry) => entry.name !== label),
-      { name: label, localUrl: local.url, port: response.port },
+      { name: label, dnsName: response.dnsName, localUrl: local.url, port: response.port },
     ];
     await updateProfile(this.options.statePath, key, { exposed });
     log(`exposing ${response.dnsName} on port ${response.port} -> ${local.url}`);
@@ -701,9 +732,6 @@ export class Daemon {
       port: response.port,
       localUrl: local.url,
       ...viewOf(state ?? { state: "tunnel-down" }),
-      dns: response.dns,
-      records: response.records,
-      ...(response.error ? { dnsError: response.error } : {}),
     };
   }
 
@@ -711,10 +739,11 @@ export class Daemon {
   async unexpose(wanted: string | undefined, name: string): Promise<ExposedName | Notice> {
     const profile = await this.oneProfile(wanted);
     if ("code" in profile) return profile;
-    const { suffix, hostname } = await this.suffixOf(profile);
-    if (!suffix) return this.refuse(notice("expose-wave-unknown"));
-    const label = exposeLabel(name, suffix);
-    if (!label) return this.refuse(notice("expose-bad-name", { name, suffix }));
+    const { hostname } = await this.suffixOf(profile);
+    const zone = await this.pierZoneOf(profile, hostname);
+    if (typeof zone !== "string") return zone;
+    const label = exposeLabel(name, zone);
+    if (!label) return this.refuse(notice("expose-bad-name", { name, suffix: zone }));
 
     const key = profileKey(profile);
     let result: Awaited<ReturnType<ControlClient["unexposePier"]>> | null = null;
@@ -736,20 +765,19 @@ export class Daemon {
     await updateProfile(this.options.statePath, key, {
       exposed: profile.exposed.filter((item) => item.name !== label),
     });
-    this.logFor(profile)(`no longer exposing ${label}.${suffix}`);
+    const dnsName = result?.dnsName ?? (entry ? exposedDnsName(entry, zone) : `${label}.${zone}`);
+    this.logFor(profile)(`no longer exposing ${dnsName}`);
     await this.sync();
     await this.reconcileExpose();
     await this.publish();
     return {
       controlUrl: profile.controlUrl,
       name: label,
-      dnsName: `${label}.${suffix}`,
+      dnsName,
       port: result?.port ?? entry?.port ?? 443,
       localUrl: entry?.localUrl ?? null,
       state: "removed",
       detail: null,
-      ...(result ? { dns: result.dns, records: result.records } : { records: [] }),
-      ...(result?.error ? { dnsError: result.error } : {}),
     };
   }
 
@@ -779,25 +807,27 @@ export class Daemon {
         port: pier.port,
         localUrl: entry?.localUrl ?? null,
         ...viewOf(state),
-        records: [],
       };
     });
-    const suffix =
-      remote.piers[0]?.dnsName.split(".").slice(1).join(".") ?? (await this.suffixOf(profile)).suffix;
     for (const entry of profile.exposed) {
       if (remote.piers.some((pier) => pier.name === entry.name)) continue;
       names.push({
         controlUrl: profile.controlUrl,
         name: entry.name,
-        dnsName: suffix ? `${entry.name}.${suffix}` : entry.name,
+        dnsName: exposedDnsName(entry, remote.zone),
         port: entry.port,
         localUrl: entry.localUrl,
         state: "not-claimed",
         detail: null,
-        records: [],
       });
     }
-    return { controlUrl: profile.controlUrl, allowed: remote.allowed, pier: remote.pier, names };
+    return {
+      controlUrl: profile.controlUrl,
+      allowed: remote.allowed,
+      zone: remote.zone,
+      pier: remote.pier,
+      names,
+    };
   }
 
   /**
@@ -813,10 +843,10 @@ export class Daemon {
     for (const profile of profiles) {
       const runtime = this.runtimes.get(profileKey(profile));
       const snapshot = await runtime?.tunnel?.snapshot();
-      const suffix = snapshot?.dnsSuffix ?? profile.label;
+      const zone = pierZoneFallback(snapshot, profile);
       const own = new Set<string>();
       for (const entry of profile.exposed) {
-        const dnsName = suffix ? `${entry.name}.${suffix}` : entry.name;
+        const dnsName = zone ? exposedDnsName(entry, zone) : (entry.dnsName ?? entry.name);
         own.add(dnsName.toLowerCase());
         rows.push({
           controlUrl: profile.controlUrl,
@@ -828,9 +858,10 @@ export class Daemon {
           ...viewOf(runtime?.exposeStates?.get(dnsName.toLowerCase()) ?? { state: "tunnel-down" }),
         });
       }
-      if (!snapshot) continue;
+      // Only the pier node splices; everywhere else the netmap lists the names
+      // of reachable peers for the resolver, and this device serves none of them.
+      if (!snapshot?.pier?.self) continue;
       for (const pier of snapshot.piers) {
-        // On a device that only owns its names the netmap lists exactly those.
         if (own.has(pier.dnsName.toLowerCase()) || pier.ipv4 === snapshot.self?.ipv4) continue;
         const peer = snapshot.peers.find((candidate) => candidate.ipv4 === pier.ipv4);
         const reachable =
@@ -888,15 +919,15 @@ export class Daemon {
         runtime.exposeStates = new Map();
         continue;
       }
-      const suffix = snapshot.dnsSuffix ?? profile.label;
-      if (!suffix) continue;
+      const zone = pierZoneFallback(snapshot, profile);
+      if (!zone) continue;
       runtime.expose ??= new ExposeListeners({
         certificate: (fqdn) => this.certificateFor(runtime, fqdn),
         log: this.logFor(profile),
       });
       const targets = profile.exposed.flatMap((entry) => {
         const local = parseLocalUrl(entry.localUrl);
-        return local ? [{ fqdn: `${entry.name}.${suffix}`, local, port: entry.port }] : [];
+        return local ? [{ fqdn: exposedDnsName(entry, zone), local, port: entry.port }] : [];
       });
       try {
         runtime.exposeStates = await runtime.expose.reconcile(snapshot.self?.ipv4 ?? null, targets);

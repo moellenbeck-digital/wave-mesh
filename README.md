@@ -237,9 +237,9 @@ gegen Fakes getestet, nicht gegen echtes Kubernetes.
 
 ### Ein Dienst im offenen Netz: der Pier
 
-Ein Gerät kann einen Namen unter der Domain des Waves aus dem Internet
-erreichbar machen — ohne eingehenden Port, feste Adresse oder Portfreigabe. Ein
-**Pier-Knoten** (Image `wave-reverse-proxy`) liest nur den Namen aus dem
+Ein Gerät kann einen Namen in der Pier-Zone des Waves (`app.pier.meinwave.example.com`)
+aus dem Internet erreichbar machen — ohne eingehenden Port, feste Adresse oder
+Portfreigabe. Ein **Pier-Knoten** (Image `wave-pier`) liest nur den Namen aus dem
 Verbindungsaufbau und reicht die Verbindung durch den Wave an das Gerät weiter;
 die Verschlüsselung endet auf dem Gerät, mit dessen eigenem Zertifikat. Der Pier
 hält keinen Schlüssel und sieht keinen Klartext.
@@ -250,19 +250,21 @@ bun apps/control/src/admin.ts set-pier   meinwave wave-pier-0 --ipv4 <öffentlic
 bun apps/control/src/admin.ts allow-pier meinwave laptop
 
 # Besitzer, auf dem Gerät
-wave expose app.meinwave.example.com http://localhost:3000
-wave cert   app.meinwave.example.com     # beim ersten Mal: noch kein Zertifikat
-wave pier status                         # läuft der Proxy? wenn nicht: warum
-wave expose --remove app.meinwave.example.com
+wave expose app http://localhost:3000         # → app.pier.meinwave.example.com
+wave cert   app.pier.meinwave.example.com     # beim ersten Mal: noch kein Zertifikat
+wave pier status                              # läuft der Proxy? wenn nicht: warum
+wave expose --remove app
 ```
 
 `<url>` ist `http(s)://host:port` auf dem Gerät oder in seinem LAN. Der Anspruch
 steht auch ohne Zertifikat; der Proxy öffnet, sobald eines den Namen deckt
-(`wave expose` nennt den nächsten Schritt). Den öffentlichen A/AAAA-Eintrag
-schreibt der Control-Server über die Provider-API des Waves — oder nennt ihn, wenn
-die Zone von Hand gepflegt wird. Entziehst du die Erlaubnis (`deny-pier`) oder
-nimmst einen Namen heraus, wird der Eintrag gelöscht; ein schon ausgestelltes
-Zertifikat läuft bis zu seinem Ablauf weiter.
+(`wave expose` nennt den nächsten Schritt). Den öffentlichen Eintrag
+`*.pier.meinwave.example.com` schreibt `set-pier` einmal über die Provider-API des
+Waves — oder nennt ihn, wenn die Zone von Hand gepflegt wird; eine Freigabe schreibt
+danach nichts mehr ins DNS. Im Wave selbst löst der Name direkt auf die Wave-Adresse
+des Geräts auf. Entziehst du die Erlaubnis (`deny-pier`) oder nimmst einen Namen
+heraus, ist er sofort nicht mehr erreichbar; ein schon ausgestelltes Zertifikat läuft
+bis zu seinem Ablauf weiter.
 
 Den Pier-Knoten startest du im Cluster oder auf einer eigenen Maschine:
 

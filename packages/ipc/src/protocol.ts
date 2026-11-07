@@ -355,7 +355,10 @@ export const ExposeState = z.enum([
 ]);
 export type ExposeState = z.infer<typeof ExposeState>;
 
-/** One name this device has put out, with what the server said about its public records. */
+/**
+ * One name this device has put out. No DNS state: one wildcard record covers
+ * the whole pier zone, and it is the operator's, written with `set-pier`.
+ */
 export const ExposedName = z.object({
   controlUrl: z.string(),
   name: z.string(),
@@ -366,11 +369,6 @@ export const ExposedName = z.object({
   state: ExposeState,
   /** Why not, when `state` is `failed`: the system's own words. */
   detail: z.string().nullable().default(null),
-  /** The public records: `published`, `manual`, `unconfigured` or `failed`. Absent when not asked. */
-  dns: z.string().optional(),
-  /** What somebody has to create by hand, when `dns` is `manual` or `unconfigured`. */
-  records: z.array(z.object({ type: z.string(), name: z.string(), value: z.string() })).default([]),
-  dnsError: z.string().optional(),
 });
 export type ExposedName = z.infer<typeof ExposedName>;
 
@@ -379,6 +377,8 @@ export const ExposedList = z.object({
   controlUrl: z.string(),
   /** Whether the operator has allowed the pier for this device. */
   allowed: z.boolean(),
+  /** The zone the names live in, e.g. `pier.wave.example.com`. */
+  zone: z.string(),
   /** Where the world reaches the pier; null while no pier is named. */
   pier: z.object({ publicIpv4: z.string().nullable(), publicIpv6: z.string().nullable() }).nullable(),
   names: z.array(ExposedName),

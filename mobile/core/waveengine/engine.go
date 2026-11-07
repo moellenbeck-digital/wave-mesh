@@ -1001,20 +1001,7 @@ func (e *Engine) reconcile() error {
 		}
 
 		reverse := wavedns.ReverseZonesFor(netmap.Self.Addresses)
-		records := make([]wavedns.Record, 0, len(netmap.Peers)+len(netmap.Services)+1)
-		for _, entryRecord := range append([]waveproto.Peer{netmap.Self.Peer}, netmap.Peers...) {
-			records = append(records, wavedns.Record{
-				Name: entryRecord.DNSName, IPv4: entryRecord.IPv4, IPv6: entryRecord.IPv6,
-			})
-		}
-		// Services sit in the same zone as the devices and answer the same way
-		// (D11); their addresses are already routed, because they live in the
-		// connector's allowed IPs.
-		for _, service := range netmap.Services {
-			records = append(records, wavedns.Record{
-				Name: service.DNSName, IPv4: service.IPv4, IPv6: service.IPv6,
-			})
-		}
+		records := resolverRecords(netmap)
 		delegated := make([]string, 0, len(netmap.DNS.Routes))
 		dnsRoutes := make([]wavedns.Route, 0, len(netmap.DNS.Routes))
 		for _, route := range netmap.DNS.Routes {
@@ -1659,4 +1646,24 @@ func candidateAddrs(candidates []waveproto.Candidate) []netip.AddrPort {
 		}
 	}
 	return out
+}
+
+// resolverRecords is what the wave's resolver answers: the devices, the
+// services -- in the same zone, answering the same way (D11), their addresses
+// already routed because they live in the connector's allowed IPs -- and the
+// names put out through the pier (D12), with the owner's wave address. Those
+// sit in the pier zone under the wave's suffix, so the queries come here, and
+// inside the wave the direct way is the shorter one.
+func resolverRecords(netmap waveproto.Netmap) []wavedns.Record {
+	records := make([]wavedns.Record, 0, len(netmap.Peers)+len(netmap.Services)+len(netmap.Piers)+1)
+	for _, peer := range append([]waveproto.Peer{netmap.Self.Peer}, netmap.Peers...) {
+		records = append(records, wavedns.Record{Name: peer.DNSName, IPv4: peer.IPv4, IPv6: peer.IPv6})
+	}
+	for _, service := range netmap.Services {
+		records = append(records, wavedns.Record{Name: service.DNSName, IPv4: service.IPv4, IPv6: service.IPv6})
+	}
+	for _, pier := range netmap.Piers {
+		records = append(records, wavedns.Record{Name: pier.DNSName, IPv4: pier.IPv4, IPv6: pier.IPv6})
+	}
+	return records
 }

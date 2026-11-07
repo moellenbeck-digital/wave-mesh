@@ -5,6 +5,7 @@ import { newId } from "../ids.ts";
 import { allocatePrefix } from "../net/addressing.ts";
 import { invitesFor } from "./invites.ts";
 import { type FoundWave, isAmbiguous, resolveWave } from "./lookup.ts";
+import { findPierHost, pierZone } from "./piers.ts";
 
 /**
  * Waves are carved out of this range, one block each.
@@ -312,6 +313,7 @@ export async function setWaveDomain(
   | { ambiguous: FoundWave[] }
   | { conflict: "suffix" }
   | { conflict: "piers"; names: string[] }
+  | { conflict: "pier"; hostname: string; zone: string }
   | null
 > {
   const normalized = normaliseDnsSuffix(domain);
@@ -320,18 +322,23 @@ export async function setWaveDomain(
   if (found === null || isAmbiguous(found)) return found;
   if (found.dnsSuffix === normalized) return { id: found.id, name: found.name };
 
-  // A name put out through the pier (D12) is a label under the suffix, with a
-  // public record and a certificate on the old one. Moving the zone would leave
-  // both behind, so the names go first -- the owner removes them with
-  // `wave expose --remove`, or an operator with `deny-pier`.
+  // A name put out through the pier (D12) lives in the pier zone under the
+  // suffix, with a certificate on the old one, and the pier itself has a
+  // wildcard record there. Moving the zone would leave all of it behind, so
+  // the names go first -- the owner removes them with `wave expose --remove`,
+  // or an operator with `deny-pier` -- and then the pier, with `clear-pier`.
+  const waveRows = await db.select().from(waves).where(eq(waves.id, found.id)).limit(1);
+  const zone = waveRows[0] ? pierZone(waveRows[0]) : found.dnsSuffix;
   const held = await db
     .select({ name: wavePiers.name })
     .from(wavePiers)
     .where(eq(wavePiers.waveId, found.id))
     .orderBy(asc(wavePiers.name));
   if (held.length > 0) {
-    return { conflict: "piers", names: held.map((row) => `${row.name}.${found.dnsSuffix}`) };
+    return { conflict: "piers", names: held.map((row) => `${row.name}.${zone}`) };
   }
+  const pier = await findPierHost(db, found.id);
+  if (pier) return { conflict: "pier", hostname: pier.hostname, zone };
 
   // Asked before writing, because the unique index answers with an exception
   // that no caller can tell from a database being down.

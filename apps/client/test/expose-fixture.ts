@@ -57,6 +57,7 @@ export function fakeTunnel(url: string, extra: Partial<TunnelSnapshot> = {}): Tu
     },
     dnsSuffix: "wave.example.com",
     piers: [],
+    pier: { zone: "pier.wave.example.com", self: false },
     peers: [],
     ...extra,
   };

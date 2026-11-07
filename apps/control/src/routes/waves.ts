@@ -28,7 +28,7 @@ import {
 } from "../waves/invites.ts";
 import { canManage, changeRole, listMembers, removeMember, roleOf } from "../waves/members.ts";
 import { ownerOfNode, removeNode, renameNode } from "../waves/nodes.ts";
-import { unpublishPiersOfNode } from "../waves/pier-dns.ts";
+import { unpublishPierZoneOfNode } from "../waves/pier-dns.ts";
 import {
   createWave,
   deleteWave,
@@ -52,6 +52,8 @@ export interface WaveRouteDeps {
   db: Database;
   config: Config;
   hub?: NetmapHub;
+  /** For the DNS providers, so a test never reaches a real API. */
+  dnsFetch?: typeof fetch;
 }
 
 type Vars = { user: SessionUser | null };
@@ -67,7 +69,7 @@ type Vars = { user: SessionUser | null };
  * browser does not attach to a cross-site POST -- a forged form from another
  * origin arrives unauthenticated and is refused as such.
  */
-export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
+export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
   const app = new Hono<{ Variables: Vars }>();
   const canCreate = mayCreateWaves(config);
 
@@ -255,6 +257,10 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
       if (result.conflict === "piers") {
         const names = result.names;
         return page(c, (m) => [m.domainHasPiers, m.domainHasPiersBody(names)], 409);
+      }
+      if (result.conflict === "pier") {
+        const { hostname, zone } = result;
+        return page(c, (m) => [m.domainHasPier, m.domainHasPierBody(hostname, zone)], 409);
       }
       return page(c, (m) => [m.domainTaken, m.domainTakenBody(domain)], 409);
     }
@@ -464,10 +470,10 @@ export function waveRoutes({ db, config, hub }: WaveRouteDeps) {
     const auth = await authorize(c, waveId, "manage");
     if (auth instanceof Response) return auth;
 
-    // Before the row goes: its names cascade with it, and with them the only
-    // record of which public records to take out of the zone.
-    await unpublishPiersOfNode(
-      { db, dnsSecret: config.dnsSecret },
+    // Before the row goes: if it was the pier, its public addresses go with
+    // it, and with them the only record of what the wildcard pointed at.
+    await unpublishPierZoneOfNode(
+      { db, dnsSecret: config.dnsSecret, http: dnsFetch },
       { waveId, nodeId: c.req.param("nodeId") },
     );
     const removed = await removeNode(db, waveId, c.req.param("nodeId"));

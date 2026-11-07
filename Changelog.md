@@ -9,9 +9,9 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 ### Neue Funktionen
 
 - **Pier: ein Name aus dem Wave im offenen Netz:** Ein Gerät kann einen Namen
-  unter der Domain des Waves aus dem Internet erreichbar machen, ohne eingehenden
-  Port, feste Adresse oder Portfreigabe im Router. Dafür gibt es das Image
-  `wave-reverse-proxy` (den Pier-Knoten): Er liest nur den Namen aus dem
+  in der Pier-Zone des Waves (`app.pier.wave.example.com`) aus dem Internet
+  erreichbar machen, ohne eingehenden Port, feste Adresse oder Portfreigabe im
+  Router. Dafür gibt es das Image `wave-pier` (den Pier-Knoten): Er liest nur den Namen aus dem
   Verbindungsaufbau und reicht die Verbindung durch den Wave an das Gerät weiter.
   Er hält keinen Schlüssel und sieht keinen Klartext — die Verschlüsselung endet
   auf dem Gerät, mit dessen eigenem Zertifikat. Ein unbekannter Name oder ein
@@ -21,13 +21,18 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   dessen Besitzer einen Namen und einen Port freigeben. Wird die Erlaubnis
   zurückgenommen, gehen die Namen des Geräts mit. Die Geräteliste zeigt, welches
   Gerät den Pier nutzen darf und welches der Pier ist (`admin.ts set-pier`).
-- **Öffentliche DNS-Einträge für freigegebene Namen:** Der Server schreibt für
-  einen freigegebenen Namen den A- und AAAA-Eintrag auf die öffentliche Adresse
-  des Piers und löscht ihn beim Entzug wieder — bei Cloudflare, Hetzner, IONOS
-  und INWX. Verwaltet der Wave seine Zone von Hand, nennt der Server den Eintrag
-  als Aufforderung.
+- **Ein DNS-Eintrag für die ganze Pier-Zone:** `admin.ts set-pier` schreibt
+  einmal `*.pier.<domain>` (A und AAAA) auf die öffentliche Adresse des Piers,
+  `clear-pier` löscht ihn wieder — bei Cloudflare, Hetzner, IONOS und INWX.
+  Verwaltet der Wave seine Zone von Hand, nennt der Server den Eintrag als
+  Aufforderung. Eine Freigabe schreibt danach nichts mehr ins DNS, und Pier-Namen
+  kommen Geräten und Diensten nicht in die Quere. Das Label der Zone wählt der
+  Betreiber mit `set-pier --label`, Vorgabe ist `pier`.
+- **Pier-Namen lösen auch im Wave auf:** Innerhalb des Waves beantwortet der
+  Resolver einen freigegebenen Namen mit der Wave-Adresse des Geräts — auf dem
+  Desktop wie auf dem Telefon. Der Umweg über den Pier entfällt.
 - **`wave expose`: einen lokalen Dienst ins Internet stellen:** `wave expose
-  app.wave.example.com http://localhost:3000` gibt den Namen frei; der Dienst
+  app http://localhost:3000` gibt `app.pier.wave.example.com` frei; der Dienst
   darf auf dem Gerät oder im LAN laufen (`http://` oder `https://`, mit Port).
   Der Dienst des Geräts beendet die Verschlüsselung selbst, mit dem Zertifikat
   des Geräts für den Namen, und reicht den Verkehr an den Dienst weiter — der
@@ -45,8 +50,9 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 ### Änderungen
 
 - **Domain wechseln, solange Namen im offenen Netz stehen:** `admin.ts
-  set-domain` und das Webformular lehnen ab, solange der Wave Pier-Namen hat, und
-  nennen sie. Erst entfernen (`wave expose --remove`), dann umziehen.
+  set-domain` und das Webformular lehnen ab, solange der Wave Pier-Namen oder
+  einen Pier hat, und nennen sie. Erst entfernen (`wave expose --remove`,
+  `clear-pier`), dann umziehen.
 
 ---
 

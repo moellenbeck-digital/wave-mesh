@@ -43,7 +43,7 @@ spec:
         - name: ghcr
       containers:
         - name: daemon
-          image: ghcr.io/moellenbeck-digital/wave-mesh/wave-reverse-proxy
+          image: ghcr.io/moellenbeck-digital/wave-mesh/wave-pier
           command: ["bun", "apps/client/src/cli.ts", "daemon"]
           envFrom:
             - configMapRef:
@@ -80,7 +80,7 @@ spec:
             limits: { memory: 512Mi }
 
         - name: pier
-          image: ghcr.io/moellenbeck-digital/wave-mesh/wave-reverse-proxy
+          image: ghcr.io/moellenbeck-digital/wave-mesh/wave-pier
           command: ["bun", "apps/pier/src/main.ts"]
           envFrom:
             - configMapRef:

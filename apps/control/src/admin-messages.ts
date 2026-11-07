@@ -15,8 +15,9 @@ every other. acl prints the policy and who reaches whom under it.
 set-dns-provider reads the credential from the terminal or from a pipe. cloudflare, hetzner and
 ionos take one token; inwx takes an account and asks for its parts, or reads
 {"user":"…","password":"…","totpSecret":"…"} from a pipe.
-set-pier makes one device the pier of the wave (D12) and says the public address the world reaches
-it at; allow-pier lets a device put names through it, deny-pier takes its names back.`,
+set-pier makes one device the pier of the wave (D12), says the public address the world reaches
+it at and points *.pier.<domain> there (--label names another zone than "pier"); allow-pier lets
+a device put names through it, deny-pier takes its names back.`,
 
   // --- credentials ----------------------------------------------------------
   ionosPrompt: (suffix: string) => `IONOS API key, <public prefix>.<secret> (${suffix}): `,
@@ -78,8 +79,8 @@ it at; allow-pier lets a device put names through it, deny-pier takes its names 
     "behind it is the device's own service. Allow it only for a device whose services",
     "you would put on a public address.",
   ].join("\n"),
-  pierSet: (host: string, addresses: string) =>
-    `${host} is now the pier of this wave, reached by the world at ${addresses}.`,
+  pierSet: (host: string, addresses: string, zone: string) =>
+    `${host} is now the pier of this wave, reached by the world at ${addresses}; names go under ${zone}.`,
   pierSetWarning: [
     "A pier is a member of the wave with a public address -- treat it like a bastion host:",
     "its own machine and nothing else on it. Until policies hold it back, whoever takes it",
@@ -139,6 +140,9 @@ it at; allow-pier lets a device put names through it, deny-pier takes its names 
   domainHasPiers: (wave: string, names: string[]) =>
     `${wave} still has names in the open network (${names.join(", ")}); ` +
     "remove them first (`wave expose --remove <name>` on the device, or `deny-pier`), then set the domain",
+  domainHasPier: (wave: string, hostname: string, zone: string) =>
+    `${wave} has a pier (${hostname}) with a record for *.${zone}; ` +
+    "`clear-pier` first, then set the domain, then `set-pier` again",
   namesNow: (wave: string, domain: string) => `${wave}: names are now <host>.${domain}`,
   nextNetmap: "Connected nodes pick this up with their next netmap.",
   deleteSummary: (wave: string, suffix: string, devices: number, members: number) =>
@@ -206,8 +210,9 @@ Gerät jedes andere. acl druckt die Policy und wer danach wen erreicht.
 set-dns-provider liest die Zugangsdaten vom Terminal oder aus einer Pipe. cloudflare, hetzner und
 ionos nehmen einen Token; inwx nimmt ein Konto und fragt nach seinen Teilen, oder liest
 {"user":"…","password":"…","totpSecret":"…"} aus einer Pipe.
-set-pier macht ein Gerät zum Pier des Waves (D12) und nennt die öffentliche Adresse, unter der es
-erreichbar ist; allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie zurück.`,
+set-pier macht ein Gerät zum Pier des Waves (D12), nennt die öffentliche Adresse, unter der es
+erreichbar ist, und stellt *.pier.<domain> darauf (--label nennt eine andere Zone als „pier“);
+allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie zurück.`,
 
   ionosPrompt: (suffix) => `IONOS-API-Schlüssel, <öffentliches Präfix>.<Geheimnis> (${suffix}): `,
   tokenPrompt: (kind, suffix) => `API-Token für ${kind} (${suffix}): `,
@@ -262,8 +267,8 @@ erreichbar ist; allow-pier erlaubt einem Gerät, Namen darüber freizugeben, den
     "eigene Dienst des Geräts. Erlaube es nur für ein Gerät, dessen Dienste du an eine",
     "öffentliche Adresse stellen würdest.",
   ].join("\n"),
-  pierSet: (host, addresses) =>
-    `${host} ist jetzt der Pier dieses Waves, aus dem Netz erreichbar unter ${addresses}.`,
+  pierSet: (host, addresses, zone) =>
+    `${host} ist jetzt der Pier dieses Waves, aus dem Netz erreichbar unter ${addresses}; Namen liegen unter ${zone}.`,
   pierSetWarning: [
     "Ein Pier ist Mitglied des Waves mit einer öffentlichen Adresse -- behandle ihn wie einen",
     "Bastion-Host: eigene Maschine, sonst nichts darauf. Solange Policies ihn nicht zurückhalten,",
@@ -318,6 +323,9 @@ erreichbar ist; allow-pier erlaubt einem Gerät, Namen darüber freizugeben, den
   domainHasPiers: (wave, names) =>
     `${wave} hat noch Namen im offenen Netz (${names.join(", ")}); ` +
     "nimm sie zuerst heraus (`wave expose --remove <name>` auf dem Gerät oder `deny-pier`), dann setze die Domain",
+  domainHasPier: (wave, hostname, zone) =>
+    `${wave} hat einen Pier (${hostname}) mit einem Record für *.${zone}; ` +
+    "zuerst `clear-pier`, dann die Domain setzen, danach wieder `set-pier`",
   namesNow: (wave, domain) => `${wave}: die Namen lauten jetzt <host>.${domain}`,
   nextNetmap: "Verbundene Knoten übernehmen das mit ihrer nächsten Netzkarte.",
   deleteSummary: (wave, suffix, devices, members) =>

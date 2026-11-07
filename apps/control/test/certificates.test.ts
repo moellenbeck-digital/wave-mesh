@@ -483,7 +483,7 @@ describe("the names a device put out through the pier", () => {
     const other = makeMachine("desktop");
     await enrol(other, jar);
 
-    const { res, body } = await orderFor(other, ["app.wave.example.com"]);
+    const { res, body } = await orderFor(other, ["app.pier.wave.example.com"]);
     expect(res.status).toBe(403);
     expect(body.error).toContain("does not belong to this device");
     expect(ca.issued).toEqual([]);
@@ -493,7 +493,16 @@ describe("the names a device put out through the pier", () => {
     const { machine, node } = await setUp();
     await allow(node.id);
     await claim(node.id, node.waveId, "app");
-    const { res } = await orderFor(machine, ["other.wave.example.com"]);
+    const { res } = await orderFor(machine, ["other.pier.wave.example.com"]);
+    expect(res.status).toBe(403);
+    expect(ca.issued).toEqual([]);
+  });
+
+  test("is the name under the pier zone, not the same label under the wave's suffix", async () => {
+    const { machine, node } = await setUp();
+    await allow(node.id);
+    await claim(node.id, node.waveId, "app");
+    const { res } = await orderFor(machine, ["app.wave.example.com"]);
     expect(res.status).toBe(403);
     expect(ca.issued).toEqual([]);
   });
@@ -507,13 +516,16 @@ describe("the names a device put out through the pier", () => {
       expect(res.status).toBe(403);
       expect(body.error).toContain("allow-wildcard");
     }
+    // Nor for the pier zone: its names sit on different devices, and a
+    // wildcard there would be one key for all of them.
+    expect((await orderFor(machine, ["*.pier.wave.example.com"])).res.status).toBe(403);
     expect(ca.issued).toEqual([]);
   });
 
   test("without the operator's lock nothing is issued, claim or not", async () => {
     const { machine, node } = await setUp();
     await claim(node.id, node.waveId, "app");
-    const { res } = await orderFor(machine, ["app.wave.example.com"]);
+    const { res } = await orderFor(machine, ["app.pier.wave.example.com"]);
     expect(res.status).toBe(403);
     expect(ca.issued).toEqual([]);
   });
@@ -523,11 +535,11 @@ describe("the names a device put out through the pier", () => {
     await allow(node.id);
     await claim(node.id, node.waveId, "app");
     await allow(node.id, false);
-    expect((await orderFor(machine, ["app.wave.example.com"])).res.status).toBe(403);
+    expect((await orderFor(machine, ["app.pier.wave.example.com"])).res.status).toBe(403);
 
     await allow(node.id);
     await db.delete(wavePiers).where(eq(wavePiers.nodeId, node.id));
-    expect((await orderFor(machine, ["app.wave.example.com"])).res.status).toBe(403);
+    expect((await orderFor(machine, ["app.pier.wave.example.com"])).res.status).toBe(403);
     expect(ca.issued).toEqual([]);
   });
 
@@ -548,11 +560,11 @@ describe("the names a device put out through the pier", () => {
     const { machine, node } = await setUp();
     await allow(node.id);
     await claim(node.id, node.waveId, "app");
-    const { res, body } = await orderFor(machine, ["app.wave.example.com"]);
+    const { res, body } = await orderFor(machine, ["app.pier.wave.example.com"]);
     expect(res.status).toBe(202);
     const finished = await awaitOrder(machine, body.orderId as string);
     expect(finished.status).toBe("issued");
-    expect(leafOf(finished.chainPem as string).names).toEqual(["app.wave.example.com"]);
+    expect(leafOf(finished.chainPem as string).names).toEqual(["app.pier.wave.example.com"]);
   });
 });
 

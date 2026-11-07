@@ -68,7 +68,7 @@ export interface AppDeps {
    * does that, so a test app never polls anything on its own.
    */
   releases?: ReleaseFeed;
-  /** How the DNS providers are reached when a name goes to the pier. Only the tests replace it. */
+  /** How the DNS providers are reached when the pier's record goes. Only the tests replace it. */
   dnsFetch?: typeof fetch;
 }
 
@@ -145,9 +145,9 @@ export function createApp({
   app.route("/", machineRoutes({ db, config, signingKey, hub, nonces }));
   app.route("/", certRoutes({ db, certs: certs ?? new CertificateService({ db, config }), nonces }));
   app.route("/", serviceRoutes({ db, hub, nonces }));
-  app.route("/", pierRoutes({ db, config, hub, nonces, http: dnsFetch }));
+  app.route("/", pierRoutes({ db, hub, nonces }));
   app.route("/", updateRoutes({ db, releases: updates, nonces }));
-  app.route("/", waveRoutes({ db, config, hub }));
+  app.route("/", waveRoutes({ db, config, hub, dnsFetch }));
   app.route("/", billingRoutes({ db, config, hub }));
 
   /**

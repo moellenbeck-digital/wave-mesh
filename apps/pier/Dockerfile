@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The pier node (D12), in one image: the daemon that holds the tunnel and the pier
 # that reads the name off a connection and splices it. Published as
-# `wave-reverse-proxy`. Build context is the repository root -- this is a workspace.
+# `wave-pier`. Build context is the repository root -- this is a workspace.
 #
 # One image and two commands rather than two images, for the reason the
 # connector is one: both are the same participant. They share an enrolment, a

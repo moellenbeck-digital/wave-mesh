@@ -181,29 +181,14 @@ The language follows the system (LANG, LC_ALL, …); WAVE_LANG=en|de overrides i
         return state;
     }
   },
-  exposeDns: (dns: string, error: string | null) => {
-    switch (dns) {
-      case "published":
-        return "public records: written";
-      case "manual":
-        return "public records: this wave keeps its zone by hand, so somebody has to create:";
-      case "unconfigured":
-        return "public records: the wave has no DNS provider set up, so somebody has to create:";
-      case "failed":
-        return `public records: the provider refused (${error ?? "no reason given"}); the name is kept, and asking again tries again`;
-      default:
-        return `public records: ${dns}`;
-    }
-  },
-  exposeRecord: (type: string, name: string, value: string) => `  ${type}  ${name}  ${value}`,
   exposeNone: "this device has put no name out",
   exposeAllowed: (allowed: boolean): string =>
     allowed
       ? "pier: the operator has allowed it for this device"
       : "pier: the operator has not allowed it for this device yet (`admin.ts allow-pier`)",
-  exposePierAddress: (v4: string | null, v6: string | null): string =>
+  exposePierAddress: (v4: string | null, v6: string | null, zone: string): string =>
     v4 || v6
-      ? `pier address: ${[v4, v6].filter(Boolean).join(", ")}`
+      ? `pier address: ${[v4, v6].filter(Boolean).join(", ")}, for *.${zone}`
       : "pier address: none named yet (`admin.ts set-pier`)",
   pierNone: "no pier names here",
   pierOwn: "own",
@@ -469,29 +454,14 @@ Die Sprache folgt dem System (LANG, LC_ALL, …); WAVE_LANG=en|de setzt sie fest
         return state;
     }
   },
-  exposeDns: (dns, error) => {
-    switch (dns) {
-      case "published":
-        return "öffentliche Records: geschrieben";
-      case "manual":
-        return "öffentliche Records: dieser Wave pflegt seine Zone von Hand, also muss jemand anlegen:";
-      case "unconfigured":
-        return "öffentliche Records: der Wave hat keinen DNS-Anbieter eingerichtet, also muss jemand anlegen:";
-      case "failed":
-        return `öffentliche Records: der Anbieter lehnt ab (${error ?? "ohne Angabe"}); der Name bleibt, und noch einmal fragen versucht es erneut`;
-      default:
-        return `öffentliche Records: ${dns}`;
-    }
-  },
-  exposeRecord: (type, name, value) => `  ${type}  ${name}  ${value}`,
   exposeNone: "dieses Gerät hat keinen Namen freigegeben",
   exposeAllowed: (allowed) =>
     allowed
       ? "Pier: der Betreiber hat ihn für dieses Gerät erlaubt"
       : "Pier: der Betreiber hat ihn für dieses Gerät noch nicht erlaubt (`admin.ts allow-pier`)",
-  exposePierAddress: (v4, v6) =>
+  exposePierAddress: (v4, v6, zone) =>
     v4 || v6
-      ? `Adresse des Piers: ${[v4, v6].filter(Boolean).join(", ")}`
+      ? `Adresse des Piers: ${[v4, v6].filter(Boolean).join(", ")}, für *.${zone}`
       : "Adresse des Piers: noch keine benannt (`admin.ts set-pier`)",
   pierNone: "hier gibt es keine Pier-Namen",
   pierOwn: "eigen",

@@ -80,7 +80,7 @@ describe("the arguments", () => {
     const { socket, control, statePath } = await ready();
     const name = await wave(socket, ["expose", "app.example.org", "http://localhost:3000"]);
     expect(name.code).toBe(1);
-    expect(name.err).toContain("is not a name under wave.example.com");
+    expect(name.err).toContain("is not a name under pier.wave.example.com");
     const url = await wave(socket, ["expose", "app", "http://localhost"]);
     expect(url.code).toBe(1);
     expect(url.err).toContain("is not a local address");
@@ -115,9 +115,9 @@ describe("putting a name out", () => {
       String(port),
     ]);
     expect(result.code).toBe(0);
-    expect(result.out).toContain(`app.wave.example.com  port ${port}  ->  http://127.0.0.1:${svc.port}`);
+    expect(result.out).toContain(`app.pier.wave.example.com  port ${port}  ->  http://127.0.0.1:${svc.port}`);
     expect(result.out).toContain(
-      "no certificate for app.wave.example.com, next step: `wave cert app.wave.example.com`",
+      "no certificate for app.pier.wave.example.com, next step: `wave cert app.pier.wave.example.com`",
     );
     expect(control.piers.get("app")).toBe(port);
 
@@ -126,7 +126,7 @@ describe("putting a name out", () => {
       ["expose", "app", `http://127.0.0.1:${svc.port}`, "--listen-port", String(port)],
       "de",
     );
-    expect(german.out).toContain("kein Zertifikat für app.wave.example.com, nächster Schritt:");
+    expect(german.out).toContain("kein Zertifikat für app.pier.wave.example.com, nächster Schritt:");
   });
 
   test("--list and pier status say the same thing, and --remove takes the name out", async () => {
@@ -138,18 +138,18 @@ describe("putting a name out", () => {
     const list = await wave(socket, ["expose", "--list"]);
     expect(list.code).toBe(0);
     expect(list.out).toContain("the operator has allowed it for this device");
-    expect(list.out).toContain("pier address: 203.0.113.10");
-    expect(list.out).toContain("app.wave.example.com");
-    expect(list.out).toContain("no certificate for app.wave.example.com");
+    expect(list.out).toContain("pier address: 203.0.113.10, for *.pier.wave.example.com");
+    expect(list.out).toContain("app.pier.wave.example.com");
+    expect(list.out).toContain("no certificate for app.pier.wave.example.com");
 
     const status = await wave(socket, ["pier", "status"]);
     expect(status.code).toBe(0);
-    expect(status.out).toContain("app.wave.example.com  own");
-    expect(status.out).toContain("no certificate for app.wave.example.com");
+    expect(status.out).toContain("app.pier.wave.example.com  own");
+    expect(status.out).toContain("no certificate for app.pier.wave.example.com");
 
     const removed = await wave(socket, ["expose", "--remove", "app"]);
     expect(removed.code).toBe(0);
-    expect(removed.out).toContain("app.wave.example.com is out of the open network");
+    expect(removed.out).toContain("app.pier.wave.example.com is out of the open network");
     expect(control.piers.size).toBe(0);
     expect((await loadProfiles(statePath))[0]?.exposed).toEqual([]);
 

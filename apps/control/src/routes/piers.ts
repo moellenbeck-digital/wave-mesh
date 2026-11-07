@@ -1,13 +1,11 @@
 import { createMemoryNonceStore, type NonceStore } from "@wave/crypto";
-import { PierRequest, type PierResponse } from "@wave/proto";
+import { type PierList, PierRequest, type PierResponse } from "@wave/proto";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { type Actor, audit } from "../audit.ts";
 import type { Database } from "../db/client.ts";
 import { waves } from "../db/schema.ts";
-import type { Config } from "../env.ts";
-import { publishPierName, unpublishPierName } from "../waves/pier-dns.ts";
-import { findPierHost, listPiers, removePier, setPier } from "../waves/piers.ts";
+import { findPierHost, listPiers, pierZone, removePier, setPier } from "../waves/piers.ts";
 import { serviceLabel } from "../waves/services.ts";
 import type { NetmapHub } from "./control-ws.ts";
 import { authenticateMachine, nodeByMachineKey } from "./machine-auth.ts";
@@ -20,23 +18,18 @@ import { authenticateMachine, nodeByMachineKey } from "./machine-auth.ts";
  * taken is not here -- the operator's lock, the namespace and the 409 are all
  * `setPier()` -- so a second front for the same thing could not disagree.
  *
- * The answer always carries the state of the public record. A wave that writes
- * its zone by hand gets the record to create, the same way dns-01 asks for its
- * TXT record.
+ * Nothing here touches DNS: one wildcard record covers the whole pier zone and
+ * belongs to the operator's `set-pier`. A claim is a row and a netmap push.
  */
 export interface PierRouteDeps {
   db: Database;
-  config: Pick<Config, "dnsSecret">;
   hub?: NetmapHub;
   nonces?: NonceStore;
-  /** For the DNS providers, so a test never reaches a real API. */
-  http?: typeof fetch;
 }
 
-export function pierRoutes({ db, config, hub, nonces, http }: PierRouteDeps) {
+export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
   const app = new Hono();
   const nonceStore = nonces ?? createMemoryNonceStore();
-  const dns = { db, dnsSecret: config.dnsSecret, http };
 
   app.post("/v1/piers", async (c) => {
     const { result, body } = await authenticateMachine(c, nonceStore);
@@ -62,16 +55,12 @@ export function pierRoutes({ db, config, hub, nonces, http }: PierRouteDeps) {
     });
     if ("error" in set) return c.json({ error: set.error }, set.status);
 
-    // Every grant is also written to the zone, changed or not: asking again is
-    // how a record that could not be written the first time gets written.
-    const outcome = await publishPierName(dns, { waveId: node.waveId, fqdn: set.dnsName, host: set.host });
-
     const actor: Actor = { userId: node.userId, label: `device:${node.hostname}` };
     if (set.changed) {
       await audit(db, node.waveId, actor, {
         action: "pier.expose",
         target: set.dnsName,
-        detail: { port: set.pier.port, dns: outcome.state },
+        detail: { port: set.pier.port },
       });
       // The pier node and this device both need the new list.
       await hub?.broadcast(node.waveId);
@@ -81,9 +70,6 @@ export function pierRoutes({ db, config, hub, nonces, http }: PierRouteDeps) {
       name: set.pier.name,
       dnsName: set.dnsName,
       port: set.pier.port,
-      dns: outcome.state,
-      records: outcome.records,
-      ...(outcome.error ? { error: outcome.error } : {}),
     } satisfies PierResponse);
   });
 
@@ -96,14 +82,17 @@ export function pierRoutes({ db, config, hub, nonces, http }: PierRouteDeps) {
     if (!node) return c.json({ error: "unknown node" }, 404);
 
     const waveRows = await db.select().from(waves).where(eq(waves.id, node.waveId)).limit(1);
-    const suffix = waveRows[0]?.dnsSuffix ?? "";
+    const wave = waveRows[0];
+    if (!wave) return c.json({ error: "the wave is gone" }, 404);
+    const zone = pierZone(wave);
     const host = await findPierHost(db, node.waveId);
     const piers = await listPiers(db, node.waveId, node.id);
     return c.json({
       allowed: node.pierAllowed,
+      zone,
       pier: host ? { publicIpv4: host.publicIpv4, publicIpv6: host.publicIpv6 } : null,
-      piers: piers.map((pier) => ({ name: pier.name, dnsName: `${pier.name}.${suffix}`, port: pier.port })),
-    });
+      piers: piers.map((pier) => ({ name: pier.name, dnsName: `${pier.name}.${zone}`, port: pier.port })),
+    } satisfies PierList);
   });
 
   app.delete("/v1/piers/:name", async (c) => {
@@ -117,23 +106,19 @@ export function pierRoutes({ db, config, hub, nonces, http }: PierRouteDeps) {
     const wave = waveRows[0];
     if (!wave) return c.json({ error: "the wave is gone" }, 404);
 
-    const label = serviceLabel(decodeURIComponent(c.req.param("name")), wave.dnsSuffix);
-    if (!label) return c.json({ error: "not a name in this wave" }, 400);
+    const zone = pierZone(wave);
+    const label = serviceLabel(decodeURIComponent(c.req.param("name")), zone);
+    if (!label) return c.json({ error: `not a name under ${zone}` }, 400);
 
     const removed = await removePier(db, { waveId: node.waveId, nodeId: node.id, name: label });
     if (!removed) return c.json({ error: "this device has not put that name out" }, 404);
 
-    const fqdn = `${label}.${wave.dnsSuffix}`;
-    const outcome = await unpublishPierName(dns, {
-      waveId: node.waveId,
-      fqdn,
-      host: await findPierHost(db, node.waveId),
-    });
+    const fqdn = `${label}.${zone}`;
     await audit(
       db,
       node.waveId,
       { userId: node.userId, label: `device:${node.hostname}` },
-      { action: "pier.unexpose", target: fqdn, detail: { dns: outcome.state } },
+      { action: "pier.unexpose", target: fqdn },
     );
     await hub?.broadcast(node.waveId);
 
@@ -141,9 +126,6 @@ export function pierRoutes({ db, config, hub, nonces, http }: PierRouteDeps) {
       name: label,
       dnsName: fqdn,
       port: removed.port,
-      dns: outcome.state,
-      records: outcome.records,
-      ...(outcome.error ? { error: outcome.error } : {}),
     } satisfies PierResponse);
   });
 

@@ -16,6 +16,7 @@ import { lookupTxtAtAuthority, type TxtLookup } from "../dns/lookup.ts";
 import { type DnsProvider, PROVIDER_KINDS } from "../dns/provider.ts";
 import type { Config } from "../env.ts";
 import { newId } from "../ids.ts";
+import { pierZone } from "../waves/piers.ts";
 import { DEFAULT_DNS_BASE } from "../waves/provision.ts";
 
 /**
@@ -111,7 +112,7 @@ export class CertificateService {
             .select({ name: wavePiers.name })
             .from(wavePiers)
             .where(eq(wavePiers.nodeId, input.nodeId))
-        ).map((row) => `${row.name}.${found.wave.dnsSuffix}`)
+        ).map((row) => `${row.name}.${pierZone(found.wave)}`)
       : [];
 
     const refusal = checkNames({
@@ -478,8 +479,9 @@ const sameNames = (a: string[], b: string[]): boolean =>
  * refusing it would only force a second certificate with the same reach.
  *
  * The other addition is the names this device has put out through the pier
- * (D12), and only those: each of them is already decided by `allow-pier`, the
- * namespace check and the operator's pier, and is public by then. They are
+ * (D12), and only those -- `<label>.<pier zone>`, e.g.
+ * `app.pier.wave.example.com`: each of them is already decided by
+ * `allow-pier` and the claim, and is public by then. They are
  * looked up when the order is placed, so `--remove` and `deny-pier` stop new
  * certificates at once. One already issued runs until it expires; expiry and
  * renewal bound that window.

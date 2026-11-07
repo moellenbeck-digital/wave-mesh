@@ -9,7 +9,7 @@ Arbeit brauchten: Schreibzugriff auf die echte Zone. Der Server schreibt jetzt
 über eine Provider-API hinein, und genau das ist zugleich die Verifikation —
 wer die Zone schreiben kann, besitzt sie (siehe „Zertifikate"). Offen bleiben
 die CNAME-Delegation (braucht autoritatives DNS, also M9) und die Aliase aus D6.
-Die öffentlichen A/AAAA-Records gibt es inzwischen für den Pier (M12, siehe „Der
+Den öffentlichen Wildcard-Record gibt es inzwischen für die Zone des Piers (M12, siehe „Der
 Pier“); eine zweite Art, einen Namen auf die Wave-Adresse zu veröffentlichen, die
 M5 meinte, gibt es nicht.
 
@@ -77,7 +77,7 @@ User-Namespace neu und legen dort Netns, veth, NAT und TUN an. Voraussetzungen:
 | `apps/tray` | Tray-Icon: Linux über D-Bus, macOS über `bun:ffi` und Cocoa |
 | `apps/connector` | Cluster-Seite von D11: leitet die Dienstadressen des Waves an den internen Ingress-Controller weiter |
 | `apps/operator` | liest `Ingress`/`HTTPRoute` der Klasse `wave` und meldet die Namen dem Control-Server |
-| `apps/pier` | Pier-Knoten (D12, Image `wave-reverse-proxy`): liest die SNI, schlägt den Namen in `Netmap.piers` nach und spleißt per WireGuard an das Gerät |
+| `apps/pier` | Pier-Knoten (D12, Image `wave-pier`): liest die SNI, schlägt den Namen in `Netmap.piers` nach und spleißt per WireGuard an das Gerät |
 | `apps/web` | Next.js-Oberfläche: Anmeldung, Wave- und Geräteübersicht, Gerätefreigabe, Mitglieder und Einladungen |
 | `mobile/core` | der Go-Kern für iOS und Android (D10) — dieselben Verträge, ein Tunnel, N Waves |
 | `mobile/ios`, `mobile/android` | die Plattform-Hosts: `NEPacketTunnelProvider` und `VpnService`, beide absichtlich dünn |
@@ -1849,35 +1849,37 @@ ist derselbe Stand wie beim Windows-Tray: benannt, nicht verschwiegen.
 ## Der Pier (D12/M12)
 
 **Ein Name aus dem Wave im offenen Netz — ohne dass der Pier etwas lesen kann.** Ein
-Gerät gibt einen Namen unter der Domain des Waves frei; ein Browser im Internet
-löst ihn auf die öffentliche Adresse des **Pier-Knotens** auf, der die SNI aus dem
+Gerät gibt einen Namen in der **Pier-Zone** des Waves frei (`app.pier.wave.example.com`);
+ein Browser im Internet löst ihn über den Wildcard-Record der Zone auf die öffentliche
+Adresse des **Pier-Knotens** auf, der die SNI aus dem
 ClientHello liest, den Namen in der signierten Netmap nachschlägt und die
 TCP-Verbindung über WireGuard an die Wave-Adresse des Geräts spleißt. TLS endet auf
 dem Gerät, mit dessen eigenem Zertifikat aus D7 (`wave cert`).
 
 ```bash
 # Betreiber, auf dem Server
-bun apps/control/src/admin.ts set-pier   <wave> <hostname|node-id> --ipv4 <öffentlich> [--ipv6 <öffentlich>]
+bun apps/control/src/admin.ts set-pier   <wave> <hostname|node-id> --ipv4 <öffentlich> [--ipv6 <öffentlich>] [--label pier]
 bun apps/control/src/admin.ts allow-pier <wave> <hostname|node-id>     # erstes Schloss
 bun apps/control/src/admin.ts deny-pier  <wave> <hostname|node-id>     # nimmt die Namen mit
 bun apps/control/src/admin.ts clear-pier <wave>
 
-# Pier-Knoten (Image wave-reverse-proxy), wie ein Connector mit Pre-Auth-Key
+# Pier-Knoten (Image wave-pier), wie ein Connector mit Pre-Auth-Key
 cd deployment/pier/overlays/example
 ```
 
-Der Weg eines Namens: `POST /v1/piers` `{ name, port }` (Maschinenschlüssel, wie
-die Dienst- und Zertifikatsrouten) → `setPier()` → Zeile in `wave_piers`,
-`netmapVersion` hoch → `publishPierName()` schreibt A/AAAA → `buildNetmap()` trägt
-`piers` in die Netmap des Piers und des Besitzers ein. `DELETE /v1/piers/:name`
-macht das rückgängig, `GET /v1/piers` sagt, was ein Gerät darf und freigegeben hat.
+Der Weg eines Namens: `set-pier` schreibt einmal `*.pier.<suffix>` auf den Pier
+(`publishPierZone()`). Danach `POST /v1/piers` `{ name, port }` (Maschinenschlüssel,
+wie die Dienst- und Zertifikatsrouten) → `setPier()` → Zeile in `wave_piers`,
+`netmapVersion` hoch → `buildNetmap()` trägt `piers` ein. Ins DNS schreibt eine
+Freigabe nichts. `DELETE /v1/piers/:name` macht das rückgängig, `GET /v1/piers` sagt,
+was ein Gerät darf, in welcher Zone die Namen liegen und was es freigegeben hat.
 
 Was daran festliegt:
 
 - **Zwei Schlösser, beide in `setPier()`.** `nodes.pier_allowed` (Vorgabe aus,
   nur der Betreiber) entscheidet, wer *beanspruchen* darf; die Zeile in
   `wave_piers` ist der Anspruch. Die Erlaubnis zu entziehen **räumt die Namen ab**
-  (`removePiersOf()`, samt Records) — ein geschlossenes Schloss, das die Tür offen
+  (`removePiersOf()`) — ein geschlossenes Schloss, das die Tür offen
   lässt, ist keins. Das Schloss wird vor dem Namenskonflikt geprüft: ein Gerät
   ohne Erlaubnis erfährt nichts darüber, welche Namen vergeben sind.
 - **Der Pier ist genau ein Knoten je Wave und wird gesagt, nie geraten.**
@@ -1886,36 +1888,54 @@ Was daran festliegt:
   Ingress nicht, unter welcher Adresse die Welt den Pier erreicht, und ein Gerät
   darf sich nicht selbst zum Pier erklären. Ein zweiter Pier wird abgelehnt (ein
   Name hätte zwei Orte). Ohne Pier ist jede Freigabe 409.
-- **Der Name teilt den Namensraum mit Geräten und Diensten.** 409, wenn er ein
-  anderes Gerät, einen Dienst oder den Anspruch eines anderen Geräts trifft; der
-  eigene Hostname ist erlaubt (`laptop.wave.example.com` ist der Normalfall in
-  D12). Umgekehrt weist `syncServices()` einen Namen ab, den ein Pier trägt. Alles
-  unter derselben Zeilensperre auf `waves` wie die Dienste. Fremde Domains: 400.
-  Ein Wave auf dem Platzhalter `*.wave.internal` kann nichts veröffentlichen — 409,
+- **Die Namen haben eine eigene Zone: `<label>.<pierLabel>.<suffix>`.** `waves.pier_label`
+  ist `pier`, solange der Betreiber mit `set-pier --label` nichts anderes sagt; `pierZone()`
+  in `waves/piers.ts` setzt die Zone zusammen, sonst niemand. Ein Name ist genau ein Label
+  darunter, bar (`app`) oder voll (`app.pier.wave.example.com`); alles andere ist 400 —
+  auch `app.wave.example.com`, das der Wildcard nicht deckt. Mit Geräten und Diensten
+  gibt es **keinen** gemeinsamen Namensraum mehr (die liegen ein Label unter dem Suffix),
+  also auch keine Prüfung dagegen; 409 gibt es nur, wenn ein anderes Gerät denselben
+  Namen hält. Das Label zieht nur um, solange niemand einen Namen in der Zone hält —
+  Namen und Zertifikate hängen daran. Ein Wave auf dem Platzhalter `*.wave.internal`
+  bekommt keinen Pier (`set-pier` verweigert) und kann nichts veröffentlichen (409),
   denn dessen Namen lassen sich nie delegieren.
 - **`Netmap.piers` ist optional, `looseObject`, ohne `.default()`** — dieselbe
   Regel wie bei `services`, aus demselben Grund (siehe „Dienste im Wave“). Der
   Server lässt das Feld **weg**, solange es nichts zu sagen gibt: ein Wave ohne
   Piers signiert exakt das Dokument von vorher (`test/piers.test.ts` prüft Hin- und
-  Rückweg mit der Signatur). Der Pier-Knoten bekommt alle Namen, der Besitzer nur
-  seine eigenen, alle anderen nichts.
+  Rückweg mit der Signatur). Der Pier-Knoten bekommt alle Namen; jedes andere
+  Gerät seine eigenen und die der Peers, die es erreichen darf. Daneben steht
+  `Netmap.pier` (`{ nodeId, zone }`, dieselbe Regel), solange der Wave einen Pier hat:
+  daraus kennt ein Gerät die Zone und weiß, ob es selbst der Pier ist.
+- **Innen löst der Name direkt auf, mit der Wave-Adresse des Besitzers.** Die
+  Pier-Zone liegt unter dem Suffix, Anfragen gehen also ohnehin an den Resolver des
+  Waves, und `resolverRecords()` (`engine.ts`, im Go-Kern dasselbe) nimmt `piers`
+  mit. Ohne das bekam ein Mitglied NXDOMAIN für einen Namen, den das Internet
+  erreicht. Der Umweg über den Pier entfällt, das Zertifikat gilt für beide Wege;
+  verbunden wird auf den freigegebenen Port (bei 443 also ohne Angabe), und unter
+  einer Policy braucht der Aufrufer eine Regel zum Gerät wie für jeden anderen Port.
+  Ein Name, dessen Besitzer ein Gerät nicht erreichen darf, steht nicht in seiner
+  Netmap und ist dort NXDOMAIN.
 - **Unter einer Policy ist der Anspruch die Freigabe.** Der Pier und das Gerät
   sehen einander (sonst wäre der WireGuard-Peer weg und die Antworten fielen),
   und das Gerät bekommt eine Filterregel *Pier → Gerät, TCP, genau dieser Port*
   (`pierFilter()`). Mehr nicht; ohne Policy kommt nichts dazu. Ein Gerät, das noch
   nicht bestätigt ist (`approved = false`), steht in keiner Netmap — also auch
   seine Namen nicht.
-- **Der Record zeigt auf den Pier, nie auf die Wave-Adresse.** `DnsProvider` kennt
-  zusätzlich `setAddress(name, adresse)` (macht sie zum *einzigen* A- bzw.
-  AAAA-Record am Namen, idempotent) und `removeAddress(name, typ)` — bewusst nur
-  das, über Cloudflare, Hetzner, IONOS und INWX. Ein Pier ohne IPv6 löscht einen
-  alten AAAA statt ihn stehenzulassen. Die Antwort sagt, wie es um die Records
-  steht: `published`, `manual` (der Wave pflegt seine Zone von Hand: Antwort nennt
-  die Records, wie bei dns-01), `unconfigured` (keine Zugangsdaten) oder `failed`
-  (Provider lehnt ab — der Anspruch steht, noch einmal fragen schreibt neu). Ein
-  Entzug, `deny-pier`, `clear-pier` und das Entfernen eines Geräts nehmen die
-  Records mit; Letzteres *vor* dem Löschen, weil die Zeilen sonst mit dem Gerät
-  verschwinden. **Eine zweite Art, einen Namen öffentlich auf die Wave-Adresse zu
+- **Ein Record für die ganze Zone, und er zeigt auf den Pier, nie auf eine
+  Wave-Adresse** (`waves/pier-dns.ts`). `set-pier` schreibt `*.pier.<suffix>` —
+  jedes Mal, geändert oder nicht, denn so kommt ein Record hinein, der beim ersten
+  Mal scheiterte —, `clear-pier` und das Entfernen des Pier-Knotens nehmen ihn
+  wieder heraus (Letzteres *vor* dem Löschen, weil die Adressen mit der Zeile
+  verschwinden), ein umgezogenes Label räumt den alten weg. `DnsProvider` kennt
+  dafür `setAddress(name, adresse)` (macht sie zum *einzigen* A- bzw. AAAA-Record
+  am Namen, idempotent) und `removeAddress(name, typ)`, über Cloudflare, Hetzner,
+  IONOS und INWX; der Stern ist für die Zonensuche ein gewöhnliches Label. Ein Pier
+  ohne IPv6 löscht einen alten AAAA. `set-pier` sagt, wie es steht: `published`,
+  `manual` (nennt den Record, wie bei dns-01), `unconfigured` oder `failed`. Eine
+  Freigabe, `deny-pier` und `--remove` fassen das DNS nicht an: ein Name, den
+  niemand hält, landet beim Pier und wird dort geschlossen wie jeder andere
+  unbekannte. **Eine zweite Art, einen Namen öffentlich auf die Wave-Adresse zu
   stellen (das andere Opt-in aus M5), gibt es nicht** — der Ausschluss je Name ist
   damit trivial erfüllt; wer es baut, muss ihn in `setPier()` durchsetzen.
 - **Der Pier terminiert nichts und hält keinen Schlüssel** (`apps/pier/src/proxy.ts`).
@@ -1949,11 +1969,14 @@ Was daran festliegt:
 - **Audit:** `pier.expose`, `pier.unexpose` (Gerät als Akteur) sowie
   `admin.allow-pier`, `admin.deny-pier`, `admin.set-pier`, `admin.clear-pier`.
 - **Zertifikat für die eigenen Pier-Namen** (`checkNames()` in `certs/issue.ts`). Zu
-  `<hostname>.<suffix>` kommen genau die Namen, die das Gerät in `wave_piers` hält —
+  `<hostname>.<suffix>` kommen genau die Namen, die das Gerät in `wave_piers` hält
+  (`app.pier.<suffix>`) —
   aber nur, solange `pier_allowed` gesetzt ist, und geprüft bei der *Ausstellung*, nicht
   beim Anlegen. Die Namen kommen aus der Datenbank, nie aus dem Request; kein Wildcard,
   kein Apex, nichts von anderen Geräten (`allow-wildcard` bleibt das Einzige, was die
-  Wildcard öffnet). Nach `--remove` und `deny-pier` wird nichts Neues ausgestellt, ein
+  Wildcard öffnet — und der reicht ein Label tief, deckt die Pier-Zone also nicht; ein
+  Wildcard *auf* die Pier-Zone ist abgelehnt, weil ihre Namen auf verschiedenen Geräten
+  liegen). Nach `--remove` und `deny-pier` wird nichts Neues ausgestellt, ein
   bestehendes Zertifikat läuft bis zum Ablauf weiter — bekannt, kein Fehler; Ablauf und
   Erneuerung begrenzen den Zeitraum. Tests: `test/certificates.test.ts`, „the names a
   device put out through the pier“.
@@ -1961,11 +1984,11 @@ Was daran festliegt:
 ### Der Client: `wave expose`, `wave pier status`
 
 ```bash
-wave expose app.wave.example.com http://localhost:3000   # Anspruch anlegen, Proxy einrichten
-wave cert app.wave.example.com                           # das Zertifikat für den Namen
-wave expose --list                                       # Namen, Erlaubnis, Pier-Adresse, Stand
-wave expose --remove app.wave.example.com
-wave pier status                                         # eigene Namen und, am Pier, die bedienten
+wave expose app http://localhost:3000        # → app.pier.wave.example.com; Anspruch und Proxy
+wave cert app.pier.wave.example.com          # das Zertifikat für den Namen
+wave expose --list                           # Zone, Namen, Erlaubnis, Pier-Adresse, Stand
+wave expose --remove app
+wave pier status                             # eigene Namen und, am Pier, die bedienten
 ```
 
 Was daran festliegt:
@@ -1974,16 +1997,17 @@ Was daran festliegt:
   IPC `expose`/`unexpose`/`exposed`/`pier-status`). Der Daemon hält den Tunnel, an den
   sich der Pier anschließt, und antwortet für den Namen; ohne Dienst sagt die CLI das
   und tut nichts. Die Prüfungen laufen **vor** dem Server und ändern bei einem Fehler
-  nichts: `exposeLabel()` (genau ein Name unter der Domain des Waves, kein Apex, kein
-  Wildcard, nichts Tieferes), `parseLocalUrl()` (`http(s)://host:port`, Port Pflicht,
+  nichts: `exposeLabel()` (genau ein Name unter der Pier-Zone, kein Apex, kein
+  Wildcard, nichts Tieferes; die Zone kommt aus `Netmap.pier`, sonst fragt der Daemon
+  `GET /v1/piers`), `parseLocalUrl()` (`http(s)://host:port`, Port Pflicht,
   kein Pfad, keine Zugangsdaten), Port 1–65535, und nicht der eigene Listener hinter
   dem eigenen Namen. Erst wenn der Server den Anspruch angenommen hat, wird
   `Profile.exposed` geschrieben. 403 vom Server („`allow-pier`“) wird zu einer
   übersetzten Meldung mit dem nächsten Schritt (Notice `pier-not-allowed`).
 - **Der Anspruch steht auch ohne Zertifikat.** `wave expose` sagt dann „kein Zertifikat
   für `<name>`, nächster Schritt: `wave cert <name>`“. Der Server stellt dem Gerät das
-  Zertifikat für seine Pier-Namen aus (siehe oben); ein Wildcard-Zertifikat deckt den
-  Namen ebenso.
+  Zertifikat für seine Pier-Namen aus (siehe oben). Ein Wildcard des Waves deckt sie
+  nicht.
 - **Der Listener öffnet, sobald ein Zertifikat den Namen deckt** — exakt oder per
   Wildcard, nicht abgelaufen (`chooseCertificate()`). `Daemon.reconcileExpose()` läuft
   alle 5 s und nach `expose`, `unexpose`, `cert` und `pier-status`, nie zwei Läufe
@@ -1999,21 +2023,26 @@ Was daran festliegt:
   bekommt keinen Handshake. Ein `https`-Ziel wird **geprüft** (Systemwurzeln, Name des
   Ziels); ein LAN-Gerät mit selbstsigniertem Zertifikat wird deshalb nicht erreicht, und das
   Log sagt, warum — dafür gilt `http://`. Kein „unsicher“-Schalter.
-- **Zustand und Status.** `Profile.exposed` (`name`, `localUrl`, `port`) hält, was nur das
-  Gerät weiß; der Anspruch selbst liegt beim Server. Stände: `listening`,
+- **Zustand und Status.** `Profile.exposed` (`name`, `dnsName`, `localUrl`, `port`) hält,
+  was nur das Gerät weiß; der Anspruch selbst liegt beim Server. `dnsName` ist die Antwort
+  des Servers und wird nicht neu zusammengesetzt (`exposedDnsName()`): die Zone gehört
+  dem Server und kann sich nicht ändern, solange der Name gehalten wird. Stände: `listening`,
   `no-certificate`, `certificate-expired`, `no-address`/`tunnel-down`, `failed` (Port
   belegt o. Ä., mit dem Grund des Systems), dazu für `--list` `unmapped` (Server kennt
   den Namen, das Gerät keinen Dienst) und `not-claimed` (Gerät kennt einen Dienst, der
   Server den Namen nicht mehr — etwa nach `deny-pier`; `--remove` räumt ihn ab). Am
-  Pier-Knoten zeigt `wave pier status` die bedienten Namen mit `reachable`/`unreachable`
-  (kein Pfad, kein Handshake, oder eine Adresse, die kein Peer hat).
-- **`set-domain` lehnt ab, solange das Wave Pier-Namen hat** (`setWaveDomain()` →
-  `{ conflict: "piers", names }`, in `admin.ts` und im Webformular, 409): Records und
-  Zertifikate hängen am alten Suffix. Erst entfernen, dann umziehen.
-- **Nicht gebaut:** Mobile (der Go-Kern proxyt nicht), Quoten, PROXY-Protokoll, ein
-  `uniqueHostname()`, das Pier-Namen kennt (ein Gerät, das nach einem Pier-Namen
-  heißt, bekommt weiter denselben Namen — bei Diensten ist es ebenso), das M5-Opt-in „Name
-  zeigt auf die Wave-Adresse“ (es gibt keines; ein Vermerk genügt).
+  Pier-Knoten (`Netmap.pier.nodeId` ist er selbst) zeigt `wave pier status` die bedienten
+  Namen mit `reachable`/`unreachable` (kein Pfad, kein Handshake, oder eine Adresse, die
+  kein Peer hat); auf jedem anderen Gerät stehen die fremden Namen nur für den Resolver
+  in der Netmap und erscheinen dort nicht.
+- **`set-domain` lehnt ab, solange das Wave Pier-Namen oder einen Pier hat**
+  (`setWaveDomain()` → `{ conflict: "piers", names }` bzw. `{ conflict: "pier", hostname,
+  zone }`, in `admin.ts` und im Webformular, 409): Zertifikate und der Wildcard-Record
+  hängen am alten Suffix. Erst Namen entfernen und `clear-pier`, dann umziehen, dann
+  wieder `set-pier`.
+- **Nicht gebaut:** Mobile als Pier oder Besitzer (der Go-Kern proxyt nicht; er *löst*
+  Pier-Namen aber auf), Quoten, PROXY-Protokoll, das M5-Opt-in „Name zeigt auf die
+  Wave-Adresse“ (es gibt keines; ein Vermerk genügt).
 - **Tests:** `apps/client/test/expose.test.ts` (Namen, URLs, Zertifikatswahl, Listener,
   Ende-zu-Ende mit dem echten Pier-Proxy), `daemon-expose.test.ts` (der Daemon gegen einen
   Fake-Server: Prüfungen, Zustand, Zertifikat dann Listener, `--list`, Status am Pier),
@@ -2022,7 +2051,8 @@ Was daran festliegt:
 **Ungeprüft:** der Pier an einem echten Ingress und einem echten Wave über das
 Internet (die Splice- und Client-Tests laufen über Loopback und ein echtes TLS-Handshake
 mit dem Zertifikat des Zielgeräts; das Image ist nicht gebaut), die Provider-Aufrufe
-gegen die echten APIs (nur Fakes), der Daemon mit einem echten Tunnel (der Listener wird
+gegen die echten APIs (nur Fakes, und ob jeder Provider einen Wildcard-Namen über genau
+diesen Aufruf anlegt, sagt erst die echte API), der Daemon mit einem echten Tunnel (der Listener wird
 dort an eine echte Wave-Adresse gebunden, im Test an `127.0.0.1`) und Mobile.
 
 ## Telefone
@@ -3023,7 +3053,7 @@ GitHub Container Registry:
 | Relay | `ghcr.io/moellenbeck-digital/wave-mesh/relay` | `apps/relay/Dockerfile` |
 | Web | `ghcr.io/moellenbeck-digital/wave-mesh/web` | `apps/web/Dockerfile` |
 | Connector | `ghcr.io/moellenbeck-digital/wave-mesh/connector` | `apps/connector/Dockerfile` |
-| Pier | `ghcr.io/moellenbeck-digital/wave-mesh/wave-reverse-proxy` | `apps/pier/Dockerfile` |
+| Pier | `ghcr.io/moellenbeck-digital/wave-mesh/wave-pier` | `apps/pier/Dockerfile` |
 
 Der Build-Kontext ist **das Repo-Wurzelverzeichnis**, nicht das App-Verzeichnis
 — alle hängen an den Workspace-Paketen und stehen nicht für sich. Das

@@ -66,6 +66,12 @@ export const waves = pgTable(
     ipv6Prefix: text("ipv6_prefix").notNull(),
     /** Bumped whenever the wave's nodes change; carried in every netmap. */
     netmapVersion: integer("netmap_version").notNull().default(1),
+    /**
+     * The label of the zone the pier serves under the wave's suffix (D12):
+     * `pier` makes `app.pier.wave.example.com`. One wildcard record for the
+     * whole zone points at the pier, so a name put out writes nothing to DNS.
+     */
+    pierLabel: text("pier_label").notNull().default("pier"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

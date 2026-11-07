@@ -227,11 +227,11 @@ jobs:
         id: name
         run: |
           set -euo pipefail
-          # The pier is published as `wave-reverse-proxy`: what it is called is
-          # what somebody searches the registry for, and the app directory keeps
-          # the name of the design (D12).
+          # The pier is published as `wave-pier`: the name it has in the
+          # deployment, the namespace and the StatefulSet, so the registry says
+          # the same thing as everything that pulls from it (D12).
           name="${{ matrix.service }}"
-          [ "$name" = "pier" ] && name="wave-reverse-proxy"
+          [ "$name" = "pier" ] && name="wave-pier"
           repo="ghcr.io/${GITHUB_REPOSITORY,,}/$name"
           echo "tags<<EOF" >> "$GITHUB_OUTPUT"
           while read -r tag; do
@@ -258,7 +258,7 @@ jobs:
           build-args: |
             WAVE_BUILD_VERSION=${{ needs.version.outputs.version }}
           labels: |
-            org.opencontainers.image.title=${{ matrix.service == 'pier' && 'wave-reverse-proxy' || format('wave-{0}', matrix.service) }}
+            org.opencontainers.image.title=${{ format('wave-{0}', matrix.service) }}
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

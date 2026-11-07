@@ -90,7 +90,7 @@ describe("netmap", () => {
 
   const pier = {
     name: "app",
-    dnsName: "app.wave.example.com",
+    dnsName: "app.pier.wave.example.com",
     nodeId: "n_1",
     ipv4: "100.64.0.2",
     ipv6: "fd7a:1::2",
@@ -108,9 +108,17 @@ describe("netmap", () => {
   test("a netmap with piers keeps them, and a pier keeps fields it does not know", () => {
     const sent = { ...netmap, piers: [{ ...pier, futureField: "kept" }] };
     const parsed = Netmap.parse(sent);
-    expect(parsed.piers?.[0]?.dnsName).toBe("app.wave.example.com");
+    expect(parsed.piers?.[0]?.dnsName).toBe("app.pier.wave.example.com");
     expect(Object.keys(parsed).sort()).toEqual(Object.keys(sent).sort());
     expect(JSON.stringify(parsed.piers?.[0])).toBe(JSON.stringify(sent.piers[0]));
+  });
+
+  test("the pier zone is absent until there is a pier, and kept as sent when there is", () => {
+    expect("pier" in Netmap.parse(netmap)).toBe(false);
+    const sent = { ...netmap, pier: { nodeId: "n_9", zone: "pier.wave.example.com", futureField: 1 } };
+    const parsed = Netmap.parse(sent);
+    expect(JSON.stringify(parsed.pier)).toBe(JSON.stringify(sent.pier));
+    expect(Netmap.safeParse({ ...netmap, pier: { nodeId: "n_9", zone: "" } }).success).toBe(false);
   });
 
   // The other direction: an empty list is not the same document as no list.

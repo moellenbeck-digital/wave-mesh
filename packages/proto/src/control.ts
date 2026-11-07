@@ -87,8 +87,8 @@ export type ServiceSyncResponse = z.infer<typeof ServiceSyncResponse>;
  * A device putting one of its names into the open network (D12).
  *
  * Accepted only where an operator has allowed the pier for this device; the
- * name is bare or fully qualified under the wave's own suffix, never somebody
- * else's zone.
+ * name is bare (`app`) or fully qualified under the wave's pier zone
+ * (`app.pier.wave.example.com`), never anywhere else.
  */
 export const PierRequest = z.object({
   name: z.string().min(1).max(253),
@@ -97,7 +97,7 @@ export const PierRequest = z.object({
 });
 export type PierRequest = z.infer<typeof PierRequest>;
 
-/** A public record the pier's name needs. */
+/** A public record the pier zone needs: the wildcard, A and/or AAAA. */
 export const PierRecord = z.object({
   type: z.enum(["A", "AAAA"]),
   name: z.string().min(1),
@@ -106,26 +106,26 @@ export const PierRecord = z.object({
 export type PierRecord = z.infer<typeof PierRecord>;
 
 /**
- * Where the public records of a name stand.
+ * Where the wildcard record of the pier zone stands, as `admin.ts set-pier`
+ * reports it.
  *
- * `published`: the server wrote them through the provider API. `manual`: the
+ * `published`: the server wrote it through the provider API. `manual`: the
  * wave writes its zone by hand and `records` are what somebody has to create,
  * as with dns-01. `unconfigured`: the wave has said neither -- no provider and
  * no manual mode -- and the records are still what is missing. `failed`: the
- * provider refused; the grant is stored, `error` says why, and asking again
- * tries again.
+ * provider refused; the pier is stored, and setting it again tries again.
  */
 export const PierDnsState = z.enum(["published", "manual", "unconfigured", "failed"]);
 export type PierDnsState = z.infer<typeof PierDnsState>;
 
+/**
+ * The answer to a claim. No DNS state in it: the wildcard covers every name in
+ * the pier zone, so a claim writes nothing there.
+ */
 export const PierResponse = z.object({
   name: z.string().min(1),
   dnsName: z.string().min(1),
   port: z.number().int().min(1).max(65535),
-  dns: PierDnsState,
-  records: z.array(PierRecord),
-  /** The provider's own words, when `dns` is `failed`. */
-  error: z.string().optional(),
 });
 export type PierResponse = z.infer<typeof PierResponse>;
 
@@ -135,6 +135,8 @@ export type PierResponse = z.infer<typeof PierResponse>;
  */
 export const PierList = z.object({
   allowed: z.boolean(),
+  /** The zone the names live in, e.g. `pier.wave.example.com`. */
+  zone: z.string().min(1),
   /** The pier's public addresses; null while the operator has named no pier. */
   pier: z.object({ publicIpv4: z.string().nullable(), publicIpv6: z.string().nullable() }).nullable(),
   piers: z.array(

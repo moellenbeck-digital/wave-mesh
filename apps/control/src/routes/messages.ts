@@ -75,6 +75,9 @@ const en = {
   domainHasPiers: "This wave still has names in the open network",
   domainHasPiersBody: (names: string[]) =>
     `Remove ${names.join(", ")} first (\`wave expose --remove <name>\` on the device), then change the domain.`,
+  domainHasPier: "This wave has a pier",
+  domainHasPierBody: (hostname: string, zone: string) =>
+    `${hostname} answers for *.${zone} in the open network. An operator removes it with \`wave-admin clear-pier\` before the domain can change.`,
   unknownWave: "Unknown wave",
   nothingToChange: "Nothing to change.",
   nothingToRemove: "Nothing to remove.",
@@ -206,6 +209,9 @@ const de: typeof en = {
   domainHasPiers: "Dieser Wave hat noch Namen im offenen Netz",
   domainHasPiersBody: (names) =>
     `Nimm zuerst ${names.join(", ")} heraus (\`wave expose --remove <name>\` auf dem Gerät), dann ändere die Domain.`,
+  domainHasPier: "Dieser Wave hat einen Pier",
+  domainHasPierBody: (hostname, zone) =>
+    `${hostname} antwortet im offenen Netz für *.${zone}. Ein Operator nimmt ihn mit \`wave-admin clear-pier\` heraus, bevor sich die Domain ändern kann.`,
   unknownWave: "Unbekannter Wave",
   nothingToChange: "Es gibt nichts zu ändern.",
   nothingToRemove: "Es gibt nichts zu entfernen.",

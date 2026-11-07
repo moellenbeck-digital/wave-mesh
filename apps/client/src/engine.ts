@@ -440,8 +440,13 @@ export interface TunnelSnapshot {
     services: Array<{ name: string; dnsName: string; ipv4: string; url: string }>;
   };
   dnsSuffix?: string;
-  /** Names put into the open network (D12): all of them on the pier node, one's own elsewhere. */
+  /**
+   * Names put into the open network (D12): all of them on the pier node; one's
+   * own and those of reachable peers elsewhere, which the resolver answers.
+   */
   piers: Array<{ name: string; dnsName: string; ipv4: string; port: number }>;
+  /** The pier zone while the wave has a pier, and whether this node is it. */
+  pier?: { zone: string; self: boolean };
   relay?: { url: string; connected: boolean };
   peers: Array<{
     hostname: string;
@@ -456,6 +461,27 @@ export interface TunnelSnapshot {
     services: Array<{ name: string; dnsName: string; ipv4: string; url: string }>;
   }>;
 }
+
+/**
+ * What the wave's resolver answers on this device.
+ *
+ * Services sit in the same zone as the devices and answer the same way (D11).
+ * Nothing else on this side knows they exist: their addresses come in the
+ * connector's allowedIps, so the routes are already there, and being inside
+ * the wave's own block puts their PTRs in the same reverse zones as everything
+ * else.
+ *
+ * Names put out through the pier (D12) too, with the owner's wave address: the
+ * public record points at the pier, but from inside the wave the direct way is
+ * the shorter one, and the certificate on the device is for the name either
+ * way. The pier zone sits under the wave's suffix, so the queries come here.
+ */
+export const resolverRecords = (netmap: Netmap): ResolverConfig["records"] =>
+  [netmap.self, ...netmap.peers, ...(netmap.services ?? []), ...(netmap.piers ?? [])].map((entry) => ({
+    name: entry.dnsName,
+    ipv4: entry.ipv4,
+    ipv6: entry.ipv6,
+  }));
 
 /**
  * The names one node answers for.
@@ -668,16 +694,7 @@ export class Tunnel {
     const reverse = reverseZonesFor(netmap.self.addresses);
     const config: ResolverConfig = {
       zone: netmap.dns.suffix,
-      // Services sit in the same zone as the devices and answer the same way
-      // (D11). Nothing else on this side knows they exist: their addresses come
-      // in the connector's allowedIps, so the routes are already there, and
-      // being inside the wave's own block puts their PTRs in the same reverse
-      // zones as everything else.
-      records: [netmap.self, ...netmap.peers, ...(netmap.services ?? [])].map((entry) => ({
-        name: entry.dnsName,
-        ipv4: entry.ipv4,
-        ipv6: entry.ipv6,
-      })),
+      records: resolverRecords(netmap),
       routes: netmap.dns.routes,
       reverse,
     };
@@ -782,6 +799,9 @@ export class Tunnel {
         ipv4: pier.ipv4,
         port: pier.port,
       })),
+      pier: netmap?.pier
+        ? { zone: netmap.pier.zone, self: netmap.pier.nodeId === netmap.self.id }
+        : undefined,
       relay: this.relay ? { url: this.relay.url, connected: this.relay.client.connected } : undefined,
       peers: (netmap?.peers ?? []).map((peer) => {
         const path = paths.get(peer.nodeKey);

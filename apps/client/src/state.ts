@@ -59,8 +59,15 @@ export type CertRecord = z.infer<typeof CertRecord>;
 
 /** One name put out through the pier, and the service on this side of it. */
 export const ExposedEntry = z.object({
-  /** The label under the wave's suffix, as the server stores it. */
+  /** The label under the pier zone, as the server stores it. */
   name: z.string(),
+  /**
+   * The full name, as the server answered the claim (`app.pier.wave.example.com`).
+   * Kept rather than rebuilt: the zone is the server's to name, and it cannot
+   * move while a name is held in it. Absent only in an entry written before
+   * the pier had a zone of its own.
+   */
+  dnsName: z.string().optional(),
   /** `http(s)://host:port`, on this device or in its LAN. */
   localUrl: z.string(),
   /** The port the daemon listens on, on the wave address; what the pier splices to. */

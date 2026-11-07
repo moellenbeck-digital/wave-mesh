@@ -84,6 +84,19 @@ type Service struct {
 	URL string `json:"url,omitempty"`
 }
 
+// Pier is a name a device has put into the open network through the pier
+// (D12). The core does not splice -- phones do not expose -- but its resolver
+// answers the name with the owner's wave address, like the desktop does: from
+// inside the wave the direct way is the shorter one.
+type Pier struct {
+	Name    string `json:"name"`
+	DNSName string `json:"dnsName"`
+	NodeID  string `json:"nodeId"`
+	IPv4    string `json:"ipv4"`
+	IPv6    string `json:"ipv6"`
+	Port    int    `json:"port"`
+}
+
 type DNSRoute struct {
 	Suffix      string   `json:"suffix"`
 	Nameservers []string `json:"nameservers"`
@@ -119,6 +132,7 @@ type Netmap struct {
 	Self     SelfNode  `json:"self"`
 	Peers    []Peer    `json:"peers"`
 	Services []Service `json:"services,omitempty"`
+	Piers    []Pier    `json:"piers,omitempty"`
 	// A pointer, because absent and empty mean opposite things: absent is no
 	// policy and lets everything in, empty is a policy that lets in nothing but
 	// replies. Only a pointer keeps them apart after decoding.

@@ -12,7 +12,7 @@ import { storeDnsCredential } from "../src/dns/credentials.ts";
 import { buildNetmap, signNetmap } from "../src/netmap/build.ts";
 import { createAuthKey } from "../src/waves/auth-keys.ts";
 import { listNodes } from "../src/waves/nodes.ts";
-import { unpublishPiersOfNode } from "../src/waves/pier-dns.ts";
+import { publishPierZone, unpublishPierZone, unpublishPierZoneOfNode } from "../src/waves/pier-dns.ts";
 import { clearPierHost, removePiersOf, setPierAllowed, setPierHost } from "../src/waves/piers.ts";
 import { syncServices } from "../src/waves/services.ts";
 import { CookieJar, createTestDb, createWaveAs, testConfig, testSigningKey } from "./helpers.ts";
@@ -20,13 +20,15 @@ import { CookieJar, createTestDb, createWaveAs, testConfig, testSigningKey } fro
 /**
  * The pier (D12): a name a device puts into the open network.
  *
- * Held to here: the two locks, the namespace, what the zone is told, and what
+ * Held to here: the two locks, the pier zone, the one wildcard record, and what
  * the netmap says to whom -- above all that a wave without piers signs exactly
  * the document it always did.
  */
 
 const DNS_KEY = Buffer.alloc(32, 7);
 const SUFFIX = "wave.example.com";
+const ZONE = `pier.${SUFFIX}`;
+const WILDCARD = `*.${ZONE}`;
 const PIER_V4 = "203.0.113.10";
 const PIER_V6 = "2001:db8::10";
 
@@ -228,7 +230,6 @@ describe("the first lock: the operator", () => {
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: string }).error).toContain("admin.ts allow-pier");
     expect(await db.select().from(wavePiers)).toEqual([]);
-    expect(zone.records.size).toBe(0);
   });
 
   test("the default is off for every device", async () => {
@@ -236,12 +237,11 @@ describe("the first lock: the operator", () => {
     expect(wave.laptop.pierAllowed).toBe(false);
   });
 
-  test("taking the permission back takes the names back, and the records with them", async () => {
+  test("taking the permission back takes the names back", async () => {
     const wave = await home();
     await open(wave);
     await expose(wave, "app");
     await expose(wave, "git", 9443);
-    expect(zone.at(`app.${SUFFIX}`)).toEqual([`A ${PIER_V4}`, `AAAA ${PIER_V6}`]);
 
     const before = await versionOf(wave.waveId);
     await setPierAllowed(db, wave.waveId, wave.laptop.id, false);
@@ -255,17 +255,21 @@ describe("the first lock: the operator", () => {
 });
 
 describe("claiming a name", () => {
-  test("is a name under the wave's domain, and nothing from elsewhere", async () => {
+  test("is one name under the pier zone, and nothing from elsewhere", async () => {
     const wave = await home();
     await open(wave);
 
     expect((await expose(wave, "app.elsewhere.example")).status).toBe(400);
     expect((await expose(wave, "")).status).toBe(400);
     expect((await expose(wave, "-bad-")).status).toBe(400);
-    // Fully qualified under the wave's own suffix is the same name.
-    const res = await expose(wave, `App.${SUFFIX}`);
+    // Under the wave's suffix but not under the pier zone: the wildcard would
+    // not cover it, so it is not a name the pier could serve.
+    expect((await expose(wave, `app.${SUFFIX}`)).status).toBe(400);
+    expect((await expose(wave, `a.b.${ZONE}`)).status).toBe(400);
+    // Fully qualified under the pier zone is the same name as the bare label.
+    const res = await expose(wave, `App.${ZONE}`);
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { name: string }).name).toBe("app");
+    expect(await res.json()).toEqual({ name: "app", dnsName: `app.${ZONE}`, port: 8443 });
   });
 
   test("needs a port that is one", async () => {
@@ -277,7 +281,10 @@ describe("claiming a name", () => {
 
   test("a wave that is still on its placeholder domain cannot be reached from outside", async () => {
     const wave = await home({ suffix: "robin.wave.internal" });
-    await open(wave);
+    // `set-pier` refuses such a wave already; a pier set before the domain
+    // went back to a placeholder must not be a way around it.
+    await db.update(nodes).set({ pierIpv4: PIER_V4 }).where(eq(nodes.id, wave.pier.id));
+    await setPierAllowed(db, wave.waveId, wave.laptop.id, true);
     const res = await expose(wave, "app");
     expect(res.status).toBe(409);
     expect(((await res.json()) as { error: string }).error).toContain("placeholder");
@@ -291,27 +298,13 @@ describe("claiming a name", () => {
     expect(((await res.json()) as { error: string }).error).toContain("set-pier");
   });
 
-  test("a device may use its own name", async () => {
-    const wave = await home();
-    await open(wave);
-    expect((await expose(wave, "laptop", 443)).status).toBe(200);
-  });
-
-  test("another device's name is taken", async () => {
-    const wave = await home();
-    await open(wave);
-    const res = await expose(wave, "nas");
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: string }).error).toContain("another device");
-  });
-
-  test("a service's name is taken", async () => {
+  test("has a namespace of its own: device and service names are free in it", async () => {
     const wave = await home();
     await open(wave);
     await syncServices(db, { waveId: wave.waveId, viaNodeId: wave.nas.id, names: ["grafana"] });
-    const res = await expose(wave, "grafana");
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: string }).error).toContain("service");
+    expect((await expose(wave, "laptop", 443)).status).toBe(200);
+    expect((await expose(wave, "nas")).status).toBe(200);
+    expect((await expose(wave, "grafana")).status).toBe(200);
   });
 
   test("a name another device has put out is taken", async () => {
@@ -322,14 +315,12 @@ describe("claiming a name", () => {
     expect((await expose(wave, "app", 8443, wave.nasMachine)).status).toBe(409);
   });
 
-  test("a service cannot take a name that is put out", async () => {
+  test("a service may carry a label that is put out: they are different names", async () => {
     const wave = await home();
     await open(wave);
     await expose(wave, "app");
-    // The namespace is shared from both sides: the operator in a cluster
-    // declares the whole set, and a name that is a pier is not free to it.
     const synced = await syncServices(db, { waveId: wave.waveId, viaNodeId: wave.nas.id, names: ["app"] });
-    expect("conflict" in synced).toBe(true);
+    expect("conflict" in synced).toBe(false);
   });
 
   test("changing the port is a change, saying the same again is none", async () => {
@@ -354,56 +345,100 @@ describe("claiming a name", () => {
     await signed(wave.laptopMachine, "DELETE", "/v1/piers/app");
 
     const actions = (await listAudit(db, wave.waveId)).map((entry) => `${entry.action} ${entry.target}`);
-    expect(actions).toContain(`pier.expose app.${SUFFIX}`);
-    expect(actions).toContain(`pier.unexpose app.${SUFFIX}`);
+    expect(actions).toContain(`pier.expose app.${ZONE}`);
+    expect(actions).toContain(`pier.unexpose app.${ZONE}`);
   });
 });
 
-describe("the public records", () => {
-  test("point at the pier, and never at the wave address", async () => {
+describe("the public record", () => {
+  const dns = () => ({ db, dnsSecret: DNS_KEY, http: zone.fetch });
+  const host = { publicIpv4: PIER_V4, publicIpv6: PIER_V6 };
+
+  test("is one wildcard for the zone, pointing at the pier and never at a wave address", async () => {
     const wave = await home();
     await open(wave);
-    const res = await expose(wave, "app");
-    const body = (await res.json()) as { dns: string; records: { type: string; value: string }[] };
+    const outcome = await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
 
-    expect(body.dns).toBe("published");
-    expect(zone.at(`app.${SUFFIX}`)).toEqual([`A ${PIER_V4}`, `AAAA ${PIER_V6}`]);
+    expect(outcome.state).toBe("published");
+    expect(zone.at(WILDCARD)).toEqual([`A ${PIER_V4}`, `AAAA ${PIER_V6}`]);
     for (const record of zone.records.values()) {
       expect([wave.laptop.ipv4, wave.laptop.ipv6]).not.toContain(record.content);
     }
   });
 
-  test("asking again does not pile records up", async () => {
+  test("a claim writes nothing to DNS, and ending one removes nothing", async () => {
     const wave = await home();
     await open(wave);
     await expose(wave, "app");
-    await expose(wave, "app");
-    expect(zone.at(`app.${SUFFIX}`)).toEqual([`A ${PIER_V4}`, `AAAA ${PIER_V6}`]);
+    await signed(wave.laptopMachine, "DELETE", "/v1/piers/app");
+    expect(zone.calls).toEqual([]);
   });
 
-  test("a pier that moves takes the name with it, and leaves no old address behind", async () => {
+  test("writing it again does not pile records up", async () => {
     const wave = await home();
-    await open(wave);
-    await expose(wave, "app");
+    await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    expect(zone.at(WILDCARD)).toEqual([`A ${PIER_V4}`, `AAAA ${PIER_V6}`]);
+  });
 
-    await setPierHost(db, { waveId: wave.waveId, nodeId: wave.pier.id, ipv4: "198.51.100.7" });
-    await expose(wave, "app");
+  test("a pier that moves leaves no old address behind", async () => {
+    const wave = await home();
+    await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    await publishPierZone(dns(), {
+      waveId: wave.waveId,
+      zone: ZONE,
+      host: { publicIpv4: "198.51.100.7", publicIpv6: null },
+    });
     // IPv4 replaced; the IPv6 the pier no longer has is gone, not left to
     // send half of the clients to the old address.
-    expect(zone.at(`app.${SUFFIX}`)).toEqual(["A 198.51.100.7"]);
+    expect(zone.at(WILDCARD)).toEqual(["A 198.51.100.7"]);
   });
 
-  test("ending it removes them", async () => {
+  test("ending the pier removes it", async () => {
+    const wave = await home();
+    await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    const outcome = await unpublishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    expect(outcome.state).toBe("published");
+    expect(zone.at(WILDCARD)).toEqual([]);
+  });
+
+  test("removing the pier node takes the wildcard with it, removing another device does not", async () => {
     const wave = await home();
     await open(wave);
-    await expose(wave, "app");
-    await expose(wave, "git");
+    await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
 
-    const res = await signed(wave.laptopMachine, "DELETE", "/v1/piers/app");
-    expect(res.status).toBe(200);
-    expect(zone.at(`app.${SUFFIX}`)).toEqual([]);
-    expect(zone.at(`git.${SUFFIX}`)).toEqual([`A ${PIER_V4}`, `AAAA ${PIER_V6}`]);
-    expect((await signed(wave.laptopMachine, "DELETE", "/v1/piers/app")).status).toBe(404);
+    expect(await unpublishPierZoneOfNode(dns(), { waveId: wave.waveId, nodeId: wave.laptop.id })).toBeNull();
+    expect(zone.at(WILDCARD)).toHaveLength(2);
+
+    const gone = await unpublishPierZoneOfNode(dns(), { waveId: wave.waveId, nodeId: wave.pier.id });
+    expect(gone?.name).toBe(WILDCARD);
+    expect(zone.at(WILDCARD)).toEqual([]);
+  });
+
+  test("a wave that writes its zone by hand is told which record to create", async () => {
+    const wave = await home({ provider: "manual" });
+    const outcome = await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    expect(outcome.state).toBe("manual");
+    expect(outcome.records).toEqual([
+      { type: "A", name: WILDCARD, value: PIER_V4 },
+      { type: "AAAA", name: WILDCARD, value: PIER_V6 },
+    ]);
+    expect(zone.calls).toEqual([]);
+  });
+
+  test("a wave with no DNS credential gets the same request, and says why nothing was written", async () => {
+    const wave = await home({ provider: "none" });
+    const outcome = await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    expect(outcome.state).toBe("unconfigured");
+    expect(outcome.records).toHaveLength(2);
+  });
+
+  test("a provider that refuses says so", async () => {
+    const wave = await home();
+    zone.refuse = true;
+    const outcome = await publishPierZone(dns(), { waveId: wave.waveId, zone: ZONE, host });
+    expect(outcome.state).toBe("failed");
+    expect(outcome.error).toContain("zone is locked");
   });
 
   test("only the device that put a name out can end it", async () => {
@@ -412,61 +447,8 @@ describe("the public records", () => {
     await expose(wave, "app");
     expect((await signed(wave.nasMachine, "DELETE", "/v1/piers/app")).status).toBe(404);
     expect((await db.select().from(wavePiers)).length).toBe(1);
-  });
-
-  test("a device that is removed takes its records with it", async () => {
-    const wave = await home();
-    await open(wave);
-    await expose(wave, "app");
-
-    await unpublishPiersOfNode(
-      { db, dnsSecret: DNS_KEY, http: zone.fetch },
-      { waveId: wave.waveId, nodeId: wave.laptop.id },
-    );
-    expect(zone.at(`app.${SUFFIX}`)).toEqual([]);
-  });
-
-  test("a wave that writes its zone by hand is told which record to create", async () => {
-    const wave = await home({ provider: "manual" });
-    await open(wave);
-    const res = await expose(wave, "app");
-    const body = (await res.json()) as {
-      dns: string;
-      records: { type: string; name: string; value: string }[];
-    };
-
-    expect(body.dns).toBe("manual");
-    expect(body.records).toEqual([
-      { type: "A", name: `app.${SUFFIX}`, value: PIER_V4 },
-      { type: "AAAA", name: `app.${SUFFIX}`, value: PIER_V6 },
-    ]);
-    expect(zone.calls).toEqual([]);
-  });
-
-  test("a wave with no DNS credential gets the same request, and says why nothing was written", async () => {
-    const wave = await home({ provider: "none" });
-    await open(wave);
-    const body = (await (await expose(wave, "app")).json()) as { dns: string; records: unknown[] };
-    expect(body.dns).toBe("unconfigured");
-    expect(body.records).toHaveLength(2);
-  });
-
-  test("a provider that refuses leaves the grant standing and says so", async () => {
-    const wave = await home();
-    await open(wave);
-    zone.refuse = true;
-    const res = await expose(wave, "app");
-    const body = (await res.json()) as { dns: string; error?: string };
-
-    expect(res.status).toBe(200);
-    expect(body.dns).toBe("failed");
-    expect(body.error).toContain("zone is locked");
-    expect((await db.select().from(wavePiers)).length).toBe(1);
-
-    // Asking again is how it gets written once the provider lets it.
-    zone.refuse = false;
-    expect(((await (await expose(wave, "app")).json()) as { dns: string }).dns).toBe("published");
-    expect(zone.at(`app.${SUFFIX}`)).toEqual([`A ${PIER_V4}`, `AAAA ${PIER_V6}`]);
+    expect((await signed(wave.laptopMachine, "DELETE", "/v1/piers/app")).status).toBe(200);
+    expect((await signed(wave.laptopMachine, "DELETE", "/v1/piers/app")).status).toBe(404);
   });
 });
 
@@ -491,16 +473,64 @@ describe("one pier per wave", () => {
     ).toBe(true);
   });
 
-  test("clearing it leaves the names and stops the netmaps carrying them", async () => {
+  test("clearing it leaves the names, and the netmaps lose the pier zone", async () => {
     const wave = await home();
     await open(wave);
     await expose(wave, "app");
-    expect((await netmapOf(wave.laptop.id)).piers).toHaveLength(1);
+    expect((await netmapOf(wave.laptop.id)).pier).toEqual({
+      nodeId: wave.pier.id,
+      zone: ZONE,
+    } as Netmap["pier"]);
 
-    expect(await clearPierHost(db, wave.waveId)).not.toBeNull();
+    const cleared = await clearPierHost(db, wave.waveId);
+    expect(cleared?.zone).toBe(ZONE);
     expect((await db.select().from(wavePiers)).length).toBe(1);
-    expect("piers" in (await netmapOf(wave.laptop.id))).toBe(false);
-    expect("piers" in (await netmapOf(wave.pier.id))).toBe(false);
+    expect("pier" in (await netmapOf(wave.laptop.id))).toBe(false);
+    expect("pier" in (await netmapOf(wave.pier.id))).toBe(false);
+    // The name still resolves inside the wave: it is the owner's either way.
+    expect((await netmapOf(wave.nas.id)).piers?.map((pier) => pier.dnsName)).toEqual([`app.${ZONE}`]);
+  });
+
+  test("the zone has a label of its own, and it moves only while nobody holds a name in it", async () => {
+    const wave = await home();
+    await open(wave);
+    const moved = await setPierHost(db, {
+      waveId: wave.waveId,
+      nodeId: wave.pier.id,
+      ipv4: PIER_V4,
+      label: "Pub",
+    });
+    expect(moved).toMatchObject({ zone: `pub.${SUFFIX}`, previousZone: ZONE });
+    expect((await (await expose(wave, "app")).json()) as unknown).toMatchObject({
+      dnsName: `app.pub.${SUFFIX}`,
+    });
+
+    const again = await setPierHost(db, {
+      waveId: wave.waveId,
+      nodeId: wave.pier.id,
+      ipv4: PIER_V4,
+      label: "pier",
+    });
+    expect("conflict" in again && again.conflict).toContain(`app.pub.${SUFFIX}`);
+    // The same label is no move.
+    const same = await setPierHost(db, {
+      waveId: wave.waveId,
+      nodeId: wave.pier.id,
+      ipv4: PIER_V4,
+      label: "pub",
+    });
+    expect(same).toMatchObject({ zone: `pub.${SUFFIX}`, previousZone: null });
+
+    expect(
+      "invalid" in
+        (await setPierHost(db, { waveId: wave.waveId, nodeId: wave.pier.id, ipv4: PIER_V4, label: "a.b" })),
+    ).toBe(true);
+  });
+
+  test("a wave on its placeholder domain cannot have a pier", async () => {
+    const wave = await home({ suffix: "robin.wave.internal" });
+    const set = await setPierHost(db, { waveId: wave.waveId, nodeId: wave.pier.id, ipv4: PIER_V4 });
+    expect("invalid" in set && set.invalid).toContain("placeholder");
   });
 });
 
@@ -514,7 +544,7 @@ describe("what the netmap says", () => {
     expect(netmap.piers).toEqual([
       {
         name: "app",
-        dnsName: `app.${SUFFIX}`,
+        dnsName: `app.${ZONE}`,
         nodeId: wave.laptop.id,
         ipv4: wave.laptop.ipv4,
         ipv6: wave.laptop.ipv6,
@@ -535,22 +565,26 @@ describe("what the netmap says", () => {
     expect(netmap.peers.map((peer) => peer.id as string)).toContain(wave.pier.id);
   });
 
-  test("nobody else is told", async () => {
+  test("every other device is told too, with the owner's wave address, for its resolver", async () => {
     const wave = await home();
     await open(wave);
     await expose(wave, "app");
-    expect("piers" in (await netmapOf(wave.nas.id))).toBe(false);
+    const netmap = await netmapOf(wave.nas.id);
+    expect(netmap.piers?.map(({ dnsName, ipv4, ipv6 }) => ({ dnsName, ipv4, ipv6 }))).toEqual([
+      { dnsName: `app.${ZONE}`, ipv4: wave.laptop.ipv4, ipv6: wave.laptop.ipv6 },
+    ]);
+    expect(netmap.pier).toEqual({ nodeId: wave.pier.id, zone: ZONE } as Netmap["pier"]);
   });
 
-  test("a device that owns a name only sees its own", async () => {
+  test("devices that own names see each other's", async () => {
     const wave = await home();
     await open(wave);
     await setPierAllowed(db, wave.waveId, wave.nas.id, true);
     await expose(wave, "app");
     await expose(wave, "files", 445, wave.nasMachine);
 
-    expect((await netmapOf(wave.laptop.id)).piers?.map((pier) => pier.name)).toEqual(["app"]);
-    expect((await netmapOf(wave.nas.id)).piers?.map((pier) => pier.name)).toEqual(["files"]);
+    expect((await netmapOf(wave.laptop.id)).piers?.map((pier) => pier.name)).toEqual(["app", "files"]);
+    expect((await netmapOf(wave.nas.id)).piers?.map((pier) => pier.name)).toEqual(["app", "files"]);
     expect((await netmapOf(wave.pier.id)).piers?.map((pier) => pier.name)).toEqual(["app", "files"]);
   });
 
@@ -558,6 +592,7 @@ describe("what the netmap says", () => {
     const wave = await home();
     const netmap = await netmapOf(wave.laptop.id);
     expect("piers" in netmap).toBe(false);
+    expect("pier" in netmap).toBe(false);
 
     const signedMap = signNetmap(netmap, signingKey);
     // What a client does: parse, then canonicalise what came out.
@@ -588,7 +623,7 @@ describe("what the netmap says", () => {
     await expose(wave, "app");
     const netmap = await netmapOf(wave.pier.id);
 
-    const { piers: _dropped, ...withoutField } = NetmapSchema.shape;
+    const { piers: _dropped, pier: _zone, ...withoutField } = NetmapSchema.shape;
     const old = (await import("zod")).z.looseObject(withoutField);
     const parsed = old.parse(JSON.parse(JSON.stringify(netmap)));
     expect(canonicalJson(parsed)).toBe(canonicalJson(netmap));
@@ -623,10 +658,12 @@ describe("what the netmap says", () => {
         },
       ]);
 
-      // The one who owns nothing is not pulled in by it.
+      // The one who owns nothing is not pulled in by it, nor told a name
+      // whose owner it may not reach.
       const nas = await netmapOf(wave.nas.id);
       expect(nas.peers).toEqual([]);
       expect(nas.packetFilter).toEqual([]);
+      expect("piers" in nas).toBe(false);
     });
 
     test("without a policy nothing is added to the filter", async () => {
@@ -646,12 +683,14 @@ describe("listing", () => {
 
     const body = (await (await signed(wave.laptopMachine, "GET", "/v1/piers")).json()) as {
       allowed: boolean;
+      zone: string;
       pier: { publicIpv4: string | null; publicIpv6: string | null } | null;
       piers: { name: string; dnsName: string; port: number }[];
     };
     expect(body.allowed).toBe(true);
+    expect(body.zone).toBe(ZONE);
     expect(body.pier).toEqual({ publicIpv4: PIER_V4, publicIpv6: PIER_V6 });
-    expect(body.piers).toEqual([{ name: "app", dnsName: `app.${SUFFIX}`, port: 8443 }]);
+    expect(body.piers).toEqual([{ name: "app", dnsName: `app.${ZONE}`, port: 8443 }]);
 
     const nas = (await (await signed(wave.nasMachine, "GET", "/v1/piers")).json()) as {
       allowed: boolean;

@@ -2,7 +2,7 @@ import { isIP } from "node:net";
 import type { FilterRule } from "@wave/proto";
 import { and, asc, eq, isNotNull, ne, or, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { nodes, wavePiers, waveServices, waves } from "../db/schema.ts";
+import { nodes, wavePiers, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
 import { serviceLabel } from "./services.ts";
 
@@ -15,9 +15,12 @@ import { serviceLabel } from "./services.ts";
  * it -- read the SNI, look the name up, splice -- lives in `apps/pier`; what the
  * zone says about it lives in `pier-dns.ts`.
  *
- * Names share one namespace with the devices and the services. No index spans
- * three tables, so every write takes the same row lock on the wave that
- * `syncServices()` does, which is also where `netmap_version` is serialised.
+ * Names live in a zone of their own, `<pierLabel>.<dnsSuffix>` -- by default
+ * `app.pier.wave.example.com`. One wildcard record points the whole zone at the
+ * pier (written by `admin.ts set-pier`), so a claim writes nothing to DNS, and
+ * a name can never collide with a device or a service: those are one label
+ * under the suffix, these are one label under the pier zone. Every write takes
+ * the row lock on the wave, which is where `netmap_version` is serialised.
  */
 
 export interface PierRow {
@@ -50,6 +53,15 @@ export type SetPierResult =
   | PierRefusal;
 
 type NodeRow = typeof nodes.$inferSelect;
+
+const LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** The zone the pier serves: `pier.wave.example.com` for the default label. */
+export const pierZone = (wave: { pierLabel: string; dnsSuffix: string }): string =>
+  `${wave.pierLabel}.${wave.dnsSuffix}`;
+
+/** Whether a label may name the pier zone: one DNS label, nothing else. */
+export const isPierLabel = (label: string): boolean => LABEL.test(label);
 
 export const toPierHost = (node: NodeRow): PierHost | null =>
   node.pierIpv4 || node.pierIpv6
@@ -84,9 +96,9 @@ const isPublicSuffix = (suffix: string): boolean => suffix !== "internal" && !su
 /**
  * Lets a device claim `name` for `port`, or changes the port of a claim it has.
  *
- * Everything the 409 stands for is decided under the lock: the name may be the
- * device's own hostname, but never another device's, never a service's, and
- * never a name some other device has already put out.
+ * The name is a label under the pier zone, bare (`app`) or full
+ * (`app.pier.wave.example.com`). Whether it is free is decided under the lock:
+ * a name some other device has already put out is a 409.
  */
 export async function setPier(
   db: Database,
@@ -110,10 +122,11 @@ export async function setPier(
       };
     }
 
-    // Only the wave's own zone, and only names inside it -- a name from
-    // elsewhere would be a record and a route for a domain this wave does not own.
-    const label = serviceLabel(input.name, wave.dnsSuffix);
-    if (!label) return { error: `${input.name} is not a name under ${wave.dnsSuffix}`, status: 400 };
+    // Only the pier zone, and only one label inside it -- a name from
+    // elsewhere would be a route for a name the wildcard does not cover.
+    const zone = pierZone(wave);
+    const label = serviceLabel(input.name, zone);
+    if (!label) return { error: `${input.name} is not a name under ${zone}`, status: 400 };
     if (!isPublicSuffix(wave.dnsSuffix)) {
       return {
         error: `${wave.dnsSuffix} is a placeholder domain and cannot be reached from the open network; give the wave a domain of its own first`,
@@ -129,14 +142,7 @@ export async function setPier(
       };
     }
 
-    const fqdn = `${label}.${wave.dnsSuffix}`;
-    if (siblings.some((node) => node.hostname === label && node.id !== self.id)) {
-      return { error: `${fqdn} is another device in this wave`, status: 409 };
-    }
-    const services = await tx.select().from(waveServices).where(eq(waveServices.waveId, input.waveId));
-    if (services.some((service) => service.name === label)) {
-      return { error: `${fqdn} is a service in this wave`, status: 409 };
-    }
+    const fqdn = `${label}.${zone}`;
     const existing = await tx.select().from(wavePiers).where(eq(wavePiers.waveId, input.waveId));
     const same = existing.find((pier) => pier.name === label);
     if (same && same.nodeId !== self.id) {
@@ -242,18 +248,29 @@ export async function setPierAllowed(
   return updated[0] ?? null;
 }
 
-export type SetPierHostResult = { host: PierHost } | { conflict: string } | { invalid: string };
+export type SetPierHostResult =
+  | {
+      host: PierHost;
+      /** The zone the wildcard record now has to cover. */
+      zone: string;
+      /** The zone it covered before, when the label moved; its record has to go. */
+      previousZone: string | null;
+    }
+  | { conflict: string }
+  | { invalid: string };
 
 /**
  * Makes one node the pier of its wave, with the addresses the world reaches it
  * at -- configured, never guessed: behind an ingress the node cannot know them.
  *
  * One pier per wave. A second node would be a second answer to "where is this
- * name", and the zone can only hold one of them.
+ * name", and the wildcard record can only hold one of them. `label` names the
+ * zone it serves; it moves only while nobody holds a name in it, because every
+ * name and every certificate for one hangs under the old zone.
  */
 export async function setPierHost(
   db: Database,
-  input: { waveId: string; nodeId: string; ipv4?: string; ipv6?: string },
+  input: { waveId: string; nodeId: string; ipv4?: string; ipv6?: string; label?: string },
 ): Promise<SetPierHostResult> {
   if (input.ipv4 === undefined && input.ipv6 === undefined) {
     return { invalid: "a pier needs a public address, IPv4 or IPv6 or both" };
@@ -262,9 +279,22 @@ export async function setPierHost(
     return { invalid: `${input.ipv4} is not an IPv4 address` };
   if (input.ipv6 !== undefined && isIP(input.ipv6) !== 6)
     return { invalid: `${input.ipv6} is not an IPv6 address` };
+  const label = input.label?.trim().toLowerCase();
+  if (label !== undefined && !isPierLabel(label)) {
+    return { invalid: `${input.label} is not a single DNS label` };
+  }
 
   return db.transaction(async (tx) => {
-    await tx.select().from(waves).where(eq(waves.id, input.waveId)).limit(1).for("update");
+    const waveRows = await tx.select().from(waves).where(eq(waves.id, input.waveId)).limit(1).for("update");
+    const wave = waveRows[0];
+    if (!wave) return { invalid: "the wave is gone" };
+    // The wildcard has to be resolvable from the open network, and nothing
+    // under `.internal` ever is.
+    if (!isPublicSuffix(wave.dnsSuffix)) {
+      return {
+        invalid: `${wave.dnsSuffix} is a placeholder domain and cannot be reached from the open network; give the wave a domain of its own first`,
+      };
+    }
     const other = await tx
       .select({ hostname: nodes.hostname })
       .from(nodes)
@@ -281,6 +311,29 @@ export async function setPierHost(
         conflict: `${other[0].hostname} is already the pier of this wave; \`admin.ts clear-pier\` it first`,
       };
     }
+
+    const moving = label !== undefined && label !== wave.pierLabel;
+    if (moving) {
+      const held = await tx
+        .select({ name: wavePiers.name })
+        .from(wavePiers)
+        .where(eq(wavePiers.waveId, input.waveId))
+        .orderBy(asc(wavePiers.name));
+      if (held.length > 0) {
+        const zone = pierZone(wave);
+        return {
+          conflict: `names are put out under ${zone} (${held.map((row) => `${row.name}.${zone}`).join(", ")}); remove them before the zone moves`,
+        };
+      }
+    }
+
+    const before = await tx
+      .select()
+      .from(nodes)
+      .where(and(eq(nodes.waveId, input.waveId), eq(nodes.id, input.nodeId)))
+      .limit(1);
+    const wasPier = before[0] ? toPierHost(before[0]) !== null : false;
+
     const updated = await tx
       .update(nodes)
       .set({ pierIpv4: input.ipv4 ?? null, pierIpv6: input.ipv6 ?? null })
@@ -290,14 +343,19 @@ export async function setPierHost(
     if (!host) return { invalid: "unknown node" };
     await tx
       .update(waves)
-      .set({ netmapVersion: sql`${waves.netmapVersion} + 1` })
+      .set({ netmapVersion: sql`${waves.netmapVersion} + 1`, ...(moving ? { pierLabel: label } : {}) })
       .where(eq(waves.id, input.waveId));
-    return { host };
+    const zone = pierZone({ pierLabel: moving ? label : wave.pierLabel, dnsSuffix: wave.dnsSuffix });
+    // Only a pier that was already serving left a record under the old zone.
+    return { host, zone, previousZone: moving && wasPier ? pierZone(wave) : null };
   });
 }
 
 /** Ends the pier of a wave; its claims stay, and wait for a new one. */
-export async function clearPierHost(db: Database, waveId: string): Promise<PierHost | null> {
+export async function clearPierHost(
+  db: Database,
+  waveId: string,
+): Promise<{ host: PierHost; zone: string } | null> {
   const before = await findPierHost(db, waveId);
   if (!before) return null;
   await db
@@ -305,7 +363,9 @@ export async function clearPierHost(db: Database, waveId: string): Promise<PierH
     .set({ pierIpv4: null, pierIpv6: null })
     .where(and(eq(nodes.waveId, waveId), eq(nodes.id, before.id)));
   await bumpNetmap(db, waveId);
-  return before;
+  const rows = await db.select().from(waves).where(eq(waves.id, waveId)).limit(1);
+  const wave = rows[0];
+  return { host: before, zone: wave ? pierZone(wave) : "" };
 }
 
 /**

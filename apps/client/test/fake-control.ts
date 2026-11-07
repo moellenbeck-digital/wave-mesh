@@ -91,10 +91,11 @@ export function fakeControl(
       if (url.pathname.startsWith("/v1/piers")) {
         control.pierCalls?.push(`${request.method} ${url.pathname}`);
         const piers = control.piers as Map<string, number>;
-        const dnsName = (label: string) => `${label}.wave.example.com`;
+        const dnsName = (label: string) => `${label}.pier.wave.example.com`;
         if (request.method === "GET") {
           return Response.json({
             allowed: control.pierAllowed,
+            zone: "pier.wave.example.com",
             pier: { publicIpv4: "203.0.113.10", publicIpv6: null },
             piers: [...piers].map(([name, port]) => ({ name, dnsName: dnsName(name), port })),
           });
@@ -109,15 +110,9 @@ export function fakeControl(
             );
           }
           const body = (await request.json()) as { name: string; port: number };
-          const label = body.name.replace(/\.wave\.example\.com$/, "");
+          const label = body.name.replace(/\.pier\.wave\.example\.com$/, "");
           piers.set(label, body.port);
-          return Response.json({
-            name: label,
-            dnsName: dnsName(label),
-            port: body.port,
-            dns: "published",
-            records: [],
-          });
+          return Response.json({ name: label, dnsName: dnsName(label), port: body.port });
         }
         if (request.method === "DELETE") {
           const label = decodeURIComponent(url.pathname.slice("/v1/piers/".length));
@@ -126,7 +121,7 @@ export function fakeControl(
             return Response.json({ error: "this device has not put that name out" }, { status: 404 });
           }
           piers.delete(label);
-          return Response.json({ name: label, dnsName: dnsName(label), port, dns: "published", records: [] });
+          return Response.json({ name: label, dnsName: dnsName(label), port });
         }
       }
       if (url.pathname === "/v1/netmap" && options.netmapKey) {

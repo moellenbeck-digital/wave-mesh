@@ -30,15 +30,13 @@ const en = {
   "cert-failed": (p: Params) =>
     `no certificate for ${p.names ?? (p.wildcard ? "the wave's wildcard" : p.controlUrl)}: ${p.reason}`,
   "expose-bad-name": (p: Params) =>
-    `${p.name} is not a name under ${p.suffix}; use one name below the wave's domain, e.g. app.${p.suffix}`,
+    `${p.name} is not a name under ${p.suffix}; use one name below the pier zone, e.g. app or app.${p.suffix}`,
   "expose-which-wave": (p: Params) => `this device is in ${p.count} waves; name the one the name is for`,
   "expose-bad-url": (p: Params) =>
     `${p.url} is not a local address; use http://host:port or https://host:port, with the port and nothing after it`,
   "expose-bad-port": (p: Params) => `${p.port} is not a port between 1 and 65535`,
   "expose-loop": (p: Params) =>
     `${p.url} is this device's own listener for the pier; name the service behind it`,
-  "expose-wave-unknown": () =>
-    "this wave's domain is not known yet; bring the tunnel up once (`wave up`), then try again",
   "pier-not-allowed": (p: Params) =>
     `the operator has not allowed the pier for ${p.device}; next step: an operator runs \`admin.ts allow-pier <wave> ${p.device}\``,
   "pier-refused": (p: Params) => `${p.name} was not put out: ${p.reason}`,
@@ -68,15 +66,13 @@ const de: typeof en = {
   "cert-failed": (p) =>
     `kein Zertifikat für ${p.names ?? (p.wildcard ? "den Wildcard des Waves" : p.controlUrl)}: ${p.reason}`,
   "expose-bad-name": (p) =>
-    `${p.name} ist kein Name unter ${p.suffix}; nimm genau einen Namen unterhalb der Domain des Waves, z. B. app.${p.suffix}`,
+    `${p.name} ist kein Name unter ${p.suffix}; nimm genau einen Namen unterhalb der Pier-Zone, z. B. app oder app.${p.suffix}`,
   "expose-which-wave": (p) => `dieses Gerät ist in ${p.count} Waves; nenne den, für den der Name ist`,
   "expose-bad-url": (p) =>
     `${p.url} ist keine lokale Adresse; nimm http://host:port oder https://host:port, mit Port und ohne alles danach`,
   "expose-bad-port": (p) => `${p.port} ist kein Port zwischen 1 und 65535`,
   "expose-loop": (p) =>
     `${p.url} ist der eigene Listener dieses Geräts für den Pier; nenne den Dienst dahinter`,
-  "expose-wave-unknown": () =>
-    "die Domain dieses Waves ist noch nicht bekannt; bring den Tunnel einmal hoch (`wave up`) und versuche es dann noch einmal",
   "pier-not-allowed": (p) =>
     `der Betreiber hat den Pier für ${p.device} nicht erlaubt; nächster Schritt: ein Betreiber führt \`admin.ts allow-pier <wave> ${p.device}\` aus`,
   "pier-refused": (p) => `${p.name} wurde nicht freigegeben: ${p.reason}`,
