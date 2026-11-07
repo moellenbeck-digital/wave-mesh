@@ -476,6 +476,9 @@ export class Daemon {
         runtime.notice = null;
       }
       if (tunnel) await this.stopTunnel(tunnel);
+      // The proxy answers on the tunnel's address, so it goes with the tunnel.
+      await runtime.expose?.close();
+      runtime.expose = undefined;
     }
     await this.publish();
     return null;

@@ -161,6 +161,28 @@ describe("putting a name out", () => {
     await new Promise<void>((done) => probe.close(() => done()));
   });
 
+  test("taking the tunnel down closes the listener, and bringing it up opens it again", async () => {
+    const svc = await service();
+    const { daemon, control: server, statePath } = await setUp();
+    const port = await freePort();
+    await daemon.expose(undefined, "app", `http://127.0.0.1:${svc.port}`, port);
+    await daemon.cert(undefined, [NAME]);
+    await writeFile(certPaths(statePath, NAME).keyPath, server.issuedKey as string);
+    expect((await daemon.pierStatus())[0]?.state).toBe("listening");
+
+    await daemon.down();
+    expect((await daemon.pierStatus())[0]?.state).toBe("tunnel-down");
+    const probe = createServer();
+    await new Promise<void>((resolve, reject) => {
+      probe.once("error", reject);
+      probe.listen(port, "127.0.0.1", resolve);
+    });
+    await new Promise<void>((done) => probe.close(() => done()));
+
+    await daemon.up();
+    expect((await daemon.pierStatus())[0]?.state).toBe("listening");
+  });
+
   test("removing what was never put out says so and changes nothing", async () => {
     const { daemon } = await setUp();
     const result = await daemon.unexpose(undefined, "nothing");
