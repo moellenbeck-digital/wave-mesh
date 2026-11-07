@@ -6,7 +6,26 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.14.0.*
+### Neue Funktionen
+
+- **Pier: ein Name aus dem Wave im offenen Netz:** Ein Gerät kann einen Namen
+  unter der Domain des Waves aus dem Internet erreichbar machen, ohne eingehenden
+  Port, feste Adresse oder Portfreigabe im Router. Dafür gibt es das Image
+  `wave-reverse-proxy` (den Pier-Knoten): Er liest nur den Namen aus dem
+  Verbindungsaufbau und reicht die Verbindung durch den Wave an das Gerät weiter.
+  Er hält keinen Schlüssel und sieht keinen Klartext — die Verschlüsselung endet
+  auf dem Gerät, mit dessen eigenem Zertifikat. Ein unbekannter Name oder ein
+  Ziel, das nicht erreichbar ist, wird einfach getrennt, ohne Fehlerseite.
+- **Zwei Schlösser für den Pier:** Der Betreiber erlaubt den Pier je Gerät
+  (`admin.ts allow-pier` / `deny-pier`, Vorgabe ist aus), und erst danach kann
+  dessen Besitzer einen Namen und einen Port freigeben. Wird die Erlaubnis
+  zurückgenommen, gehen die Namen des Geräts mit. Die Geräteliste zeigt, welches
+  Gerät den Pier nutzen darf und welches der Pier ist (`admin.ts set-pier`).
+- **Öffentliche DNS-Einträge für freigegebene Namen:** Der Server schreibt für
+  einen freigegebenen Namen den A- und AAAA-Eintrag auf die öffentliche Adresse
+  des Piers und löscht ihn beim Entzug wieder — bei Cloudflare, Hetzner, IONOS
+  und INWX. Verwaltet der Wave seine Zone von Hand, nennt der Server den Eintrag
+  als Aufforderung.
 
 ---
 

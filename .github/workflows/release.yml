@@ -211,7 +211,7 @@ jobs:
         # here for the same reason as the others: deployment/ points at tags in
         # this registry, and an image that only ever gets built locally is one
         # that is built differently everywhere.
-        service: [control, relay, web, connector]
+        service: [control, relay, web, connector, pier]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -227,7 +227,12 @@ jobs:
         id: name
         run: |
           set -euo pipefail
-          repo="ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.service }}"
+          # The pier is published as `wave-reverse-proxy`: what it is called is
+          # what somebody searches the registry for, and the app directory keeps
+          # the name of the design (D12).
+          name="${{ matrix.service }}"
+          [ "$name" = "pier" ] && name="wave-reverse-proxy"
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}/$name"
           echo "tags<<EOF" >> "$GITHUB_OUTPUT"
           while read -r tag; do
             [ -n "$tag" ] && echo "$repo:$tag" >> "$GITHUB_OUTPUT"
@@ -253,7 +258,7 @@ jobs:
           build-args: |
             WAVE_BUILD_VERSION=${{ needs.version.outputs.version }}
           labels: |
-            org.opencontainers.image.title=wave-${{ matrix.service }}
+            org.opencontainers.image.title=${{ matrix.service == 'pier' && 'wave-reverse-proxy' || format('wave-{0}', matrix.service) }}
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

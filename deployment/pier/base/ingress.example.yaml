@@ -1,0 +1,34 @@
+# Wie der Verkehr auf den Pier kommt: ein Ingress leitet **alles** auf TCP 443
+# an den Service, mit SNI-Durchleitung -- TLS wird dort nicht angefasst.
+#
+# Als Beispiel und bewusst nicht in der kustomization.yaml: welcher Ingress-
+# Controller die Kante besitzt, ist Sache des Clusters. Das hier ist Traefik
+# (IngressRouteTCP), dessen Durchleitung ohne Host-Liste auskommt.
+#
+# Zwei Dinge daran:
+#
+# - Der Pier muss die Kante besitzen, an der 443 liegt. Hängt an derselben
+#   Adresse noch ein Ingress, der für andere Namen TLS terminiert, gewinnt dort
+#   der genauere Router; die niedrige Priorität hier macht den Pier zum
+#   Auffangbecken für alles, was keiner dieser Namen ist. Ein SNI-Router
+#   verschiebt damit die Kante eines Hosts, auf dem noch jemand anderes
+#   deployt -- das ist eine Entscheidung, keine Voreinstellung.
+# - Die Adresse, unter der die Welt diesen Ingress erreicht, ist die öffentliche
+#   Adresse des Piers. Sie steht nirgends im Cluster fest und wird deshalb
+#   gesagt, nie geraten:
+#     bun apps/control/src/admin.ts set-pier <wave> <hostname> --ipv4 <adresse> [--ipv6 <adresse>]
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: wave-pier
+  namespace: wave-pier
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostSNI(`*`)
+      priority: 1
+      services:
+        - name: wave-pier
+          port: 443
+  tls:
+    passthrough: true

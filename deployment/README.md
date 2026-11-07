@@ -17,6 +17,9 @@ deployment/
   cluster/                # Connector + Operator
     base/
     overlays/example/
+  pier/                   # Pier-Knoten (D12): ein Name aus dem Wave im offenen Netz
+    base/                 # StatefulSet, Service; ingress.example.yaml als Beispiel
+    overlays/example/
 ```
 
 Die Basis läuft absichtlich nicht für sich: sie hat kein Secret und keinen Tag
