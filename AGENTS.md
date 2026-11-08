@@ -520,6 +520,16 @@ Was daran festliegt:
   ergibt `laptop.wave.example.com`, nicht `laptop.robin.wave.example.com`. Das
   Formular ist mit `<name>.wave.internal` vorbelegt, was man tippt, gilt —
   dieselbe Bedeutung, die `admin.ts set-domain` schon immer hatte.
+- **Die Domain braucht mindestens zwei Labels, ein Suffix wird nie automatisch
+  ergänzt.** `martins-synologie` ist abgelehnt, nicht zu `martins-synologie.wave.internal`
+  ergänzt: still ergäbe das eine Zone ohne öffentliches Zertifikat, und der Hinweis
+  im Formular (behalte den Vorschlag nur, wenn du keine eigene Domain hast) wäre
+  hinfällig. `POST /waves` zeigt bei einer ungültigen Domain oder einem ungültigen
+  Namen mit 400 das Formular erneut (`createForm()` in `routes/waves.ts`, dieselbe
+  Funktion wie das GET): Eingabe erhalten, Fehler am Feld, Format und Beispiel
+  dabei — das Domain-Feld trägt den Formathinweis auch ohne Fehler. Das gilt für
+  das schlichte Formular des Servers; mit `WAVE_WEB_URL` gehört `/waves/new` dem
+  Frontend (siehe dort).
 - **Zwei Waves können nicht dieselbe Zone beantworten.** `dns_suffix` trägt
   einen Unique-Index; `createWave()` und `setWaveDomain()` fragen vorher nach
   und geben `{ conflict: "suffix" }` zurück, statt die Ausnahme des Index
