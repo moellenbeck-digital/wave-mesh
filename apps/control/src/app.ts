@@ -1,11 +1,19 @@
 import { createMemoryNonceStore } from "@wave/crypto";
-import { generateCodeVerifier, generateState } from "arctic";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { deleteCookie, getCookie } from "hono/cookie";
 import { html, raw } from "hono/html";
 import { proxy } from "hono/proxy";
+import {
+  beginProviderFlow,
+  FLOW_COOKIE,
+  isLinkFlow,
+  NEXT_COOKIE,
+  STATE_COOKIE,
+  VERIFIER_COOKIE,
+} from "./auth/flow.ts";
 import { resolveUser } from "./auth/identity.ts";
+import { LoginThrottle } from "./auth/password.ts";
 import type { OAuthProvider } from "./auth/providers.ts";
 import {
   clearSessionCookie,
@@ -26,6 +34,7 @@ import { isWithin } from "./net/addressing.ts";
 import { peerAddress } from "./net/peer.ts";
 import type { SigningKey } from "./netmap/build.ts";
 import { accountRoutes } from "./routes/account.ts";
+import { accountLinkRoutes, accountView } from "./routes/account-link.ts";
 import { billingRoutes } from "./routes/billing.ts";
 import { certRoutes } from "./routes/cert.ts";
 import { controlWebsocket, NetmapHub } from "./routes/control-ws.ts";
@@ -44,11 +53,6 @@ import { listDevices } from "./waves/devices.ts";
 import { invitesFor } from "./waves/invites.ts";
 import { wavesOf } from "./waves/members.ts";
 import { mayCreateWaves, suggestWave, waveSetup } from "./waves/provision.ts";
-
-const STATE_COOKIE = "wave_oauth_state";
-const NEXT_COOKIE = "wave_oauth_next";
-const VERIFIER_COOKIE = "wave_oauth_verifier";
-const FLOW_TTL_SECONDS = 600;
 
 export interface AppDeps {
   db: Database;
@@ -119,7 +123,12 @@ export function createApp({
 
   app.get("/healthz", (c) => c.json({ ok: true }));
 
-  app.route("/", passwordRoutes({ db, config }));
+  // One count of wrong passwords and wrong codes, for the sign-in and for the
+  // guided account link alike: a guess at an account is a guess wherever it
+  // is made, and two counters would double what an attacker gets.
+  const throttle = new LoginThrottle();
+  const codeThrottle = new LoginThrottle(10);
+  app.route("/", passwordRoutes({ db, config, throttle, codeThrottle }));
   app.route("/", accountRoutes({ db }));
 
   const hub = new NetmapHub(db, signingKey, config.relays);
@@ -127,6 +136,8 @@ export function createApp({
   // browsers get the device list they are rendering.
   const feed = new DeviceFeed(db, hub);
   hub.onChange((waveId) => feed.changed(waveId));
+  const links = accountLinkRoutes({ db, config, providers, hub, throttle, codeThrottle });
+  app.route("/", links);
   const updates =
     releases ??
     new ReleaseFeed({
@@ -186,11 +197,13 @@ export function createApp({
         .innerJoin(waves, eq(waves.id, waveMembers.waveId))
         .where(eq(waveMembers.userId, user.id));
       const rows = membership.map((w) => html`<li>${w.name} — <code>${w.dnsSuffix}</code></li>`);
+      const { linkable } = await accountView(db, user, providers);
       // Nothing to show is the state of a fresh account: it has no network
       // until its owner makes one, and this is the only way there.
       const body = membership.length > 0 ? html`<ul>${rows}</ul>` : html`<p>${raw(m.noWaveYetHtml)}</p>`;
       return c.html(html`<h1>wave-mesh</h1>
         <p>${m.signedInAs(user.email ?? user.name ?? user.id)}</p>
+        ${linkable ? html`<p><a href="/account/link">${m.linkTitle}</a></p>` : ""}
         ${body}
         <form method="post" action="/auth/logout"><button type="submit">${m.logOut}</button></form>`);
     });
@@ -201,6 +214,9 @@ export function createApp({
     if (!user) return c.json({ error: "unauthenticated" }, 401);
     return c.json({
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, name: user.name },
+      // Which logins this account has, and whether the guided link of a split-off
+      // account is on offer (a provider that did not vouch for the address).
+      account: await accountView(db, user, providers),
       waves: await wavesOf(db, user.id),
       // Why an account can sit here without a wave of its own: it was invited
       // into someone else's and has not opened the link yet. Without this the
@@ -252,23 +268,9 @@ export function createApp({
     const provider = providers.get(c.req.param("provider"));
     if (!provider) return c.json({ error: "unknown provider" }, 404);
 
-    const state = generateState();
-    const verifier = generateCodeVerifier();
-    const cookieOptions = {
-      httpOnly: true,
-      secure: config.secureCookies,
-      sameSite: "Lax",
-      path: "/auth",
-      maxAge: FLOW_TTL_SECONDS,
-    } as const;
-    setCookie(c, STATE_COOKIE, state, cookieOptions);
-    const next = safeNext(c.req.query("next"));
-    if (next) setCookie(c, NEXT_COOKIE, next, { ...cookieOptions, path: "/" });
-    if (provider.usesPkce) setCookie(c, VERIFIER_COOKIE, verifier, cookieOptions);
-
     let target: URL;
     try {
-      target = await provider.createAuthorizationURL(state, verifier);
+      target = await beginProviderFlow(c, config, provider, { next: safeNext(c.req.query("next")) });
     } catch (error) {
       // The provider is down or misconfigured. Said here, where someone is
       // looking, rather than as a redirect into nowhere.
@@ -302,6 +304,8 @@ export function createApp({
     const state = c.req.query("state");
     const expectedState = getCookie(c, STATE_COOKIE);
     const verifier = getCookie(c, VERIFIER_COOKIE) ?? "";
+    const flow = getCookie(c, FLOW_COOKIE);
+    deleteCookie(c, FLOW_COOKIE, { path: "/auth" });
     deleteCookie(c, STATE_COOKIE, { path: "/auth" });
     deleteCookie(c, VERIFIER_COOKIE, { path: "/auth" });
 
@@ -316,6 +320,11 @@ export function createApp({
       const message = err instanceof Error ? err.message : "authorization failed";
       return c.json({ error: "authorization failed", detail: message }, 400);
     }
+
+    // The guided account link is not a sign-in: its two logins only prove
+    // something about the session that is already there, and neither makes
+    // an account nor a session of its own.
+    if (isLinkFlow(flow)) return links.callback(c, flow, providerId, claims);
 
     const { userId } = await resolveUser(db, claims);
     const setup = await waveSetup(db, userId, claims.email, mayCreateWaves(config));

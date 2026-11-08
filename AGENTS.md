@@ -657,6 +657,61 @@ Was daran festliegt (`apps/control/src/auth/oidc.ts`):
   geholt, nicht beim Start — ein Control-Server startet auch, wenn Pocket ID
   gerade nicht da ist.
 
+## Getrennte Konten verknüpfen (`auth/account-link.ts`)
+
+`resolveUser` verknüpft nur auf eine Adresse, die der Anbieter als bestätigt
+meldet, und ein Login mit bekannter Identität kehrt sofort zurück. Hat ein
+Anbieter die Adresse beim ersten Login nicht bestätigt, entsteht Konto B neben
+dem bestätigten Konto A — und B bleibt auch nach der Bestätigung getrennt.
+**Das ändert sich nicht:** eine gleiche, aber unbestätigte Adresse führt nie
+zur automatischen Verknüpfung. Stattdessen führt eine geführte Verknüpfung B in
+A zusammen, in drei Schritten, nur in dieser Reihenfolge, jeder serverseitig
+geprüft:
+
+1. **Frischer Nachweis der Adresse.** B (angemeldet) startet die Verknüpfung
+   (`POST /account/link/start`); der Anbieter authentifiziert neu (OIDC:
+   `prompt=login&max_age=0`; liefert er `auth_time`, muss es nach dem Start
+   der Anfrage liegen). Im Callback muss `emailVerified` gelten und die
+   Identität (`provider` + `subject`) **B** gehören. A ist das *eine* Konto, dessen
+   `users.email` der Adresse entspricht und das selbst bestätigt ist; kein A
+   oder mehrere → Meldung, nichts ändert sich.
+2. **Nachweis der Kontrolle über A**, ohne Sitzung — B bleibt B: A's Passwort
+   (mit Zwei-Faktor-Code, falls A einen hat; ob A einen hat, sagt die Seite erst
+   nach dem richtigen Passwort) oder ein *anderer* Anbieter als der
+   verknüpfte, dessen Identität A gehört. Die Anbieter-Anmeldung legt nichts
+   an und aktualisiert nichts. Die Zähler für falsche Passwörter und Codes sind dieselben
+   wie beim Login (`LoginThrottle`-Instanzen in `createApp`).
+3. **Bestätigungsseite** mit Zusammenfassung (`describeMerge`), dann
+   `POST /account/link/confirm`. Ein GET ändert nie etwas.
+
+Die Anfrage ist die Tabelle `account_links` (Token als SHA-256 wie
+`password_setups`, Cookie `wave_link`): gebunden an B, A, Identität und Adresse,
+10 Minuten gültig, einmal verwendbar, abbrechbar; eine neue Anfrage von B
+storniert die alte. Jeder Schritt lädt Anfrage, Identität und A neu (`bindings`);
+die Ausführung (`mergeAccounts`) läuft in **einer Transaktion** unter
+`lockAddress`, sperrt Anfrage, A und B und prüft alles erneut.
+
+Was beim Zusammenführen passiert (die Bestätigungsseite nennt es vorher mit
+Zahlen und Namen): alle Identitäten von B gehen an A; Waves von B
+(`waves.ownerUserId`) gehen an A — dort wird A Eigentümer, auch wenn A schon
+Mitglied war (ein Wave braucht seinen Eigentümer mit Rolle `owner`; das ist die
+einzige Stelle, an der sich A's Rolle ändert); Billing hängt am Wave und bleibt;
+Mitgliedschaften gehen an A, ist A schon Mitglied, bleibt A's Rolle und B's Zeile
+entfällt; Geräte (`nodes.userId`) gehen an A und bleiben verbunden (Netmap-Broadcast
+je Wave, kein Disconnect); `wave_auth_keys`, Einladungs- und Audit-Bezüge wandern
+mit, damit nichts mit B verschwindet oder seinen Urheber verliert; alle Sitzungen
+von B enden, B wird gelöscht (damit auch die Anfrage), A bekommt eine **neue**
+Sitzung. Pro berührtem Wave steht `account.link` im Audit-Log.
+
+**Auf der Oberfläche:** `/api/me` nennt unter `account` die Logins und `linkable`
+(Adresse nicht bestätigt, Login über Anbieter). Das Frontend zeigt darauf einen
+Hinweis (welches Konto aktiv ist, warum ein Wave fehlen kann) auf Übersicht und
+`/account`, mit Link zu `/account/link` (Web) bzw. der schlichten Seite des
+Control-Servers (ohne `WAVE_WEB_URL`). Der Hinweis sagt **nie**, ob ein anderes
+Konto die Adresse hält — das erfährt nur, wer sie im ersten Schritt frisch
+nachgewiesen hat; sonst wäre es eine Abfrage, welche Adressen hier ein Konto
+haben.
+
 ## Zertifikate
 
 **Der Node macht den Schlüssel, der Server redet mit der CA.** Das ist die
