@@ -229,7 +229,7 @@ describe("the starting point", () => {
     const { a, b } = await scenario();
     // The same identity again, now vouched for: a known identity returns at once, B stays B.
     const again = await providerLogin("oidc", claimsOf({ emailVerified: true }));
-    expect((await (await request("/api/me", again)).json()).user.id).toBe(b);
+    expect(((await (await request("/api/me", again)).json()) as Json).user.id).toBe(b);
     expect(b).not.toBe(a);
     expect((await db.select().from(users)).length).toBe(2);
   });
