@@ -14,6 +14,7 @@ const en = {
   // ---- frame ----
   metaDescription: "Management for a self-hosted mesh VPN built on WireGuard.",
   signOut: "Sign out",
+  signOutHelp: "How do I sign out completely?",
   language: "Language",
   footerTagline: "wave-mesh — a self-hosted mesh VPN built on WireGuard.",
   footerSigned: "Netmaps are delivered signed.",
@@ -150,7 +151,10 @@ const en = {
     "Scan it with the iPhone camera: the wave-mesh app opens with this server filled in. Approve the device here afterwards, as always.",
   addPhoneManual: "Or type this address into the app:",
   peopleTitle: "People",
+  cleanupTitle: "Clean up",
   deleteWave: "Delete wave",
+  ownerCannotLeave:
+    "As the owner you cannot leave this wave, and ownership cannot be handed over yet. For you, leaving means deleting the wave.",
   leaveWave: "Leave wave",
   leaveWaveHint:
     "You leave this wave, and your devices in it leave with you. Coming back takes a new invitation.",
@@ -196,6 +200,7 @@ const en = {
 const de: typeof en = {
   metaDescription: "Verwaltung für ein selbst gehostetes Mesh-VPN auf WireGuard-Basis.",
   signOut: "Abmelden",
+  signOutHelp: "Wie melde ich mich komplett ab?",
   language: "Sprache",
   footerTagline: "wave-mesh — selbst gehostetes Mesh-VPN auf WireGuard-Basis.",
   footerSigned: "Netzkarten werden signiert ausgeliefert.",
@@ -327,7 +332,10 @@ const de: typeof en = {
     "Mit der iPhone-Kamera scannen: Die wave-mesh-App öffnet sich mit diesem Server. Danach das Gerät wie gewohnt hier freigeben.",
   addPhoneManual: "Oder diese Adresse in der App eingeben:",
   peopleTitle: "Personen",
+  cleanupTitle: "Aufräumen",
   deleteWave: "Wave löschen",
+  ownerCannotLeave:
+    "Als Eigentümer kannst du diesen Wave nicht verlassen, und die Eigentümerschaft lässt sich noch nicht übertragen. Für dich heißt Verlassen: den Wave löschen.",
   leaveWave: "Wave verlassen",
   leaveWaveHint:
     "Du verlässt diesen Wave, und deine Geräte darin gehen mit. Zurück geht es nur mit einer neuen Einladung.",

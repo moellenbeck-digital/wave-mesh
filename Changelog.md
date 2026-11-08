@@ -8,6 +8,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Neue Funktionen
 
+- **Wave löschen, verlassen und abmelden leichter finden:** In der Wave-Karte steht unter der Überschrift
+  **Aufräumen** offen, was sonst eingeklappt war: **Wave löschen** (Eigentümer, weiter mit getipptem Namen)
+  bzw. **Wave verlassen** (alle anderen), samt den Folgen im Klartext. Der Eigentümer liest dort, dass er nicht
+  verlassen kann (eine Übertragung der Eigentümerschaft gibt es noch nicht). Neu auf `/account` (Anker
+  `#abmelden`): **Komplett abmelden** erklärt Web-Abmeldung (nur die Browser-Sitzung), `wave logout` am Gerät und
+  Wave verlassen. Im Header führt der Link „Wie melde ich mich komplett ab?“ dorthin. Deutsch und Englisch.
 - **DNS-Provider-Seite übersichtlicher:** Ist für eine Wave ein Provider eingerichtet (auch „Manuell“),
   nennt `/waves/<id>/dns` ihn in einem eigenen Bereich mit Einrichtungsdatum und bietet daneben
   **Bearbeiten** und **Entfernen** an. Das Formular ist dann zunächst zu; **Bearbeiten** öffnet es mit dem
