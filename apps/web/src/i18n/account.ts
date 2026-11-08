@@ -43,6 +43,19 @@ const en = {
     "no-password": "This account has no password, so there is no second factor to set up.",
     unknown: "That did not work. Reload the page and try again.",
   } as Record<string, string>,
+  // --- signing out completely ---
+  signOutTitle: "Sign out completely",
+  signOutIntro: "Three ways to sign out. Which one fits depends on what should end.",
+  signOutWebLabel: "Sign out in the header",
+  signOutWeb: "Ends only this browser session. Your waves and devices stay as they are.",
+  signOutCliLabel: "wave logout <wave> on a device",
+  signOutCli:
+    "Signs that device out of that wave: it is removed from the wave and forgets its keys. The wave stays. The device needs a new approval to come back.",
+  signOutLeaveLabel: "Leave the wave",
+  signOutLeave:
+    "Removes you and your devices from that wave. Coming back takes a new invitation. The owner deletes the wave instead.",
+  signOutWhere: "Leaving and deleting are at the bottom of each wave on the {overview}.",
+  signOutOverview: "overview",
   // --- the second step of the login ---
   loginCodeTitle: "Enter your code",
   loginCodeIntro:
@@ -91,6 +104,18 @@ const de: typeof en = {
     "no-password": "Dieses Konto hat kein Passwort, also gibt es keinen zweiten Faktor einzurichten.",
     unknown: "Das hat nicht geklappt. Lade die Seite neu und versuch es noch einmal.",
   },
+  signOutTitle: "Komplett abmelden",
+  signOutIntro: "Drei Wege, sich abzumelden. Welcher passt, hängt davon ab, was enden soll.",
+  signOutWebLabel: "Abmelden im Kopf der Seite",
+  signOutWeb: "Beendet nur diese Browser-Sitzung. Deine Waves und Geräte bleiben, wie sie sind.",
+  signOutCliLabel: "wave logout <Wave> am Gerät",
+  signOutCli:
+    "Meldet dieses Gerät aus dem Wave ab: Es wird aus dem Wave entfernt und vergisst seine Schlüssel. Der Wave bleibt. Das Gerät braucht eine neue Freigabe, um wiederzukommen.",
+  signOutLeaveLabel: "Wave verlassen",
+  signOutLeave:
+    "Entfernt dich und deine Geräte aus diesem Wave. Zurück geht es nur mit einer neuen Einladung. Der Eigentümer löscht stattdessen den Wave.",
+  signOutWhere: "Verlassen und Löschen stehen am Ende jedes Waves auf der {overview}.",
+  signOutOverview: "Übersicht",
   loginCodeTitle: "Code eingeben",
   loginCodeIntro:
     "Öffne deine Authenticator-App und gib den Code für wave-mesh ein. Ohne dein Telefon geht auch ein Wiederherstellungscode.",

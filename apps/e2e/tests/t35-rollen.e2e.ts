@@ -214,7 +214,6 @@ test.describe("Rollen ändern", () => {
 
     // Verlassen: A geht selbst.
     const ca = await open(admin);
-    await ca.locator("summary", { hasText: "Leave wave" }).click();
     await Promise.all([
       admin.page.waitForResponse((r) => r.url().endsWith("/leave") && r.request().method() === "POST"),
       ca.getByRole("button", { name: "Leave this wave" }).click(),

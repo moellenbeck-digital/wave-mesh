@@ -133,10 +133,9 @@ export async function deleteWave(page: Page, name: string): Promise<void> {
   await page.goto("/");
   const card = await waveCard(page, name);
   if ((await card.count()) === 0) return;
-  const details = card.locator("details", { has: page.locator('form[action$="/delete"]') });
-  await details.locator("summary").click();
-  await details.locator('input[name="name"]').fill(name);
-  await details.locator('button[type="submit"]').click();
+  const form = card.locator('form[action$="/delete"]');
+  await form.locator('input[name="name"]').fill(name);
+  await form.locator('button[type="submit"]').click();
   await page.waitForURL((url) => url.pathname === "/");
   await expect(await waveCard(page, name)).toHaveCount(0);
 }

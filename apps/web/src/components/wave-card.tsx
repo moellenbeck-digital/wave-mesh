@@ -163,18 +163,22 @@ export function WaveCard({
       <h3 className="wc-section-title mt-8">{t.peopleTitle}</h3>
       <MemberList wave={wave} membership={membership} locale={locale} />
 
-      {/* Nur der Eigentümer, nicht jeder, der verwalten darf: ein Admin
-          entfernt Leute und Geräte, und das lässt sich durch Wiederaufnehmen
-          zurücknehmen. Das hier nicht. Deshalb auch eingeklappt und mit
-          getipptem Namen -- ein Knopf, der ein Netz auf einen Klick löscht,
-          ist einen Fehlgriff von einem Abend Neuanmelden entfernt. */}
+      {/* Ein eigener, offener Abschnitt und kein Klappbereich: wer ein Wave
+          loswerden will, sucht danach und findet unter einer Caption nichts.
+          Nur der Eigentümer löscht, nicht jeder, der verwalten darf: ein
+          Admin entfernt Leute und Geräte, und das lässt sich durch
+          Wiederaufnehmen zurücknehmen. Das hier nicht. Deshalb mit getipptem
+          Namen -- ein Knopf, der ein Netz auf einen Klick löscht, ist einen
+          Fehlgriff von einem Abend Neuanmelden entfernt. Jeder andere kann
+          gehen, ohne jemanden darum zu bitten; seine Geräte gehen mit. */}
+      <h3 className="wc-section-title mt-8">{t.cleanupTitle}</h3>
       {wave.role === "owner" ? (
-        <details className="mt-8 border-line border-t pt-6">
-          <summary className="cursor-pointer text-caption text-slate">{t.deleteWave}</summary>
+        <>
+          <h4 className="font-medium text-body-sm text-navy">{t.deleteWave}</h4>
           <form
             method="post"
             action={`/waves/${wave.id}/delete`}
-            className="mt-4 flex flex-col gap-3 md:flex-row md:items-end"
+            className="mt-3 flex flex-col gap-3 md:flex-row md:items-end"
           >
             <div className="flex-1">
               <label className="wc-label" htmlFor={`delete-${wave.id}`}>
@@ -193,26 +197,27 @@ export function WaveCard({
               {t.deleteForGood}
             </button>
           </form>
-          <p className="mt-3 text-caption text-slate">
+          <p className="mt-3 text-body-sm text-slate">
             {rich(t.deleteHint, {
               devices: <LiveDeviceCount wave={wave} initial={nodes} />,
               people: t.people(people),
               suffix: <code className="font-mono">{wave.dnsSuffix}</code>,
             })}
           </p>
-        </details>
+          {/* Es gibt keinen Eigentümerwechsel (der Server kennt die Rolle
+              `owner` nur beim Anlegen), also bleibt nur das Löschen. */}
+          <p className="mt-3 text-body-sm text-slate">{t.ownerCannotLeave}</p>
+        </>
       ) : (
-        /* Jeder außer dem Eigentümer kann gehen, ohne jemanden darum zu
-           bitten. Eingeklappt, weil die eigenen Geräte mitgehen. */
-        <details className="mt-8 border-line border-t pt-6">
-          <summary className="cursor-pointer text-caption text-slate">{t.leaveWave}</summary>
-          <form method="post" action={`/waves/${wave.id}/leave`} className="mt-4">
-            <p className="mb-3 text-caption text-slate">{t.leaveWaveHint}</p>
+        <>
+          <h4 className="font-medium text-body-sm text-navy">{t.leaveWave}</h4>
+          <form method="post" action={`/waves/${wave.id}/leave`} className="mt-3">
+            <p className="mb-3 text-body-sm text-slate">{t.leaveWaveHint}</p>
             <button type="submit" className="wc-btn wc-btn-secondary">
               {t.leaveWaveConfirm}
             </button>
           </form>
-        </details>
+        </>
       )}
     </section>
   );

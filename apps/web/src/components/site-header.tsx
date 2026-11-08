@@ -36,6 +36,21 @@ export function SiteHeader({ me, locale }: { me: Me | null; locale: Locale }) {
               >
                 {me.user.email ?? me.user.name ?? me.user.id}
               </a>
+              {/* Der Knopf beendet nur die Browser-Sitzung; wer mehr will
+                  (Gerät abmelden, Wave verlassen), findet es auf der
+                  Kontoseite. Auf schmalem Schirm nur ein „?“, damit die Zeile
+                  nicht überläuft. */}
+              <a
+                href="/account#abmelden"
+                aria-label={t.signOutHelp}
+                title={t.signOutHelp}
+                className="shrink-0 text-caption text-slate hover:text-navy"
+              >
+                <span className="hidden md:inline">{t.signOutHelp}</span>
+                <span aria-hidden className="md:hidden">
+                  ?
+                </span>
+              </a>
               <form method="post" action="/auth/logout">
                 <button type="submit" className="wc-btn wc-btn-secondary">
                   {t.signOut}
