@@ -17,7 +17,7 @@ import type { DnsProviderKind, DnsSettings } from "@/lib/control";
  * so replacing it means typing it again.
  */
 
-async function send(method: "PUT" | "DELETE", path: string, body?: unknown) {
+export async function send(method: "PUT" | "DELETE", path: string, body?: unknown) {
   const res = await fetch(path, {
     method,
     headers: { "content-type": "application/json" },
@@ -27,7 +27,19 @@ async function send(method: "PUT" | "DELETE", path: string, body?: unknown) {
   return { ok: res.ok, payload };
 }
 
-export function DnsProviderForm({ waveId, settings }: { waveId: string; settings: DnsSettings }) {
+export function DnsProviderForm({
+  waveId,
+  settings,
+  onSaved,
+  onCancel,
+}: {
+  waveId: string;
+  settings: DnsSettings;
+  /** Called once the control server has kept the credential; the panel closes the form then. */
+  onSaved: (kind: DnsProviderKind) => void;
+  /** The way back; without it the form is the only thing on the page and has nowhere to go. */
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const t = dnsMessages(useLocale());
   // Without the sealing key the server stores nothing but `manual`; offering
@@ -42,7 +54,6 @@ export function DnsProviderForm({ waveId, settings }: { waveId: string; settings
   const [totpSecret, setTotpSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<DnsProviderKind | null>(null);
   const path = `/api/waves/${encodeURIComponent(waveId)}/dns`;
   const cert = <code className="font-mono">wave cert</code>;
 
@@ -50,7 +61,6 @@ export function DnsProviderForm({ waveId, settings }: { waveId: string; settings
     event.preventDefault();
     setBusy(true);
     setError(null);
-    setSaved(null);
     const body =
       kind === "inwx"
         ? { provider: kind, user, password, totpSecret }
@@ -67,22 +77,8 @@ export function DnsProviderForm({ waveId, settings }: { waveId: string; settings
     setToken("");
     setPassword("");
     setTotpSecret("");
-    setSaved(kind);
     router.refresh();
-  }
-
-  async function remove() {
-    if (!window.confirm(t.confirmRemove)) return;
-    setBusy(true);
-    const { ok, payload } = await send("DELETE", path);
-    setBusy(false);
-    setSaved(null);
-    if (!ok) {
-      setError(payload.error ?? t.refused);
-      return;
-    }
-    setError(null);
-    router.refresh();
+    onSaved(kind);
   }
 
   return (
@@ -97,7 +93,6 @@ export function DnsProviderForm({ waveId, settings }: { waveId: string; settings
         onChange={(event) => {
           setKind(event.target.value as DnsProviderKind);
           setError(null);
-          setSaved(null);
         }}
       >
         {choices.map((choice) => (
@@ -180,19 +175,20 @@ export function DnsProviderForm({ waveId, settings }: { waveId: string; settings
           {error}
         </p>
       ) : null}
-      {saved ? (
-        <p className="wc-alert-success mt-4" role="status">
-          {saved === "manual" ? t.savedManual : t.saved}
-        </p>
-      ) : null}
 
       <div className="mt-6 flex flex-wrap gap-3">
         <button type="submit" className="wc-btn wc-btn-primary" disabled={busy}>
           {busy ? t.saving : t.save}
         </button>
-        {settings.provider ? (
-          <button type="button" className="wc-btn wc-btn-secondary" onClick={remove} disabled={busy}>
-            {t.remove}
+        {onCancel ? (
+          <button
+            id={`dns-cancel-${waveId}`}
+            type="button"
+            className="wc-btn wc-btn-secondary"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            {t.cancel}
           </button>
         ) : null}
       </div>
