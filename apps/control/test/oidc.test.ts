@@ -142,6 +142,27 @@ describe("signing in through an OIDC provider", () => {
     expect(request?.body.get("client_secret")).toBeNull();
   });
 
+  test("a fresh sign-in is asked for with prompt=login and max_age=0, and the plain one is not", async () => {
+    const fake = fakeProvider();
+    const provider = new OidcProvider(config, REDIRECT, fake.fetcher);
+    const plain = await provider.createAuthorizationURL("s", "v".repeat(43));
+    expect(plain.searchParams.get("prompt")).toBeNull();
+    expect(plain.searchParams.get("max_age")).toBeNull();
+    const fresh = await provider.createAuthorizationURL("s", "v".repeat(43), { fresh: true });
+    expect(fresh.searchParams.get("prompt")).toBe("login");
+    expect(fresh.searchParams.get("max_age")).toBe("0");
+  });
+
+  test("passes auth_time on when the provider sends it, and leaves it out when it does not", async () => {
+    const fake = fakeProvider();
+    const provider = new OidcProvider(config, REDIRECT, fake.fetcher);
+    const verifier = await authorize(provider, fake);
+    fake.issue({ auth_time: 1_700_000_000 });
+    expect((await provider.fetchClaims("the-code", verifier)).authTime).toBe(1_700_000_000);
+    fake.issue();
+    expect("authTime" in (await provider.fetchClaims("the-code", verifier))).toBe(false);
+  });
+
   test("a public client sends its id in the body and rests on PKCE", async () => {
     const fake = fakeProvider();
     const provider = new OidcProvider({ ...config, clientSecret: undefined }, REDIRECT, fake.fetcher);

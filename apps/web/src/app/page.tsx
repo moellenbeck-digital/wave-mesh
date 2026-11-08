@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { DeviceFeed } from "@/components/device-feed";
+import { LinkNotice } from "@/components/link-notice";
 import { WaveCard } from "@/components/wave-card";
 import { WaveSelect } from "@/components/wave-select";
 import { appMessages } from "@/i18n/app";
@@ -39,6 +40,10 @@ export default async function DashboardPage({
           ganz oben. Die Überschrift bleibt für Screenreader, damit die Seite
           eine hat. */}
       <h1 className="sr-only">{t.dashboardTitle}</h1>
+
+      {/* Ein getrenntes Konto sagt, welches Konto aktiv ist und warum ein
+          erwarteter Wave fehlen kann -- sonst nur Rätselraten vor der leeren Seite. */}
+      <LinkNotice me={me} />
 
       {joined ? (
         <p className="wc-alert-success mb-6" role="status">

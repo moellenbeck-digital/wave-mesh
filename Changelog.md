@@ -8,6 +8,18 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Neue Funktionen
 
+- **Getrennte Konten nach der OIDC-Anmeldung geführt verknüpfen:** Wer sich über einen Anbieter angemeldet hat,
+  der die E-Mail-Adresse nicht bestätigt hat, bekam bisher ein eigenes Konto neben dem bestehenden – und blieb
+  auch nach der späteren Bestätigung getrennt, ohne zu sehen, warum sein Wave fehlt. Jetzt zeigt die Übersicht
+  (und `/account`) in diesem Fall, welches Konto aktiv ist und warum ein erwarteter Wave fehlen kann, und
+  `/account/link` führt in drei Schritten zusammen: **1.** die Adresse beim Anbieter frisch bestätigen (er fragt
+  erneut nach der Anmeldung), **2.** nachweisen, dass das bestehende Konto dir gehört (Passwort samt
+  Zwei-Faktor-Code oder ein anderer Anmeldeweg dieses Kontos – das meldet dich dort nicht an), **3.** eine
+  Seite nennt vorher mit Zahlen und Namen, was übergeht, und erst ein Klick auf **Konten zusammenführen**
+  führt es aus. Anmeldungen, eigene Waves (Abrechnung bleibt am Wave), Mitgliedschaften und Geräte (bleiben
+  verbunden, Namen und Adressen unverändert) gehen an das bestehende Konto; alle Sitzungen des getrennten Kontos
+  enden, danach bist du als das bestehende Konto angemeldet. Die Anfrage gilt 10 Minuten, einmal und lässt sich
+  abbrechen. **Unverändert:** eine gleiche, aber unbestätigte Adresse verknüpft nie von selbst. Deutsch und Englisch.
 - **Wave löschen, verlassen und abmelden leichter finden:** In der Wave-Karte steht unter der Überschrift
   **Aufräumen** offen, was sonst eingeklappt war: **Wave löschen** (Eigentümer, weiter mit getipptem Namen)
   bzw. **Wave verlassen** (alle anderen), samt den Folgen im Klartext. Der Eigentümer liest dort, dass er nicht

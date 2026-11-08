@@ -365,7 +365,10 @@ export function accountLinkRoutes({ db, config, providers, hub, throttle, codeTh
       await hub?.broadcast(waveId);
     }
     const query = new URLSearchParams({
-      waves: String(summary.ownedWaves.length + summary.memberships.length),
+      // Only what came over: a wave A was in already is not new to it.
+      waves: String(
+        summary.ownedWaves.length + summary.memberships.filter((m) => m.outcome === "moves").length,
+      ),
       devices: String(summary.devices.length),
     });
     return c.redirect(`/account/link/done?${query}`, 303);
