@@ -679,7 +679,7 @@ geprüft:
    (mit Zwei-Faktor-Code, falls A einen hat; ob A einen hat, sagt die Seite erst
    nach dem richtigen Passwort) oder ein *anderer* Anbieter als der
    verknüpfte, dessen Identität A gehört. Die Anbieter-Anmeldung legt nichts
-   an und aktualisiert nichts. Wrong-Password- und Code-Zähler sind dieselben
+   an und aktualisiert nichts. Die Zähler für falsche Passwörter und Codes sind dieselben
    wie beim Login (`LoginThrottle`-Instanzen in `createApp`).
 3. **Bestätigungsseite** mit Zusammenfassung (`describeMerge`), dann
    `POST /account/link/confirm`. Ein GET ändert nie etwas.
