@@ -14,7 +14,8 @@ const en = {
     "Devices get Let's Encrypt certificates for their names with {cert}. The control server answers the dns-01 challenge in the zone {suffix} — by itself through a provider, or by asking a person.",
   placeholder:
     "This wave still uses the placeholder domain {suffix}, and no certificate can exist for it. Move the wave onto a domain of your own first: “Change domain” on the overview.",
-  current: (provider: string, date: string) => `${provider} answers the challenges, set ${date}.`,
+  currentLabel: "Current provider",
+  since: (date: string) => `Set up ${date}`,
   none: "No provider is set, so devices cannot get certificates yet.",
   noSealing:
     "This server has no WAVE_DNS_SECRET and so cannot store credentials. Only the manual mode is possible; for a provider, ask whoever runs the server.",
@@ -47,7 +48,9 @@ const en = {
   saving: "Testing the credentials…",
   saved: "Saved. Devices can now ask for certificates with wave cert.",
   savedManual: "Saved. wave cert on a device now names the record to create.",
-  remove: "Remove provider",
+  edit: "Edit",
+  cancel: "Cancel",
+  remove: "Remove",
   confirmRemove:
     "Remove the provider? Certificates already issued stay valid, but devices can neither get new ones nor renew until a provider is set again.",
   refused: "The control server refused.",
@@ -60,7 +63,8 @@ const de: typeof en = {
     "Geräte holen sich mit {cert} Let's-Encrypt-Zertifikate auf ihre Namen. Die dns-01-Challenge beantwortet der Control-Server in der Zone {suffix} — selbst über einen Provider oder, indem er einen Menschen fragt.",
   placeholder:
     "Dieser Wave nutzt noch die Platzhalter-Domain {suffix}, und für die kann es kein Zertifikat geben. Zieh ihn zuerst auf eine eigene Domain um: „Domain ändern“ in der Übersicht.",
-  current: (provider, date) => `${provider} beantwortet die Challenges, eingerichtet ${date}.`,
+  currentLabel: "Aktueller Provider",
+  since: (date) => `Eingerichtet ${date}`,
   none: "Es ist kein Provider eingerichtet, Geräte bekommen deshalb noch keine Zertifikate.",
   noSealing:
     "Auf diesem Server fehlt WAVE_DNS_SECRET, er kann deshalb keine Zugangsdaten speichern. Möglich ist nur der manuelle Modus; für einen Provider frag den Betreiber des Servers.",
@@ -94,7 +98,9 @@ const de: typeof en = {
   saving: "Zugangsdaten werden geprüft …",
   saved: "Gespeichert. Geräte können jetzt mit wave cert Zertifikate anfordern.",
   savedManual: "Gespeichert. wave cert nennt auf einem Gerät jetzt den anzulegenden Record.",
-  remove: "Provider entfernen",
+  edit: "Bearbeiten",
+  cancel: "Abbrechen",
+  remove: "Entfernen",
   confirmRemove:
     "Provider entfernen? Ausgestellte Zertifikate bleiben gültig, aber Geräte bekommen weder neue noch Erneuerungen, bis wieder einer eingerichtet ist.",
   refused: "Der Control-Server hat abgelehnt.",

@@ -8,6 +8,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Neue Funktionen
 
+- **DNS-Provider-Seite übersichtlicher:** Ist für eine Wave ein Provider eingerichtet (auch „Manuell“),
+  nennt `/waves/<id>/dns` ihn in einem eigenen Bereich mit Einrichtungsdatum und bietet daneben
+  **Bearbeiten** und **Entfernen** an. Das Formular ist dann zunächst zu; **Bearbeiten** öffnet es mit dem
+  aktuellen Provider, **Abbrechen** schließt es wieder. Ohne Provider bleibt alles wie bisher.
 - **Wave-Auswahl auf der Startseite:** Wer mehrere Waves hat, sieht nicht mehr alle Karten
   untereinander, sondern wählt die Wave in einem Dropdown und sieht nur deren Karte. Die Auswahl
   steht in der Adresse (`/?wave=…`) und wird gemerkt; nach dem Anlegen oder Beitreten ist die neue

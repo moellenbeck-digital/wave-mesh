@@ -1,9 +1,8 @@
 import { notFound, redirect } from "next/navigation";
-import { DnsProviderForm } from "@/components/dns-provider-form";
+import { DnsProviderPanel } from "@/components/dns-provider-panel";
 import { dnsMessages } from "@/i18n/dns";
 import { rich } from "@/i18n/rich";
 import { fetchDns, fetchMe } from "@/lib/control";
-import { formatDate } from "@/lib/format";
 import { getLocale } from "@/lib/i18n";
 
 /**
@@ -40,15 +39,7 @@ export default async function DnsPage({ params }: { params: Promise<{ id: string
           // control server refuses any provider for it.
           <p className="text-body-sm text-navy">{rich(t.placeholder, { suffix })}</p>
         ) : (
-          <>
-            <p className="mb-6 text-body-sm text-navy" suppressHydrationWarning>
-              {settings.provider
-                ? t.current(t.providerName(settings.provider), formatDate(settings.updatedAt, locale))
-                : t.none}
-            </p>
-            {settings.sealing ? null : <p className="mb-6 text-caption text-slate">{t.noSealing}</p>}
-            <DnsProviderForm waveId={id} settings={settings} />
-          </>
+          <DnsProviderPanel waveId={id} settings={settings} />
         )}
       </section>
     </div>
