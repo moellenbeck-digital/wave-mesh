@@ -50,6 +50,19 @@ export async function verifyLogin(
   return { userId: user.id };
 }
 
+/**
+ * Whether this password is the one of this very account. `verifyLogin` finds
+ * the account by address, which is the question a sign-in asks; the guided
+ * account link already knows which account it means and must not be
+ * answered by another one that shares the address.
+ */
+export async function verifyPasswordOf(db: Database, userId: string, password: string): Promise<boolean> {
+  const rows = await db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, userId)).limit(1);
+  const hash = rows[0]?.hash;
+  const ok = await Bun.password.verify(password, hash ?? (await decoy())).catch(() => false);
+  return ok && Boolean(hash);
+}
+
 /** Creates the account if needed and sets its password. */
 export async function setPassword(
   db: Database,

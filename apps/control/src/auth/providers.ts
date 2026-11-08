@@ -10,8 +10,18 @@ export interface OAuthProvider {
   readonly label: string;
   /** Whether the authorization flow carries a PKCE verifier. */
   readonly usesPkce: boolean;
-  /** Async for providers that have to look their endpoints up first (OIDC discovery). */
-  createAuthorizationURL(state: string, codeVerifier: string): URL | Promise<URL>;
+  /**
+   * Async for providers that have to look their endpoints up first (OIDC discovery).
+   *
+   * `fresh` asks the provider to make the person sign in again instead of
+   * answering from its own session. Providers that cannot are free to ignore
+   * it; the guided account link says so where it matters.
+   */
+  createAuthorizationURL(
+    state: string,
+    codeVerifier: string,
+    options?: { fresh?: boolean },
+  ): URL | Promise<URL>;
   fetchClaims(code: string, codeVerifier: string): Promise<ProviderClaims>;
 }
 

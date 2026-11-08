@@ -12,6 +12,12 @@ export interface ProviderClaims {
   emailVerified: boolean;
   name: string | null;
   avatarUrl: string | null;
+  /**
+   * When the person last proved themselves to the provider, in seconds -- the
+   * ID token's `auth_time`, for the providers that send it. Only the guided
+   * account link looks at it, to tell a fresh login from a silent one.
+   */
+  authTime?: number;
 }
 
 export interface ResolvedUser {
@@ -21,7 +27,7 @@ export interface ResolvedUser {
   linkedExisting: boolean;
 }
 
-const normalizeEmail = (email: string | null): string | null => email?.trim().toLowerCase() || null;
+export const normalizeEmail = (email: string | null): string | null => email?.trim().toLowerCase() || null;
 
 /**
  * Maps provider claims onto a user, creating or linking as needed.
