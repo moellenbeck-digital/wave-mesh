@@ -23,6 +23,17 @@ export interface ConnectionRow {
   controlUrl: string;
   /** How it is written in the window -- host and port, the scheme left off. */
   label: string;
+  /**
+   * The control server the profile is configured for, exactly as written there:
+   * scheme, port and path included.
+   *
+   * The profile's own `controlUrl`, never rebuilt from the label or the key --
+   * the label can be the wave's DNS suffix, and the key an id of its own for
+   * every second enrolment at a server. It is what tells two waves of the same
+   * name, or two servers, apart. Written out whole like a service's address;
+   * each backend cuts it to fit and keeps the full text one hover away.
+   */
+  server: string;
   /** Whether the switch is on. */
   connected: boolean;
   /** On its way up or down, so the switch should not fight the user. */
@@ -137,6 +148,7 @@ export function windowView(status: Status | null, deviceName: string): WindowVie
     // waves at one server do not show as the same row twice.
     controlUrl: profileKeyOf(profile),
     label: profileName(profile),
+    server: profile.controlUrl,
     connected: profile.state === "up",
     busy: profile.state === "starting" || profile.state === "waiting-for-approval",
     detail: detailFor(profile),

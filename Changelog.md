@@ -8,6 +8,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Neue Funktionen
 
+- **Tray-Fenster zeigt die Control-Server-Adresse jeder Verbindung:** Unter Wave-Name und Wave-IP steht in
+  jeder Zeile von „Verbindungen“ jetzt die Adresse des Control-Servers, so wie sie für das Profil
+  konfiguriert ist (mit Schema, Port und Pfad). Gleichnamige Waves und mehrere Server sind damit auseinanderzuhalten.
+  Unter Linux (GTK) und macOS wird eine lange Adresse in der Mitte gekürzt und steht vollständig im Tooltip der
+  Zeile; unter Windows, wo das Fenster selbst gemalt ist und keine Tooltips hat, wird sie am Ende gekürzt. Schalter und
+  Wave-Name samt Wave-IP bleiben unverändert, das Fenster wird dadurch nicht breiter. Peer- und Dienstliste,
+  Tray-Menü und IPC bleiben unberührt.
 - **Getrennte Konten nach der OIDC-Anmeldung geführt verknüpfen:** Wer sich über einen Anbieter angemeldet hat,
   der die E-Mail-Adresse nicht bestätigt hat, bekam bisher ein eigenes Konto neben dem bestehenden – und blieb
   auch nach der späteren Bestätigung getrennt, ohne zu sehen, warum sein Wave fehlt. Jetzt zeigt die Übersicht

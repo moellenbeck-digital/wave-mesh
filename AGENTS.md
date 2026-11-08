@@ -2873,6 +2873,22 @@ Weil die Zeilen seitdem nicht mehr alle gleich hoch sind, rechnet
 `index * ROW_HEIGHT` zu nehmen — dieselbe Umstellung brauchte `resize()` unter
 macOS, wo die Höhe ohnehin gerechnet und nie gemessen wird.
 
+**Eine Verbindungszeile hat drei Zeilen und ist höher als eine Maschine.**
+Wave-Name, Wave-IP bzw. Zustandstext und darunter die Control-Server-Adresse
+des Profils (`ConnectionRow.server`, aus `profile.controlUrl`, vollständig mit
+Schema, Port und Pfad — weder aus dem Label noch aus `profileKeyOf()`, der bei
+einer zweiten Anmeldung am selben Server eine eigene ID ist). Deshalb haben die
+Verbindungen ihre eigene Höhe (`CONNECTION_HEIGHT`: 66 unter Windows, 62 unter
+macOS), die in `rowsHeight()`, in der Kartenhöhe und — unter Windows — in
+Füllfläche, Schalter und Trefferfläche der Zeile gilt; `ROW_HEIGHT = 48` bleibt
+das Maß der Maschinen. Lange Adressen sprengen nichts: GTK kürzt in der Mitte
+(`ELLIPSIZE_MIDDLE`, plus `max_width_chars`, weil ein gekürztes Label sonst
+seinen ganzen Text als natürliche Breite meldet und die Karte aufweiten würde)
+und zeigt die volle Adresse im Tooltip; macOS kürzt ebenfalls in der Mitte
+(`NSLineBreakByTruncatingMiddle`) mit Tooltip auf der Zeile; Windows kürzt am
+Ende (`DT_END_ELLIPSIS` kann nur dort) und hat — wie beim Pfad — keinen Tooltip,
+die volle Adresse ist dort nur in der Konfiguration (`wave profiles`) zu lesen.
+
 **Unter macOS wird die Trefferfläche gemessen, nicht behauptet.** Eine reine
 Layout-Funktion wie die der Windows-Karte gibt es dort nicht — die Geometrie
 gehört Auto Layout —, also baut `window-macos.test.ts` die Karte und liest die

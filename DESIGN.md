@@ -119,6 +119,12 @@ Schalter soll zu wave-mesh gehören.
 | `knob` | `#e8ecf7` | Knopf des Schalters |
 | `service` | `#7ecfcf` | Dienste — das einzige auf der Karte, das etwas anderswo öffnet |
 
+Eine Verbindungszeile hat drei Zeilen: Wave-Name (`text`, fett), Wave-IP bzw.
+Zustandstext und die Control-Server-Adresse des Profils, beide in `muted`. Die
+Adresse steht, wie sie konfiguriert ist, mit Schema und Port wie die Dienst-URLs;
+lange werden gekürzt (GTK, macOS in der Mitte mit Tooltip, Windows am Ende) und
+weiten die Karte nicht auf.
+
 ### Mobile Apps
 
 Die iOS-App verwendet die Systemvorgaben von SwiftUI mit genau einer

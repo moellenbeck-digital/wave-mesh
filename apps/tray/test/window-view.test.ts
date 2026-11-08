@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { profileStatusFromSnapshot, type Status } from "@wave/ipc";
+import { type ProfileStatus, profileStatusFromSnapshot, type Status } from "@wave/ipc";
 import { hostOf, windowView } from "../src/window-view.ts";
 
 type Peer = {
@@ -48,6 +48,7 @@ describe("connections", () => {
       {
         controlUrl: "http://control.example:8080",
         label: "control.example:8080",
+        server: "http://control.example:8080",
         connected: true,
         busy: false,
         detail: "10.77.0.1",
@@ -275,5 +276,92 @@ describe("the services a machine fronts", () => {
     );
     const keys = view.machines.flatMap((machine) => machine.services.map((service) => service.key));
     expect(new Set(keys).size).toBe(2);
+  });
+});
+
+/** An enrolment as the daemon reports it: its own id and, once known, the wave's suffix. */
+const enrolment = (id: string, controlUrl: string, label?: string): ProfileStatus =>
+  profileStatusFromSnapshot(undefined, { id, label, controlUrl, state: "stopped" });
+
+describe("@t80 the control server on each connection row", () => {
+  test("is the configured controlUrl, whole: scheme, port and path stay", () => {
+    const view = windowView(
+      status(profile("https://control.example:8443/wave", "up"), profile("http://10.0.0.5:8080", "stopped")),
+      "laptop",
+    );
+    expect(view.connections.map((row) => row.server)).toEqual([
+      "https://control.example:8443/wave",
+      "http://10.0.0.5:8080",
+    ]);
+  });
+
+  test("does not come from the label, the wave's name or the key", () => {
+    // A second enrolment at one server has an id of its own, and the wave's
+    // suffix as its label: neither may end up where the address belongs.
+    const view = windowView(
+      { profiles: [enrolment("enrol-2f9c", "https://control.example", "team.wave.internal")], events: [] },
+      "laptop",
+    );
+    expect(view.connections[0]).toMatchObject({
+      controlUrl: "enrol-2f9c",
+      label: "team.wave.internal",
+      server: "https://control.example",
+    });
+  });
+
+  test("two waves at the same server show the same address, under their own names", () => {
+    const view = windowView(
+      {
+        profiles: [
+          enrolment("https://control.example", "https://control.example", "alpha.wave.internal"),
+          enrolment("enrol-2", "https://control.example", "beta.wave.internal"),
+        ],
+        events: [],
+      },
+      "laptop",
+    );
+    expect(view.connections.map((row) => row.server)).toEqual([
+      "https://control.example",
+      "https://control.example",
+    ]);
+    // What tells the rows apart is still the wave, and each toggle still names its own enrolment.
+    expect(view.connections.map((row) => row.label)).toEqual(["alpha.wave.internal", "beta.wave.internal"]);
+    expect(view.connections.map((row) => row.controlUrl)).toEqual(["https://control.example", "enrol-2"]);
+  });
+
+  test("two servers with the same label stay apart by their address", () => {
+    const view = windowView(
+      {
+        profiles: [
+          enrolment("a", "https://one.example", "team.wave.internal"),
+          enrolment("b", "https://two.example:9443", "team.wave.internal"),
+        ],
+        events: [],
+      },
+      "laptop",
+    );
+    expect(view.connections[0]?.label).toBe(view.connections[1]?.label);
+    expect(view.connections.map((row) => row.server)).toEqual([
+      "https://one.example",
+      "https://two.example:9443",
+    ]);
+  });
+
+  test("a profile without a label still has its server on the row, next to the host as the name", () => {
+    const view = windowView(status(profile("http://control.example:8080/", "up")), "laptop");
+    expect(view.connections[0]).toMatchObject({
+      label: "control.example:8080",
+      server: "http://control.example:8080/",
+      detail: "10.77.0.1",
+    });
+  });
+
+  test("leaves the name and the state text as they were", () => {
+    const view = windowView(status(profile("http://c.example", "failed", [], "no route")), "laptop");
+    expect(view.connections[0]).toMatchObject({
+      label: "c.example",
+      detail: "no route",
+      server: "http://c.example",
+    });
   });
 });
