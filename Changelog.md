@@ -17,6 +17,9 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   mit der Fehlermeldung direkt am Feld, dem erlaubten Format und einem Beispiel. Eingegebenes
   bleibt stehen. Das Domain-Feld nennt das Format auch vorab. Ein Suffix wird weiterhin nicht
   automatisch ergänzt, weil sonst eine Zone ohne öffentliches Zertifikat entstünde.
+- **Wave anlegen: Formathinweis auch im Frontend:** Das Domain-Feld auf `/waves/new` nennt das erlaubte
+  Format (mindestens zwei Labels, a–z, 0–9, Bindestrich) samt Beispiel schon vor dem Absenden, auf
+  Deutsch und Englisch.
 - **Wave-Auswahl auf der Startseite:** Wer mehrere Waves hat, sieht nicht mehr alle Karten
   untereinander, sondern wählt die Wave in einem Dropdown und sieht nur deren Karte. Die Auswahl
   steht in der Adresse (`/?wave=…`) und wird gemerkt; nach dem Anlegen oder Beitreten ist die neue
