@@ -6,7 +6,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
-*Noch nichts seit v0.15.1.*
+### Neue Funktionen
+
+- **Wave-Auswahl auf der Startseite:** Wer mehrere Waves hat, sieht nicht mehr alle Karten
+  untereinander, sondern wählt die Wave in einem Dropdown und sieht nur deren Karte. Die Auswahl
+  steht in der Adresse (`/?wave=…`) und wird gemerkt; nach dem Anlegen oder Beitreten ist die neue
+  Wave die gewählte.
 
 ---
 

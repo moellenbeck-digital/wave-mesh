@@ -42,12 +42,12 @@ let adminId: string;
 let memberId: string;
 
 const ownerMail = () => env("APP_USER");
-const card = (page: Page): Locator => waveCard(page, waveName);
+const card = (page: Page): Promise<Locator> => waveCard(page, waveName);
 const select = (row: Locator) => row.locator('select[name="role"]');
 
 async function open(who: { page: Page }): Promise<Locator> {
   await who.page.goto("/");
-  const c = card(who.page);
+  const c = await card(who.page);
   await expect(c).toHaveCount(1);
   return c;
 }
@@ -76,8 +76,8 @@ test.describe("Rollen ändern", () => {
     await accept(member.page, memberLink, memberMail);
 
     await owner.page.goto("/");
-    adminId = await userIdOf(memberRow(card(owner.page), adminMail));
-    memberId = await userIdOf(memberRow(card(owner.page), memberMail));
+    adminId = await userIdOf(memberRow(await card(owner.page), adminMail));
+    memberId = await userIdOf(memberRow(await card(owner.page), memberMail));
   });
 
   test.afterAll(async () => {
@@ -113,9 +113,9 @@ test.describe("Rollen ändern", () => {
   }, async () => {
     const c = await open(owner);
     await saveRole(owner.page, memberRow(c, adminMail), "member");
-    await expect(select(memberRow(card(owner.page), adminMail))).toHaveValue("member");
+    await expect(select(memberRow(await card(owner.page), adminMail))).toHaveValue("member");
     await owner.page.reload();
-    await expect(select(memberRow(card(owner.page), adminMail))).toHaveValue("member");
+    await expect(select(memberRow(await card(owner.page), adminMail))).toHaveValue("member");
   });
 
   test("K3 Owner: Member → Admin speichern, Liste zeigt Admin auch nach Neuladen", {
@@ -123,9 +123,9 @@ test.describe("Rollen ändern", () => {
   }, async () => {
     const c = await open(owner);
     await saveRole(owner.page, memberRow(c, adminMail), "admin");
-    await expect(select(memberRow(card(owner.page), adminMail))).toHaveValue("admin");
+    await expect(select(memberRow(await card(owner.page), adminMail))).toHaveValue("admin");
     await owner.page.reload();
-    await expect(select(memberRow(card(owner.page), adminMail))).toHaveValue("admin");
+    await expect(select(memberRow(await card(owner.page), adminMail))).toHaveValue("admin");
   });
 
   test("K7 Einfaches Member sieht in der Liste keine Rollenauswahl", { tag: "@t35" }, async () => {
@@ -161,9 +161,9 @@ test.describe("Rollen ändern", () => {
     const row = memberRow(c, memberMail);
     await expect(select(row)).toHaveValue("member");
     await saveRole(admin.page, row, "admin");
-    await expect(memberRow(card(admin.page), memberMail)).toContainText("Administrator");
+    await expect(memberRow(await card(admin.page), memberMail)).toContainText("Administrator");
     await admin.page.reload();
-    await expect(memberRow(card(admin.page), memberMail)).toContainText("Administrator");
+    await expect(memberRow(await card(admin.page), memberMail)).toContainText("Administrator");
   });
 
   test("K5 Admin darf einen anderen Admin herabstufen (seit #41): Auswahl sichtbar, direkter POST wirkt", {
@@ -184,7 +184,7 @@ test.describe("Rollen ändern", () => {
 
     // Die Rolle hat sich geändert (Sicht des Eigentümers).
     await open(owner);
-    await expect(select(memberRow(card(owner.page), memberMail))).toHaveValue("member");
+    await expect(select(memberRow(await card(owner.page), memberMail))).toHaveValue("member");
   });
 
   test("K8 Ungültige Rolle (owner, foo) per direktem POST liefert 400 und ändert nichts", {
@@ -198,8 +198,8 @@ test.describe("Rollen ändern", () => {
       expect(response.status(), `role=${role}`).toBe(400);
     }
     await open(owner);
-    await expect(select(memberRow(card(owner.page), adminMail))).toHaveValue("admin");
-    await expect(memberRow(card(owner.page), ownerMail())).toContainText("Owner");
+    await expect(select(memberRow(await card(owner.page), adminMail))).toHaveValue("admin");
+    await expect(memberRow(await card(owner.page), ownerMail())).toContainText("Owner");
   });
 
   test("K9 Regression Entfernen und Verlassen funktionieren unverändert", { tag: "@t35" }, async () => {
@@ -210,7 +210,7 @@ test.describe("Rollen ändern", () => {
       memberRow(co, memberMail).getByRole("button", { name: "Remove" }).click(),
     ]);
     await owner.page.waitForURL((url) => url.pathname === "/");
-    await expect(memberRow(card(owner.page), memberMail)).toHaveCount(0);
+    await expect(memberRow(await card(owner.page), memberMail)).toHaveCount(0);
 
     // Verlassen: A geht selbst.
     const ca = await open(admin);
@@ -221,7 +221,7 @@ test.describe("Rollen ändern", () => {
     ]);
     await admin.page.waitForURL((url) => url.pathname === "/" || url.pathname.startsWith("/waves"));
     await owner.page.goto("/");
-    await expect(memberRow(card(owner.page), adminMail)).toHaveCount(0);
-    await expect(memberRow(card(owner.page), ownerMail())).toHaveCount(1);
+    await expect(memberRow(await card(owner.page), adminMail)).toHaveCount(0);
+    await expect(memberRow(await card(owner.page), ownerMail())).toHaveCount(1);
   });
 });

@@ -48,6 +48,7 @@ const en = {
 
   // ---- dashboard ----
   dashboardTitle: "Your network",
+  chooseWave: "Choose wave",
   joined: "You are now in {wave}.",
   noWaveTitle: "No wave yet",
   inviteWaiting:
@@ -222,6 +223,7 @@ const de: typeof en = {
   remove: "Entfernen",
 
   dashboardTitle: "Dein Netz",
+  chooseWave: "Wave auswählen",
   joined: "Du bist jetzt in {wave}.",
   noWaveTitle: "Noch kein Wave",
   inviteWaiting:
