@@ -15,7 +15,17 @@
  * braucht ein verbundenes Gerät (die Zahl „0 Geräte“ in K4 gilt für das frische Wave).
  */
 import { type Browser, type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
-import { accept, createWave, deleteWave, env, invite, login, memberRow, newSession, waveCard } from "./helpers.ts";
+import {
+  accept,
+  createWave,
+  deleteWave,
+  env,
+  invite,
+  login,
+  memberRow,
+  newSession,
+  waveCard,
+} from "./helpers.ts";
 
 const run = Math.random().toString(36).slice(2, 8);
 const waveName = `t71-${run}`;
@@ -106,7 +116,8 @@ async function open(who: Who, name = waveName): Promise<Locator> {
   return c;
 }
 
-const cleanupHeading = (c: Locator, lang: Lang) => c.getByRole("heading", { level: 3, name: T[lang].cleanup });
+const cleanupHeading = (c: Locator, lang: Lang) =>
+  c.getByRole("heading", { level: 3, name: T[lang].cleanup });
 
 /** Wave-ID aus dem Löschformular der Karte. */
 async function idFromDelete(c: Locator): Promise<string> {
@@ -141,8 +152,12 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
     try {
       if (owner) {
         await setLang(owner, "en");
-        await deleteWave(owner.page, dropName);
-        await deleteWave(owner.page, waveName);
+        // Jedes Wave für sich: scheitert das erste, soll das zweite trotzdem entfernt werden.
+        try {
+          await deleteWave(owner.page, dropName);
+        } finally {
+          await deleteWave(owner.page, waveName);
+        }
       }
     } finally {
       await Promise.all([owner?.ctx.close(), admin?.ctx.close(), member?.ctx.close()]);
@@ -170,7 +185,9 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
       await expect(c.getByRole("button", { name: t.leaveBtn })).toHaveCount(0);
       await expect(c.locator('form[action$="/leave"]')).toHaveCount(0);
       // Steht unter der Personenliste, nicht darüber.
-      const tops = await c.locator("h3").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+      const tops = await c
+        .locator("h3")
+        .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
       expect(tops.length).toBeGreaterThanOrEqual(3);
       expect(tops.at(-1) ?? 0).toBeGreaterThan(tops.at(-2) ?? Number.POSITIVE_INFINITY);
       // Lesbare Schrift: Hinweis in Fließtextgröße (14 px), nicht mehr als 13-px-Beschriftung.
@@ -230,13 +247,16 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
       await setLang(owner, lang);
       const c = await open(owner);
       // Eigentümer, Admin und Mitglied: drei Personen.
-      for (const mail of [ownerMail(), adminMail, memberMail]) await expect(memberRow(c, mail)).toHaveCount(1);
+      for (const mail of [ownerMail(), adminMail, memberMail])
+        await expect(memberRow(c, mail)).toHaveCount(1);
       const people = 3;
       await expect(c.getByText(t.deleteHint(people, waveSuffix), { exact: true })).toBeVisible();
       await expect(c.getByText(t.ownerCannotLeave, { exact: true })).toBeVisible();
     });
 
-    test(`K5 [${lang}] Verlassen: Geräte gehen mit, zurück nur mit neuer Einladung`, { tag: "@t71" }, async () => {
+    test(`K5 [${lang}] Verlassen: Geräte gehen mit, zurück nur mit neuer Einladung`, {
+      tag: "@t71",
+    }, async () => {
       for (const who of [admin, member]) {
         await setLang(who, lang);
         const c = await open(who);
@@ -280,9 +300,9 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
       await expect(cleanupHeading(await open(owner), lang)).toBeVisible();
     });
 
-    test(`K7 [${lang}] 360 px: Header zeigt nur „?“ mit aria-label, nichts läuft über`, { tag: "@t71" }, async ({
-      browser,
-    }) => {
+    test(`K7 [${lang}] 360 px: Header zeigt nur „?“ mit aria-label, nichts läuft über`, {
+      tag: "@t71",
+    }, async ({ browser }) => {
       const ctx = await browser.newContext({
         baseURL: env("APP_URL"),
         locale: "en-US",
@@ -301,7 +321,9 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
           const signOut = page.locator("header").getByRole("button", { name: t.signOut });
           await expect(signOut).toBeVisible();
           // Nichts läuft über: weder die Seite noch Link und Knopf im Header.
-          const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+          const overflow = await page.evaluate(
+            () => document.documentElement.scrollWidth - window.innerWidth,
+          );
           expect(overflow, `Seite ${path} breiter als 360 px`).toBeLessThanOrEqual(0);
           for (const el of [link, signOut]) {
             const box = await el.boundingBox();
@@ -315,7 +337,9 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
     });
   }
 
-  test("K9 Löschen end to end: Eigentümer löscht das Wegwerf-Wave mit getipptem Namen", { tag: "@t71" }, async () => {
+  test("K9 Löschen end to end: Eigentümer löscht das Wegwerf-Wave mit getipptem Namen", {
+    tag: "@t71",
+  }, async () => {
     await setLang(owner, "en");
     const c = await open(owner, dropName);
     const form = c.locator('form[action$="/delete"]');
@@ -335,7 +359,9 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
     ["Mitglied", () => member, memberMail],
     ["Admin", () => admin, adminMail],
   ] as const) {
-    test(`K9 Verlassen end to end: ${rolle} verlässt das Wave, die Mitgliedschaft ist weg`, { tag: "@t71" }, async () => {
+    test(`K9 Verlassen end to end: ${rolle} verlässt das Wave, die Mitgliedschaft ist weg`, {
+      tag: "@t71",
+    }, async () => {
       await setLang(who(), "en");
       const c = await open(who());
       await Promise.all([
