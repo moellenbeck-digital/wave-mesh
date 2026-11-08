@@ -189,9 +189,12 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
       expect(tops.length).toBeGreaterThanOrEqual(3);
       expect(tops.at(-1) ?? 0).toBeGreaterThan(tops.at(-2) ?? Number.POSITIVE_INFINITY);
       // Lesbare Schrift: Hinweis in Fließtextgröße (14 px), nicht mehr als 13-px-Beschriftung.
-      const hintSize = await c
-        .getByText(t.ownerCannotLeave, { exact: true })
-        .evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
+      // Als String: der Ausdruck läuft im Browser, die Typprüfung hier kennt kein DOM.
+      const hintSize = Number(
+        await c
+          .getByText(t.ownerCannotLeave, { exact: true })
+          .evaluate("(el) => Number.parseFloat(getComputedStyle(el).fontSize)"),
+      );
       expect(hintSize).toBeGreaterThanOrEqual(14);
     });
 
@@ -319,8 +322,9 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
           const signOut = page.locator("header").getByRole("button", { name: t.signOut });
           await expect(signOut).toBeVisible();
           // Nichts läuft über: weder die Seite noch Link und Knopf im Header.
-          const overflow = await page.evaluate(
-            () => document.documentElement.scrollWidth - window.innerWidth,
+          // Als String: der Ausdruck läuft im Browser, die Typprüfung hier kennt kein DOM.
+          const overflow = await page.evaluate<number>(
+            "document.documentElement.scrollWidth - window.innerWidth",
           );
           expect(overflow, `Seite ${path} breiter als 360 px`).toBeLessThanOrEqual(0);
           for (const el of [link, signOut]) {
