@@ -121,6 +121,10 @@ const en = {
   newInviteWaiting:
     "An invitation to {wave}{by} is waiting for you. Open the link you were sent — you do not need a wave of your own for it.",
   nameHint: "Lowercase letters, digits and hyphens.",
+  // Same wording as `domainFormat` in apps/control/src/routes/messages.ts, which the
+  // server shows after a refused domain: keep the two in step.
+  domainFormat:
+    "Format: at least two labels, only a–z, 0–9 and hyphens, no scheme such as https://, no trailing dot. Example: my-company.example.com",
   domainHint:
     "Devices will then be called {pattern}. Keep the suggestion if you have no domain of your own — you can change it later, but that renames every device in the wave.",
 
@@ -295,6 +299,10 @@ const de: typeof en = {
   newInviteWaiting:
     "Es wartet eine Einladung in {wave}{by}. Öffne den Link, den du bekommen hast — ein eigener Wave ist dafür nicht nötig.",
   nameHint: "Kleinbuchstaben, Ziffern und Bindestriche.",
+  // Gleicher Wortlaut wie `domainFormat` in apps/control/src/routes/messages.ts, das der
+  // Server nach einer abgelehnten Domain zeigt: beide Stellen gemeinsam pflegen.
+  domainFormat:
+    "Format: mindestens zwei Labels, nur a–z, 0–9 und Bindestrich, kein Schema wie https://, kein abschließender Punkt. Beispiel: meine-firma.example.com",
   domainHint:
     "Geräte heißen dann {pattern}. Behalte den Vorschlag, wenn du keine eigene Domain hast — ändern kannst du ihn später, das benennt allerdings jedes Gerät im Wave um.",
 

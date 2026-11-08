@@ -106,9 +106,15 @@ export default async function NewWavePage({
               defaultValue={me.suggestion.dnsSuffix}
               autoComplete="off"
               spellCheck={false}
+              aria-describedby="suffix-format suffix-devices"
               required
             />
-            <p className="mt-2 text-caption text-slate">
+            {/* Kein `pattern` am Feld: der Server normalisiert (Schreibweise, Leerraum) und
+                entscheidet, die Prüfung im Browser dürfte davon nicht abweichen. */}
+            <p id="suffix-format" className="mt-2 text-caption text-slate">
+              {t.domainFormat}
+            </p>
+            <p id="suffix-devices" className="mt-2 text-caption text-slate">
               {rich(t.domainHint, {
                 pattern: <code className="font-mono">&lt;name&gt;.{me.suggestion.dnsSuffix}</code>,
               })}
