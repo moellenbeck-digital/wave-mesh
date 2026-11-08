@@ -66,6 +66,8 @@ const STYLE_MASK = 1 | (1 << 15);
 const FLOATING = 3;
 const TITLE_HIDDEN = 1;
 const TRUNCATE_TAIL = 4;
+/** NSLineBreakByTruncatingMiddle: an address keeps its host and its tail. */
+const TRUNCATE_MIDDLE = 5;
 /** What -[NSButton setKeyEquivalent:] wants for the escape key. */
 const ESCAPE = "\u001b";
 
@@ -95,6 +97,8 @@ const TITLE_HEIGHT = 28;
 const SUBTITLE_HEIGHT = 15;
 const SECTION_HEIGHT = 14;
 const ROW_HEIGHT = 48;
+/** A connection has a third line, the server it is on, so it is taller than a machine. */
+const CONNECTION_HEIGHT = 62;
 /** A service line: one name, no second line, so it is shorter than a machine. */
 const SERVICE_HEIGHT = 30;
 /** The triangle that folds a machine's services out; a hair wider than it. */
@@ -173,7 +177,8 @@ const need = (value: Id | null | undefined, what: string): Id => {
 };
 
 /** The height `count` stacked rows take. No rows is no height, not one row. */
-const rowsHeight = (count: number): number => (count === 0 ? 0 : count * ROW_HEIGHT + (count - 1) * ROW_GAP);
+const rowsHeight = (count: number, height: number = ROW_HEIGHT): number =>
+  count === 0 ? 0 : count * height + (count - 1) * ROW_GAP;
 
 /**
  * The machine list, whose rows are not all the same height once services are
@@ -562,7 +567,14 @@ export class MacosWindow implements TrayWindow {
     // An empty machine list is not empty: it carries the line that says why.
     const list = Math.min(listHeight(Math.max(machines, 1), services), MAX_LIST_HEIGHT);
     msgDouble(this.listConstraint, "setConstant:", list);
-    const height = PAD + HEADER_HEIGHT + SECTION_BREAK + rowsHeight(connections) + SECTION_BREAK + list + PAD;
+    const height =
+      PAD +
+      HEADER_HEIGHT +
+      SECTION_BREAK +
+      rowsHeight(connections, CONNECTION_HEIGHT) +
+      SECTION_BREAK +
+      list +
+      PAD;
     msgSize(this.window, "setContentSize:", WIDTH, height);
     this.place();
   }
@@ -597,12 +609,15 @@ export class MacosWindow implements TrayWindow {
   }
 
   private connectionRow(row: WindowView["connections"][number], index: number): Id {
-    const { view, content } = rowView(row.connected ? PALETTE.active : undefined);
+    const { view, content } = rowView(row.connected ? PALETTE.active : undefined, CONNECTION_HEIGHT);
+    // Whatever the server line cuts off is in the tooltip.
+    msg1(view, "setToolTip:", nsString(row.server));
 
     const text = stack(ORIENTATION.vertical, 1);
     fixWidth(text, TEXT_WIDTH);
     msg1(text, "addArrangedSubview:", label(row.label, 13, true, PALETTE.text));
     msg1(text, "addArrangedSubview:", label(row.detail, 11, false, PALETTE.muted));
+    msg1(text, "addArrangedSubview:", label(row.server, 11, false, PALETTE.muted, TRUNCATE_MIDDLE));
 
     const toggle = need(msg(msg(cls("NSSwitch"), "alloc"), "init"), "a switch");
     msgInt(toggle, "setState:", row.connected ? STATE.on : STATE.off);
@@ -881,12 +896,18 @@ function rule(): Id {
   return view;
 }
 
-function label(text: string, size: number, bold: boolean, colour: string): Id {
+function label(
+  text: string,
+  size: number,
+  bold: boolean,
+  colour: string,
+  lineBreak: number = TRUNCATE_TAIL,
+): Id {
   const view = need(msg1(cls("NSTextField"), "labelWithString:", nsString(text)), "a label");
   const font = msgDouble(cls("NSFont"), bold ? "boldSystemFontOfSize:" : "systemFontOfSize:", size);
   msg1(view, "setFont:", font);
   msg1(view, "setTextColor:", nsColor(colour));
-  msgInt(view, "setLineBreakMode:", TRUNCATE_TAIL);
+  msgInt(view, "setLineBreakMode:", lineBreak);
   return view;
 }
 

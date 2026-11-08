@@ -30,7 +30,7 @@ describe.if(process.platform === "darwin")("what a click on the icon means", () 
 });
 
 /** The bands in `window-macos.ts`; a row's controls carry the first of each. */
-const TAG = { copy: 20_000, expand: 30_000, open: 40_000 } as const;
+const TAG = { toggle: 10_000, copy: 20_000, expand: 30_000, open: 40_000 } as const;
 
 type Objc = typeof import("../src/objc.ts");
 /** Where a view sits on the card, in points from its left edge. */
@@ -151,5 +151,64 @@ describe.if(process.platform === "darwin")("what a click on a machine row reache
     expect(triangle).toBeUndefined();
     // A press that does nothing is a broken control; the copy button stays.
     expect(copy).toBeDefined();
+  });
+});
+
+const connectionRow = (server: string, index: number) => ({
+  controlUrl: `enrol-${index}`,
+  label: "team.wave.internal",
+  server,
+  connected: index === 0,
+  busy: false,
+  detail: "10.64.0.2",
+});
+
+/** The card with `servers` as its connections, laid out, and how it came out. */
+async function connectionsCard(servers: string[]) {
+  const objc = await import("../src/objc.ts");
+  const { MacosWindow } = await import("../src/window-macos.ts");
+  card ??= new MacosWindow({ onToggle: () => {}, onOpen: (url) => opened.push(url) });
+  card.update({ ...cardView(0), connections: servers.map(connectionRow) });
+
+  const content = objc.msg((card as unknown as { window: Id }).window, "contentView");
+  objc.msg(content, "layoutSubtreeIfNeeded");
+  const views: Array<Span & { tag: number; transparent: boolean }> = [];
+  collect(objc, content, 0, views);
+  const frame = readString(
+    objc,
+    objc.msg(objc.msg1(content, "valueForKey:", objc.nsString("frame")), "description"),
+  );
+  const [, , width = 0, height = 0] = (frame.match(/-?[\d.]+/g) ?? []).map(Number);
+  return {
+    width,
+    height,
+    toggles: views.filter((view) => view.tag >= TAG.toggle && view.tag < TAG.copy),
+  };
+}
+
+describe.if(process.platform === "darwin")("@t80 the server on a connection row", () => {
+  const short = "https://c.example";
+  const long = `https://${"control-".repeat(20)}example.com:8443/some/long/path`;
+
+  test("a long address leaves the switch where a short one has it, inside the card", async () => {
+    const shortCard = await connectionsCard([short]);
+    const longCard = await connectionsCard([long]);
+    expect(shortCard.toggles).toHaveLength(1);
+    expect(longCard.toggles).toHaveLength(1);
+    expect(longCard.toggles[0]?.left).toBe(shortCard.toggles[0]?.left ?? -1);
+    expect(longCard.toggles[0]?.right).toBeLessThanOrEqual(longCard.width);
+    // The text is cut to its column, so the card does not widen either.
+    expect(longCard.width).toBe(shortCard.width);
+  });
+
+  test("every connection takes the same height, however long its address", async () => {
+    const one = await connectionsCard([long]);
+    const two = await connectionsCard([long, short]);
+    const three = await connectionsCard([short, long, short]);
+    // A row and the gap above it; the sizes are arithmetic, not read back.
+    const step = two.height - one.height;
+    expect(step).toBeGreaterThan(0);
+    expect(three.height - two.height).toBe(step);
+    expect(two.toggles.map((toggle) => toggle.tag)).toEqual([TAG.toggle, TAG.toggle + 1]);
   });
 });

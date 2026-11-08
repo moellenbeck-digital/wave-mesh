@@ -90,6 +90,7 @@ export const gtk = dlopen("libgtk-4.so.1", {
   gtk_label_set_xalign: { args: [P, f32], returns: V },
   /** PANGO_ELLIPSIZE_END keeps a long DNS name from stretching the window. */
   gtk_label_set_ellipsize: { args: [P, i32], returns: V },
+  gtk_label_set_max_width_chars: { args: [P, i32], returns: V },
   gtk_label_set_selectable: { args: [P, bool], returns: V },
 
   gtk_switch_new: { args: [], returns: P },
@@ -138,6 +139,7 @@ export const gobject = dlopen("libgobject-2.0.so.0", {
   g_object_unref: { args: [P], returns: V },
 });
 
+export const ELLIPSIZE_MIDDLE = 2;
 export const ELLIPSIZE_END = 3;
 
 /**

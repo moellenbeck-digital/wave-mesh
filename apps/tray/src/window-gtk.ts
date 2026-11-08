@@ -8,6 +8,7 @@ import {
   cstr,
   EDGE,
   ELLIPSIZE_END,
+  ELLIPSIZE_MIDDLE,
   gdk,
   glib,
   gtk,
@@ -30,6 +31,8 @@ const PUMP_INTERVAL_MS = 30;
 /** Clear of the bar without floating off into the middle of the screen. */
 const EDGE_MARGIN = 12;
 const WIDTH = 420;
+/** Fits beside the switch at the card's width; longer addresses are cut. */
+const SERVER_MAX_CHARS = 40;
 /** Past this the machine list scrolls rather than the overlay growing. */
 const MAX_LIST_HEIGHT = 300;
 
@@ -314,6 +317,16 @@ export class GtkWindow implements TrayWindow {
     gtk.symbols.gtk_widget_set_hexpand(text, true);
     gtk.symbols.gtk_box_append(text, label(row.label, "row-title"));
     gtk.symbols.gtk_box_append(text, label(row.detail, "row-detail"));
+    // The server the wave is on, cut in the middle: the host at the front and
+    // the port or path at the back are both what tells two servers apart.
+    const server = label(row.server, "row-detail");
+    gtk.symbols.gtk_label_set_ellipsize(server, ELLIPSIZE_MIDDLE);
+    // An ellipsised label still asks for its whole text as its natural width,
+    // and a card that takes the natural width would grow with the address.
+    gtk.symbols.gtk_label_set_max_width_chars(server, SERVER_MAX_CHARS);
+    gtk.symbols.gtk_box_append(text, server);
+    // Whatever is cut off is in the tooltip.
+    gtk.symbols.gtk_widget_set_tooltip_text(text, cstr(row.server));
     gtk.symbols.gtk_box_append(line, text);
 
     const toggle = need(gtk.symbols.gtk_switch_new(), "a switch");
