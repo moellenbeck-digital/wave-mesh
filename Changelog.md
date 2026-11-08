@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.16.0-develop.1 (08.11.2026)
+
 ### Neue Funktionen
 
 - **Oberflächentest für die Anmeldeseite:** Ein neuer automatischer Test (`apps/e2e`) prüft, dass `/login`
