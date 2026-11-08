@@ -8,6 +8,9 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Neue Funktionen
 
+- **Oberflächentest für die Anmeldeseite:** Ein neuer automatischer Test (`apps/e2e`) prüft, dass `/login`
+  lädt, ein Formular mit E-Mail- und Passwortfeld zeigt und eine Schaltfläche zum Anmelden hat. Die Anmeldung
+  selbst und die Seite bleiben unverändert.
 - **Tray-Fenster zeigt die Control-Server-Adresse jeder Verbindung:** Unter Wave-Name und Wave-IP steht in
   jeder Zeile von „Verbindungen“ jetzt die Adresse des Control-Servers, so wie sie für das Profil
   konfiguriert ist (mit Schema, Port und Pfad). Gleichnamige Waves und mehrere Server sind damit auseinanderzuhalten.
