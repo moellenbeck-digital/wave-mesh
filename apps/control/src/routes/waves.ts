@@ -201,7 +201,12 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
       return page(c, (m) => [m.domainTaken, m.domainTakenBody(dnsSuffix)], 409);
     }
 
-    return c.redirect(safeNext(String(form.get("next") ?? "")) ?? "/", 303);
+    // The new wave is the one to show: the start page has one card at a time
+    // and would otherwise stay on the one chosen before.
+    return c.redirect(
+      safeNext(String(form.get("next") ?? "")) ?? `/?wave=${encodeURIComponent(created.waveId)}`,
+      303,
+    );
   });
 
   /**
@@ -913,8 +918,13 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
         detail: { role: joined.role },
       });
     }
-    return c.redirect(config.webUrl ? `/?joined=${encodeURIComponent(joined.waveName)}` : "/", 303);
+    return c.redirect(config.webUrl ? joinedPath(joined) : "/", 303);
   });
+
+  /** The start page after joining: the notice, and the joined wave as the one shown. */
+  function joinedPath(joined: { waveId: string; waveName: string }): string {
+    return `/?joined=${encodeURIComponent(joined.waveName)}&wave=${encodeURIComponent(joined.waveId)}`;
+  }
 
   async function finishAccept(c: Context<{ Variables: Vars }>, token: string, waveName: string) {
     const user = c.get("user");
@@ -924,7 +934,7 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
     if (typeof joined === "string") return refusal(c, token, joined);
     await audit(db, joined.waveId, userActor(user), { action: "member.join", detail: { role: joined.role } });
 
-    if (config.webUrl) return c.redirect(`/?joined=${encodeURIComponent(joined.waveName)}`);
+    if (config.webUrl) return c.redirect(joinedPath(joined));
     const m = say(c);
     return c.html(html`<h1>${m.youAreIn(waveName)}</h1>
       <p>${raw(m.bringDeviceHtml(config.baseUrl))}</p>`);

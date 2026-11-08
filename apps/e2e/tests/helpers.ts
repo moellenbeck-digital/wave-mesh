@@ -31,7 +31,7 @@ export async function login(page: Page, email: string, password: string): Promis
   await expect(page.locator("#email")).toHaveCount(0);
 }
 
-/** Legt eine Wave an und liefert ihre Karte auf `/`. */
+/** Legt eine Wave an und liefert ihre Karte auf `/` (der Redirect wählt die neue Wave). */
 export async function createWave(page: Page, name: string, suffix: string): Promise<Locator> {
   await page.goto("/waves/new");
   await page.locator("#name").fill(name);
@@ -41,8 +41,27 @@ export async function createWave(page: Page, name: string, suffix: string): Prom
   return waveCard(page, name);
 }
 
-export function waveCard(page: Page, name: string): Locator {
-  return page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name, exact: true }) });
+/** Das Dropdown der Startseite; es gibt es nur bei mehr als einer Wave. */
+const waveSelect = (page: Page): Locator => page.locator("#wave-select");
+
+/**
+ * Die Karte einer Wave auf `/`. Die Startseite zeigt immer nur eine Karte; hat das Konto mehrere Waves,
+ * wählt der Helfer die gewünschte zuerst im Dropdown. Steht die Wave nicht zur Wahl (gelöscht, verlassen),
+ * liefert er den Locator trotzdem, er hat dann keinen Treffer.
+ */
+export async function waveCard(page: Page, name: string): Promise<Locator> {
+  const heading = page.getByRole("heading", { level: 2, name, exact: true });
+  const choose = waveSelect(page);
+  if ((await choose.count()) > 0 && (await choose.locator("option").allInnerTexts()).includes(name)) {
+    if ((await choose.locator("option:checked").innerText()) !== name) {
+      // Vor der Hydration geht ein Wechsel verloren, dann hilft nur ein zweiter Versuch.
+      await expect(async () => {
+        await choose.selectOption({ label: name });
+        await expect(heading).toBeVisible({ timeout: 2_000 });
+      }).toPass({ timeout: 20_000 });
+    }
+  }
+  return page.locator("section").filter({ has: heading });
 }
 
 export async function waveId(card: Locator): Promise<string> {
@@ -112,12 +131,12 @@ export async function saveRole(page: Page, row: Locator, role: "member" | "admin
 /** Entfernt die Wave des Eigentümers (Eintippen des Namens); fehlt sie schon, ist das der gewollte Zustand. */
 export async function deleteWave(page: Page, name: string): Promise<void> {
   await page.goto("/");
-  const card = waveCard(page, name);
+  const card = await waveCard(page, name);
   if ((await card.count()) === 0) return;
   const details = card.locator("details", { has: page.locator('form[action$="/delete"]') });
   await details.locator("summary").click();
   await details.locator('input[name="name"]').fill(name);
   await details.locator('button[type="submit"]').click();
   await page.waitForURL((url) => url.pathname === "/");
-  await expect(waveCard(page, name)).toHaveCount(0);
+  await expect(await waveCard(page, name)).toHaveCount(0);
 }

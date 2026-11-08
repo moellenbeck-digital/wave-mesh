@@ -52,13 +52,13 @@ let a2Id: string;
 let mId: string;
 
 const ownerMail = () => env("APP_USER");
-const card = (who: Who): Locator => waveCard(who.page, waveName);
+const card = (who: Who): Promise<Locator> => waveCard(who.page, waveName);
 const select = (row: Locator) => row.locator('select[name="role"]');
 const rolePath = (userId: string) => `/waves/${id}/members/${userId}/role`;
 
 async function open(who: Who): Promise<Locator> {
   await who.page.goto("/");
-  const c = card(who);
+  const c = await card(who);
   await expect(c).toHaveCount(1);
   return c;
 }
@@ -100,7 +100,7 @@ test.describe("Admins ändern Rollen", () => {
     await accept(m.page, lm, memberMail);
 
     await owner.page.goto("/");
-    const oc = card(owner);
+    const oc = await card(owner);
     a1Id = await userIdOf(memberRow(oc, admin1Mail));
     a2Id = await userIdOf(memberRow(oc, admin2Mail));
     mId = await userIdOf(memberRow(oc, memberMail));
@@ -132,9 +132,9 @@ test.describe("Admins ändern Rollen", () => {
     await expect(row.getByRole("button", { name: "Save" })).toBeVisible();
     await saveRole(a1.page, row, "member");
 
-    await expect(select(memberRow(card(a1), admin2Mail))).toHaveValue("member");
+    await expect(select(memberRow(await card(a1), admin2Mail))).toHaveValue("member");
     await a1.page.reload();
-    await expect(select(memberRow(card(a1), admin2Mail))).toHaveValue("member");
+    await expect(select(memberRow(await card(a1), admin2Mail))).toHaveValue("member");
     // Gegenprobe aus fremder Sicht: A2 selbst und das Mitglied sehen die Rolle Member.
     await expect(memberRow(await open(m), admin2Mail)).toContainText("Member");
     await expect(memberRow(await open(m), admin2Mail)).not.toContainText("Administrator");
@@ -147,9 +147,9 @@ test.describe("Admins ändern Rollen", () => {
     await expect(select(row)).toHaveValue("member");
     await saveRole(a1.page, row, "admin");
 
-    await expect(select(memberRow(card(a1), memberMail))).toHaveValue("admin");
+    await expect(select(memberRow(await card(a1), memberMail))).toHaveValue("admin");
     await a1.page.reload();
-    await expect(select(memberRow(card(a1), memberMail))).toHaveValue("admin");
+    await expect(select(memberRow(await card(a1), memberMail))).toHaveValue("admin");
     // Aus Sicht von M selbst (eigene Zeile ohne Auswahl): Rolle Administrator.
     await expect(memberRow(await open(m), memberMail)).toContainText("Administrator");
   });
@@ -161,15 +161,15 @@ test.describe("Admins ändern Rollen", () => {
     let c = await open(owner);
     await expect(select(memberRow(c, memberMail))).toHaveValue("admin");
     await saveRole(owner.page, memberRow(c, memberMail), "member");
-    await expect(select(memberRow(card(owner), memberMail))).toHaveValue("member");
+    await expect(select(memberRow(await card(owner), memberMail))).toHaveValue("member");
     // A2 ist jetzt Member → Owner stuft A2 hoch.
-    c = card(owner);
+    c = await card(owner);
     await expect(select(memberRow(c, admin2Mail))).toHaveValue("member");
     await saveRole(owner.page, memberRow(c, admin2Mail), "admin");
     await owner.page.reload();
-    await expect(select(memberRow(card(owner), admin2Mail))).toHaveValue("admin");
-    await expect(select(memberRow(card(owner), memberMail))).toHaveValue("member");
-    await expect(select(memberRow(card(owner), admin1Mail))).toHaveValue("admin");
+    await expect(select(memberRow(await card(owner), admin2Mail))).toHaveValue("admin");
+    await expect(select(memberRow(await card(owner), memberMail))).toHaveValue("member");
+    await expect(select(memberRow(await card(owner), admin1Mail))).toHaveValue("admin");
   });
 
   test("K4 Mitglied M sieht keine Rollenauswahl; direkter POST liefert 403, Rolle bleibt", {
@@ -207,7 +207,7 @@ test.describe("Admins ändern Rollen", () => {
     expect(await roleSeenByOwner(admin1Mail)).toBe("admin");
     expect(await roleSeenByOwner(admin2Mail)).toBe("admin");
     expect(await roleSeenByOwner(memberMail)).toBe("member");
-    await expect(memberRow(card(owner), ownerMail())).toContainText("Owner");
+    await expect(memberRow(await card(owner), ownerMail())).toContainText("Owner");
   });
 
   test("K6 Abgrenzung: A1 kann A2 nicht entfernen (kein Remove-Knopf, direkter POST liefert 403)", {

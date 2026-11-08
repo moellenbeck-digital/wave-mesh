@@ -52,7 +52,7 @@ const create = (jar: CookieJar, name: string, suffix: string) =>
 
 type Me = {
   user: { email: string };
-  waves: { name: string; dnsSuffix: string; role: string }[];
+  waves: { id: string; name: string; dnsSuffix: string; role: string }[];
   suggestion: { name: string; dnsSuffix: string };
 };
 
@@ -75,9 +75,10 @@ describe("login flow", () => {
     const { jar } = await login("robin@example.com");
     const created = await create(jar, "home", "wave.example.com");
     expect(created.status).toBe(303);
-    expect(created.headers.get("location")).toBe("/");
 
     const body = (await (await req("/api/me", jar)).json()) as Me;
+    // The start page shows one wave at a time, so it is sent to the new one.
+    expect(created.headers.get("location")).toBe(`/?wave=${body.waves[0]?.id}`);
     expect(body.waves).toHaveLength(1);
     expect(body.waves[0]?.role).toBe("owner");
     expect(body.waves[0]?.name).toBe("home");

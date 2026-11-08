@@ -287,9 +287,18 @@ Was daran festliegt:
   ohne wäre ein Knopf, der nichts tut. Der Zustand gehört der Zeile, nicht der
   Liste — ein Push ersetzt die Geräte, und über `key={node.id}` bleibt ein
   offenes Gerät offen.
+- **Die Startseite zeigt eine Wave-Karte, die Auswahl steht in der URL.**
+  Bei mehr als einer Wave wählt ein `<select>` (`WaveSelect`) die Karte:
+  `?wave=<id>`, sonst das Cookie `wave_current`, sonst die erste Wave
+  (`pickWave` in `lib/wave-select.ts`). Nur für die gezeigte Wave laufen
+  `fetchNodes` und `fetchMembers`. Der Wechsel ist ein `router.replace` und
+  lässt andere Parameter (`joined`) stehen; das Cookie schreibt die Auswahl
+  selbst. Anlegen und Beitreten leitet der Control-Server mit `?wave=<neue id>`
+  um, damit die neue Wave die gezeigte ist.
 - **Die Karte bleibt serverseitig, nur die Geräte darin sind gelebt.**
-  `DeviceFeed` ist der Provider um die Karten herum, `LiveNodeList` und die
-  beiden Zähler sind seine einzigen Leser. `@/lib/control` importiert
+  `DeviceFeed` ist der Provider um die Karte herum, `LiveNodeList` und die
+  beiden Zähler sind seine einzigen Leser. Der Socket liefert die Listen aller
+  Waves, gelesen wird nur die der gezeigten. `@/lib/control` importiert
   `next/headers` — wer daraus mehr als Typen in eine Client-Komponente zieht,
   bricht den Build, und das ist die Grenze, an der diese Teilung hängt.
 - **Zeiten fallen beim Hydrieren auseinander.** „vor drei Minuten" zählt ab

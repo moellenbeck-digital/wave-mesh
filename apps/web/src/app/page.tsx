@@ -1,11 +1,14 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { DeviceFeed } from "@/components/device-feed";
 import { WaveCard } from "@/components/wave-card";
+import { WaveSelect } from "@/components/wave-select";
 import { appMessages } from "@/i18n/app";
 import { rich } from "@/i18n/rich";
 import { fetchMe, fetchMembers, fetchNodes } from "@/lib/control";
 import { formatDate } from "@/lib/format";
 import { getLocale } from "@/lib/i18n";
+import { pickWave, WAVE_COOKIE, WAVE_PARAM } from "@/lib/wave-select";
 
 export default async function DashboardPage({
   searchParams,
@@ -14,6 +17,7 @@ export default async function DashboardPage({
 }) {
   const params = await searchParams;
   const joined = typeof params.joined === "string" ? params.joined : undefined;
+  const wanted = typeof params[WAVE_PARAM] === "string" ? params[WAVE_PARAM] : undefined;
 
   const me = await fetchMe();
   if (!me) redirect("/login");
@@ -22,13 +26,12 @@ export default async function DashboardPage({
   const invite = me.invites[0];
   const canCreate = me.canCreateWave !== false;
 
-  const waves = await Promise.all(
-    me.waves.map(async (wave) => ({
-      wave,
-      nodes: await fetchNodes(wave.id),
-      membership: await fetchMembers(wave.id),
-    })),
-  );
+  // One card at a time: the link, then the cookie, then the first wave. Only
+  // the shown wave is asked for its devices and members.
+  const current = pickWave(me.waves, wanted, (await cookies()).get(WAVE_COOKIE)?.value);
+  const shown = current
+    ? { wave: current, nodes: await fetchNodes(current.id), membership: await fetchMembers(current.id) }
+    : undefined;
 
   return (
     <>
@@ -43,7 +46,7 @@ export default async function DashboardPage({
         </p>
       ) : null}
 
-      {waves.length === 0 ? (
+      {!shown ? (
         <section className="wc-card animate-slide-up rounded-lg p-8 text-center">
           <h2 className="font-display text-headline text-navy">{t.noWaveTitle}</h2>
           {invite ? (
@@ -70,22 +73,23 @@ export default async function DashboardPage({
           ) : null}
         </section>
       ) : (
-        /* Die Karten bleiben serverseitig -- gelebt wird nur die Geräteliste
-           darin, und die hängt an einem Socket für die ganze Seite. */
+        /* Die Karte bleibt serverseitig -- gelebt wird nur die Geräteliste
+           darin, und die hängt an einem Socket für die ganze Seite. Er
+           liefert die Listen aller Waves; die der nicht gezeigten
+           ignoriert die Karte, weil sie nur ihre eigene liest. */
         <DeviceFeed>
-          <div className="flex flex-col gap-6">
-            {waves.map(({ wave, nodes, membership }, index) => (
-              <WaveCard
-                key={wave.id}
-                wave={wave}
-                nodes={nodes}
-                membership={membership}
-                meId={me.user.id}
-                delay={index * 0.1}
-                locale={locale}
-              />
-            ))}
-          </div>
+          {me.waves.length > 1 ? (
+            <WaveSelect waves={me.waves} currentId={shown.wave.id} label={t.chooseWave} />
+          ) : null}
+          <WaveCard
+            key={shown.wave.id}
+            wave={shown.wave}
+            nodes={shown.nodes}
+            membership={shown.membership}
+            meId={me.user.id}
+            delay={0}
+            locale={locale}
+          />
         </DeviceFeed>
       )}
     </>
