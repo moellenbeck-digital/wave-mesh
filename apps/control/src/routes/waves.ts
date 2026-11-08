@@ -121,6 +121,62 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
   }
 
   /**
+   * The create form, whole page. One function for the first visit and for the
+   * answer to a refused POST, so the two cannot drift apart: what a person typed
+   * stays in the fields, and the reason sits at the field it is about.
+   */
+  const createForm = async (
+    c: Context<{ Variables: Vars }>,
+    user: SessionUser,
+    values: { name: string; suffix: string; next?: string },
+    errors: { name?: string; suffix?: string } = {},
+    status: 200 | 400 = 200,
+  ) => {
+    const m = say(c);
+    const setup = await waveSetup(db, user.id, user.email, canCreate);
+    const waiting =
+      setup.state === "invited"
+        ? html`<p>
+            ${raw(m.invitationWaitingHtml(setup.wave))}
+          </p>`
+        : "";
+    const invalid = (field: "name" | "suffix") =>
+      errors[field] ? raw(` aria-invalid="true" aria-describedby="${field}-hint ${field}-error"`) : "";
+    const hintOnly = (field: "name" | "suffix") =>
+      errors[field] ? "" : raw(` aria-describedby="${field}-hint"`);
+
+    return c.html(
+      html`<!doctype html>
+        <html lang="${localeOf(c)}">
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <title>${m.createYourWave}</title>
+          <style>
+            .error { color: #b00; }
+          </style>
+          <h1>${m.createYourWave}</h1>
+          ${waiting}
+          <form method="post" action="/waves">
+            ${values.next ? raw(`<input type="hidden" name="next" value="${Bun.escapeHTML(values.next)}" />`) : ""}
+            <label for="name">${m.name}</label>
+            <input id="name" name="name" value="${values.name}" required${invalid("name")} />
+            ${errors.name ? html`<p id="name-error" class="error" role="alert">${errors.name}</p>` : ""}
+            <label for="suffix">${m.domain}</label>
+            <input id="suffix" name="suffix" value="${values.suffix}" required${invalid("suffix")}${hintOnly("suffix")} />
+            <p id="suffix-hint">${m.domainFormat}</p>
+            ${errors.suffix ? html`<p id="suffix-error" class="error" role="alert">${errors.suffix}</p>` : ""}
+            ${errors.suffix ? "" : html`<p>${raw(m.devicesCalledHtml(values.suffix))}</p>`}
+            <p>
+              ${m.keepSuggestion}
+            </p>
+            <button type="submit">${m.createWave}</button>
+          </form>
+        </html>`,
+      status,
+    );
+  };
+
+  /**
    * Where a wave is made, by the person who will own it.
    *
    * The DNS suffix is asked for here rather than assigned, because it is the
@@ -130,6 +186,9 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
    * the suggested one under `wave.internal`, which is honest about never
    * carrying a certificate rather than pretending to be a real zone.
    *
+   * A suffix is never added to a name that has none: it would make a zone no
+   * certificate can cover, behind the person's back.
+   *
    * With a frontend this page belongs to it and the proxy takes the request
    * there; this plain one is what a server running alone answers with.
    */
@@ -138,9 +197,9 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
       const user = c.get("user");
       if (!user) return c.redirect(`/?next=${encodeURIComponent("/waves/new")}`);
 
-      const setup = await waveSetup(db, user.id, user.email, canCreate);
       const m = say(c);
       if (!canCreate) {
+        const setup = await waveSetup(db, user.id, user.email, canCreate);
         const waiting =
           setup.state === "invited" ? html`<p>${raw(m.invitationOnlyHtml(setup.wave))}</p>` : "";
         return c.html(html`<h1>${m.noWaveCreation}</h1>
@@ -148,28 +207,11 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
           <p>${m.noWaveCreationBody}</p>`);
       }
       const suggestion = suggestWave(user.email ?? user.name);
-      const next = safeNext(c.req.query("next"));
-      const waiting =
-        setup.state === "invited"
-          ? html`<p>
-              ${raw(m.invitationWaitingHtml(setup.wave))}
-            </p>`
-          : "";
-
-      return c.html(html`<h1>${m.createYourWave}</h1>
-        ${waiting}
-        <form method="post" action="/waves">
-          ${next ? raw(`<input type="hidden" name="next" value="${Bun.escapeHTML(next)}" />`) : ""}
-          <label for="name">${m.name}</label>
-          <input id="name" name="name" value="${suggestion.name}" required />
-          <label for="suffix">${m.domain}</label>
-          <input id="suffix" name="suffix" value="${suggestion.dnsSuffix}" required />
-          <p>${raw(m.devicesCalledHtml(suggestion.dnsSuffix))}</p>
-          <p>
-            ${m.keepSuggestion}
-          </p>
-          <button type="submit">${m.createWave}</button>
-        </form>`);
+      return createForm(c, user, {
+        name: suggestion.name,
+        suffix: suggestion.dnsSuffix,
+        next: safeNext(c.req.query("next")),
+      });
     });
   }
 
@@ -180,14 +222,28 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
     if (!canCreate) return page(c, (m) => [m.noWaveCreation, m.noWaveCreationBody], 403);
 
     const form = await c.req.formData();
-    let name: string;
-    let dnsSuffix: string;
+    const typed = { name: String(form.get("name") ?? ""), suffix: String(form.get("suffix") ?? "") };
+    const next = safeNext(String(form.get("next") ?? ""));
+    // Both fields are judged, so a person fixes both in one go.
+    const errors: { name?: string; suffix?: string } = {};
+    let name = "";
+    let dnsSuffix = "";
+    const m = say(c);
     try {
-      name = normaliseWaveName(String(form.get("name") ?? ""));
-      dnsSuffix = normaliseDnsSuffix(String(form.get("suffix") ?? ""));
+      name = normaliseWaveName(typed.name);
     } catch (err) {
-      return page(c, (m) => [m.notWorkingAsName, invalidText(m, err)], 400);
+      errors.name =
+        err instanceof InvalidInputError ? `${m.nameError(err.input)} ${m.nameFormat}` : invalidText(m, err);
     }
+    try {
+      dnsSuffix = normaliseDnsSuffix(typed.suffix);
+    } catch (err) {
+      errors.suffix =
+        err instanceof InvalidInputError
+          ? `${m.domainError(err.input)} ${m.domainFormat}`
+          : invalidText(m, err);
+    }
+    if (errors.name || errors.suffix) return createForm(c, user, { ...typed, next }, errors, 400);
 
     const created = await createWave(db, {
       userId: user.id,
@@ -203,10 +259,7 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
 
     // The new wave is the one to show: the start page has one card at a time
     // and would otherwise stay on the one chosen before.
-    return c.redirect(
-      safeNext(String(form.get("next") ?? "")) ?? `/?wave=${encodeURIComponent(created.waveId)}`,
-      303,
-    );
+    return c.redirect(next ?? `/?wave=${encodeURIComponent(created.waveId)}`, 303);
   });
 
   /**

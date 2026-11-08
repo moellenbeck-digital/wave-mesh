@@ -56,6 +56,12 @@ const en = {
   devicesCalledHtml: (suffix: string) => `Devices will be called <code>&lt;host&gt;.${e(suffix)}</code>.`,
   keepSuggestion: `Keep the suggestion if you have no domain of your own. A public certificate needs one you
             own — you can change this later, which renames every device in the wave.`,
+  domainFormat:
+    "Format: at least two labels, only a–z, 0–9 and hyphens, no scheme such as https://, no trailing dot. Example: my-company.example.com",
+  domainError: (input: string) => `“${input}” is not a valid domain.`,
+  nameFormat:
+    "Format: starts with a letter, then a–z, 0–9 and hyphens, at most 24 characters. Example: my-company",
+  nameError: (input: string) => `“${input}” does not work as a name.`,
   createWave: "Create wave",
   invitationOnlyHtml: (wave: string) =>
     `An invitation into <strong>${e(wave)}</strong> is waiting for you. Open the link it came with.`,
@@ -67,7 +73,6 @@ const en = {
   invalid: "Invalid.",
 
   // --- error pages ----------------------------------------------------------
-  notWorkingAsName: "That will not work as a name",
   notAWaveName: "That is not a wave name",
   notADomain: "That is not a domain",
   domainTaken: "That domain is taken",
@@ -200,6 +205,12 @@ const de: typeof en = {
   devicesCalledHtml: (suffix) => `Geräte heißen dann <code>&lt;host&gt;.${e(suffix)}</code>.`,
   keepSuggestion: `Behalte den Vorschlag, wenn du keine eigene Domain hast. Ein öffentliches Zertifikat braucht
             eine, die dir gehört — ändern kannst du das später, dabei wird jedes Gerät im Wave umbenannt.`,
+  domainFormat:
+    "Format: mindestens zwei Labels, nur a–z, 0–9 und Bindestrich, kein Schema wie https://, kein abschließender Punkt. Beispiel: meine-firma.example.com",
+  domainError: (input) => `„${input}“ ist keine gültige Domain.`,
+  nameFormat:
+    "Format: beginnt mit einem Buchstaben, dann a–z, 0–9 und Bindestrich, höchstens 24 Zeichen. Beispiel: meine-firma",
+  nameError: (input) => `„${input}“ geht als Name nicht.`,
   createWave: "Wave anlegen",
   invitationOnlyHtml: (wave) =>
     `Eine Einladung in <strong>${e(wave)}</strong> wartet auf dich. Öffne den Link, mit dem sie kam.`,
@@ -210,7 +221,6 @@ const de: typeof en = {
     kind === "domain" ? `kein gültiger Domainname: ${input}` : `kein gültiger Wave-Name: ${input}`,
   invalid: "Ungültig.",
 
-  notWorkingAsName: "Das geht als Name nicht",
   notAWaveName: "Das ist kein Wave-Name",
   notADomain: "Das ist keine Domain",
   domainTaken: "Diese Domain ist vergeben",

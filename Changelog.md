@@ -12,6 +12,11 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   nennt `/waves/<id>/dns` ihn in einem eigenen Bereich mit Einrichtungsdatum und bietet daneben
   **Bearbeiten** und **Entfernen** an. Das Formular ist dann zunächst zu; **Bearbeiten** öffnet es mit dem
   aktuellen Provider, **Abbrechen** schließt es wieder. Ohne Provider bleibt alles wie bisher.
+- **Wave anlegen: Fehler im Formular statt auf einer nackten Seite:** Eine ungültige Domain
+  (z. B. `martins-synologie` ohne Punkt) oder ein ungültiger Name zeigt das Formular wieder,
+  mit der Fehlermeldung direkt am Feld, dem erlaubten Format und einem Beispiel. Eingegebenes
+  bleibt stehen. Das Domain-Feld nennt das Format auch vorab. Ein Suffix wird weiterhin nicht
+  automatisch ergänzt, weil sonst eine Zone ohne öffentliches Zertifikat entstünde.
 - **Wave-Auswahl auf der Startseite:** Wer mehrere Waves hat, sieht nicht mehr alle Karten
   untereinander, sondern wählt die Wave in einem Dropdown und sieht nur deren Karte. Die Auswahl
   steht in der Adresse (`/?wave=…`) und wird gemerkt; nach dem Anlegen oder Beitreten ist die neue

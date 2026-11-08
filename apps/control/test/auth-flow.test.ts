@@ -155,6 +155,105 @@ describe("login flow", () => {
   });
 });
 
+describe("the create form refuses in place", () => {
+  /** The form as the browser posts it, with the language and `next` a test may need. */
+  const post = (jar: CookieJar, fields: Record<string, string>, headers: Record<string, string> = {}) =>
+    app.request("/waves", {
+      method: "POST",
+      body: new URLSearchParams(fields),
+      headers: { cookie: jar.header(), ...headers },
+    });
+
+  const waveCount = async (jar: CookieJar) => ((await (await req("/api/me", jar)).json()) as Me).waves.length;
+
+  test("a valid name and domain make the wave and redirect", async () => {
+    const { jar } = await login("robin@example.com");
+    const res = await create(jar, "robin", "robin.example.com");
+    expect(res.status).toBe(303);
+    expect(await waveCount(jar)).toBe(1);
+  });
+
+  test("the domain field always says what is allowed", async () => {
+    const { jar } = await login("robin@example.com");
+    const body = await (await req("/waves/new", jar)).text();
+    expect(body).toContain('id="suffix-hint"');
+    expect(body).toContain("at least two labels");
+    expect(body).toContain("my-company.example.com");
+    expect(body).not.toContain("aria-invalid");
+  });
+
+  test("a domain with one label comes back as the form, with the reason at the field", async () => {
+    const { jar } = await login("robin@example.com");
+    const res = await post(jar, { name: "robin", suffix: "martins-synologie" });
+    expect(res.status).toBe(400);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const body = await res.text();
+    expect(body).toContain("<form");
+    expect(body).toContain("<!doctype html>");
+    expect(body).toContain('name="suffix"');
+    expect(body).toContain('value="martins-synologie"');
+    expect(body).toContain("“martins-synologie” is not a valid domain.");
+    expect(body).toContain("my-company.example.com");
+    expect(body).toContain('aria-invalid="true"');
+    expect(body).toContain('aria-describedby="suffix-hint suffix-error"');
+    expect(body).toContain('id="suffix-error"');
+    // Only the field that is wrong is marked, and what was typed elsewhere stays.
+    expect(body).not.toContain('id="name-error"');
+    expect(body).toContain('value="robin"');
+    expect(await waveCount(jar)).toBe(0);
+  });
+
+  test("a name that is no slug comes back the same way", async () => {
+    const { jar } = await login("robin@example.com");
+    const res = await post(jar, { name: "123", suffix: "robin.example.com" });
+    expect(res.status).toBe(400);
+    const body = await res.text();
+    expect(body).toContain("<form");
+    expect(body).toContain('value="123"');
+    expect(body).toContain("“123” does not work as a name.");
+    expect(body).toContain("starts with a letter");
+    expect(body).toContain('id="name-error"');
+    expect(body).not.toContain('id="suffix-error"');
+    expect(body).toContain('value="robin.example.com"');
+    expect(await waveCount(jar)).toBe(0);
+  });
+
+  test("both fields wrong show both reasons", async () => {
+    const { jar } = await login("robin@example.com");
+    const body = await (await post(jar, { name: "1x", suffix: "https://wave" })).text();
+    expect(body).toContain('id="name-error"');
+    expect(body).toContain('id="suffix-error"');
+    expect(body).toContain('value="1x"');
+    expect(body).toContain('value="https://wave"');
+  });
+
+  test("what was typed comes back escaped", async () => {
+    const { jar } = await login("robin@example.com");
+    const body = await (await post(jar, { name: `9"<b>&`, suffix: `a"<i>&'x`, next: `/x"<u>` })).text();
+    for (const raw of ['"<b>', "<i>", "<u>"]) expect(body).not.toContain(raw);
+    expect(body).toContain("9&quot;&lt;b&gt;&amp;");
+    expect(body).toContain("a&quot;&lt;i&gt;&amp;&#39;x");
+  });
+
+  test("the destination survives the refusal", async () => {
+    const { jar } = await login("robin@example.com");
+    const next = "/machine/authorize?request=abc";
+    const body = await (await post(jar, { name: "robin", suffix: "nodot", next })).text();
+    expect(body).toContain('name="next"');
+    expect(body).toContain("/machine/authorize?request=abc");
+  });
+
+  test("in German when the browser asks for it", async () => {
+    const { jar } = await login("robin@example.com");
+    const res = await post(jar, { name: "robin", suffix: "nodot" }, { "accept-language": "de" });
+    expect(res.status).toBe(400);
+    const body = await res.text();
+    expect(body).toContain('<html lang="de">');
+    expect(body).toContain("„nodot“ ist keine gültige Domain.");
+    expect(body).toContain("meine-firma.example.com");
+  });
+});
+
 describe("callback hardening", () => {
   test("rejects a mismatched state", async () => {
     const jar = new CookieJar();
