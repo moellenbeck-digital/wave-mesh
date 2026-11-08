@@ -94,7 +94,6 @@ type Who = { ctx: BrowserContext; page: Page };
 let owner: Who;
 let admin: Who;
 let member: Who;
-let id: string;
 let dropId: string;
 
 const ownerMail = () => env("APP_USER");
@@ -138,7 +137,6 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
 
     await login(owner.page, ownerMail(), env("APP_PASSWORD"));
     const c = await createWave(owner.page, waveName, waveSuffix);
-    id = await idFromDelete(c);
     const adminLink = await invite(owner.page, c, adminMail, "admin");
     const memberLink = await invite(owner.page, c, memberMail, "member");
     await accept(admin.page, adminLink, adminMail);
