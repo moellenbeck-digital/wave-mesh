@@ -8,6 +8,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.16.0-develop.4 (09.11.2026)
+
+### Neue Funktionen
+
+- **Hinweis auf ein getrenntes Konto bei Wave-Anlage und Gerätefreigabe:** Wer mit einem Konto angemeldet ist, das
+  von einem bestehenden Konto getrennt geführt wird, sieht auf `/waves/new` und bei der Gerätefreigabe einen Hinweis
+  mit dem Weg zur Verknüpfung über `/account/link`, statt dass ein Wave unbemerkt fehlt.
+
+---
+
 ## 🔬 Development v0.16.0-develop.3 (09.11.2026)
 
 Keine Änderung für Anwender: Die Probe-Tests `@t82` und `@t85` in `apps/e2e` sind entfernt.
