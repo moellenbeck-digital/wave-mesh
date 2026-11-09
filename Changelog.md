@@ -8,6 +8,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.16.0-develop.3 (09.11.2026)
+
+Keine Änderung für Anwender: Die Probe-Tests `@t82` und `@t85` in `apps/e2e` sind entfernt.
+
+---
+
 ## 🔬 Development v0.16.0-develop.2 (09.11.2026)
 
 ### Intern
