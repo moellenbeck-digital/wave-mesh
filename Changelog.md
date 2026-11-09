@@ -8,6 +8,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.16.0-develop.5 (09.11.2026)
+
+Keine Änderung für Anwender: Der Typecheck des Web-Builds prüft das Testverzeichnis nicht mehr mit.
+
+---
+
 ## 🔬 Development v0.16.0-develop.4 (09.11.2026)
 
 ### Neue Funktionen
