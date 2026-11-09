@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
+import { LinkNotice } from "@/components/link-notice";
 import { appMessages } from "@/i18n/app";
-import { fetchDeviceRequest } from "@/lib/control";
+import { fetchDeviceRequest, fetchMe } from "@/lib/control";
 import { osName } from "@/lib/format";
 import { getLocale } from "@/lib/i18n";
 
@@ -25,6 +26,9 @@ export default async function ChooseWavePage({
   if (!pending) redirect("/devices/expired");
 
   const { request, waves } = pending;
+  // Das Gerät landet in einem der Waves dieses Kontos. Ist es ein getrenntes, steht
+  // vorher da, warum der erwartete Wave fehlen kann -- die Freigabe bleibt offen.
+  const me = await fetchMe();
   const locale = await getLocale();
   const t = appMessages(locale);
   const only = waves.length === 1 ? waves[0] : undefined;
@@ -39,6 +43,8 @@ export default async function ChooseWavePage({
           {osName(request.os, locale)} · {only ? t.chooseOneText : t.chooseManyText}
         </p>
       </div>
+
+      {me ? <LinkNotice me={me} /> : null}
 
       <section
         className="wc-card animate-slide-up relative rounded-lg p-8"

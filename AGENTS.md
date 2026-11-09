@@ -706,8 +706,12 @@ Sitzung. Pro berührtem Wave steht `account.link` im Audit-Log.
 **Auf der Oberfläche:** `/api/me` nennt unter `account` die Logins und `linkable`
 (Adresse nicht bestätigt, Login über Anbieter). Das Frontend zeigt darauf einen
 Hinweis (welches Konto aktiv ist, warum ein Wave fehlen kann) auf Übersicht und
-`/account`, mit Link zu `/account/link` (Web) bzw. der schlichten Seite des
-Control-Servers (ohne `WAVE_WEB_URL`). Der Hinweis sagt **nie**, ob ein anderes
+`/account` sowie dort, wo man versehentlich einen weiteren Wave anlegt oder ein
+Gerät freigibt: `/waves/new` (auch bei „Wave-Anlage nicht erlaubt“) und
+`/devices/choose`, mit Link zu `/account/link` (Web) bzw. der schlichten Seite des
+Control-Servers (ohne `WAVE_WEB_URL`: `plainLinkNotice` auf `/waves/new` und
+`/machine/authorize`). Er nimmt nichts weg: Formular und Freigabe bleiben
+benutzbar. Der Hinweis sagt **nie**, ob ein anderes
 Konto die Adresse hält — das erfährt nur, wer sie im ersten Schritt frisch
 nachgewiesen hat; sonst wäre es eine Abfrage, welche Adressen hier ein Konto
 haben.

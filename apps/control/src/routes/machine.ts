@@ -6,6 +6,7 @@ import { type Context, Hono } from "hono";
 import { html, raw } from "hono/html";
 import { z } from "zod";
 import { audit, userActor } from "../audit.ts";
+import type { OAuthProvider } from "../auth/providers.ts";
 import type { SessionUser } from "../auth/session.ts";
 import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
@@ -17,6 +18,7 @@ import { allocateIpv4, ipv6ForIpv4, uniqueHostname } from "../net/addressing.ts"
 import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
 import { authKeyWave, claimAuthKey } from "../waves/auth-keys.ts";
 import { pierLeaving, unpublishLeavingPier } from "../waves/pier-dns.ts";
+import { plainLinkNotice } from "./account-link.ts";
 import { type NetmapHub, publishEndpoints } from "./control-ws.ts";
 import { authenticateMachine } from "./machine-auth.ts";
 import { pageMessages } from "./messages.ts";
@@ -33,6 +35,8 @@ export interface MachineRouteDeps {
   config: Config;
   signingKey: SigningKey;
   hub?: NetmapHub;
+  /** For the notice a split-off account gets where it approves a device. */
+  providers: Map<string, OAuthProvider>;
   nonces?: NonceStore;
   /** How the DNS providers are reached when a pier logs out. Only the tests replace it. */
   dnsFetch?: typeof fetch;
@@ -40,7 +44,15 @@ export interface MachineRouteDeps {
 
 type Vars = { user: SessionUser | null };
 
-export function machineRoutes({ db, config, signingKey, hub, nonces, dnsFetch }: MachineRouteDeps) {
+export function machineRoutes({
+  db,
+  config,
+  signingKey,
+  hub,
+  providers,
+  nonces,
+  dnsFetch,
+}: MachineRouteDeps) {
   const app = new Hono<{ Variables: Vars }>();
   const nonceStore = nonces ?? createMemoryNonceStore();
 
@@ -267,7 +279,7 @@ export function machineRoutes({ db, config, signingKey, hub, nonces, dnsFetch }:
     // make one any more. The form is where it comes from, and the device link
     // rides along so the approval finishes by itself afterwards.
     if (candidates.length === 0) return c.redirect(toWaveForm(request.id));
-    return askForWave(c, request, candidates);
+    return askForWave(c, user, request, candidates);
   });
 
   /**
@@ -285,7 +297,7 @@ export function machineRoutes({ db, config, signingKey, hub, nonces, dnsFetch }:
     const picked = String(form.get("wave") ?? "") || undefined;
     const approved = await approveRequest(db, user.id, request, picked);
     if (approved.kind === "none") return c.redirect(toWaveForm(request.id), 303);
-    if (approved.kind === "choose") return askForWave(c, request, approved.waves);
+    if (approved.kind === "choose") return askForWave(c, user, request, approved.waves);
     if (approved.kind === "suspended") {
       // A page in the plain style, with the web app in front too: this is
       // where the browser lands, and the request stays pending for later.
@@ -348,8 +360,9 @@ export function machineRoutes({ db, config, signingKey, hub, nonces, dnsFetch }:
    * that must not happen by itself. Splitting them would leave the ordinary
    * path -- one wave, one click -- as the one nobody looks at.
    */
-  function askForWave(
+  async function askForWave(
     c: Context<{ Variables: Vars }>,
+    user: SessionUser,
     request: typeof authRequests.$inferSelect,
     candidates: { id: string; name: string }[],
   ) {
@@ -371,6 +384,7 @@ export function machineRoutes({ db, config, signingKey, hub, nonces, dnsFetch }:
       ? html`<h1>${m.addToWave(request.hostname)}</h1>`
       : html`<h1>${m.whichWave(request.hostname)}</h1>`;
     return c.html(html`${title}
+      ${await plainLinkNotice(db, user, providers, m)}
       <form method="post" action="/machine/authorize">
         <input type="hidden" name="request" value="${request.id}" />
         ${body}

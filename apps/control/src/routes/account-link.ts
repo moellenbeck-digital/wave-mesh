@@ -30,7 +30,7 @@ import type { Config } from "../env.ts";
 import { type Locale, localeOf } from "../i18n.ts";
 import { peerAddress } from "../net/peer.ts";
 import type { NetmapHub } from "./control-ws.ts";
-import { pageMessages } from "./messages.ts";
+import { type PageMessages, pageMessages } from "./messages.ts";
 
 type Vars = { user: SessionUser | null };
 
@@ -94,6 +94,27 @@ export async function accountView(db: Database, user: SessionUser, providers: Ma
     identities: own.map((i) => identityLabel(providers, i.provider)),
     linkable: !user.emailVerified && user.email !== null && viaProvider,
   };
+}
+
+/**
+ * The notice of the web app, for the plain pages: which account is active and
+ * why a wave it expects can be missing, with the way to `/account/link`. Put
+ * where a person is about to make a wave or add a device by accident. Nothing
+ * for every other account, and it changes nothing about the page it sits on.
+ */
+export async function plainLinkNotice(
+  db: Database,
+  user: SessionUser,
+  providers: Map<string, OAuthProvider>,
+  m: PageMessages,
+) {
+  if (!(await accountView(db, user, providers)).linkable) return "";
+  return html`<section aria-labelledby="link-notice-title">
+    <h2 id="link-notice-title">${m.linkTitle}</h2>
+    <p>${m.linkActive(user.email ?? user.name ?? user.id)}</p>
+    <p>${m.linkWhyMissing}</p>
+    <p><a href="/account/link">${m.linkTitle}</a></p>
+  </section>`;
 }
 
 /** The same state for the JSON API and the plain pages, so a page and its API cannot disagree. */

@@ -153,12 +153,12 @@ export function createApp({
   // One nonce store for every node-facing route: a signature is bound to its
   // path, so sharing it costs nothing and keeps the replay window in one place.
   const nonces = createMemoryNonceStore();
-  app.route("/", machineRoutes({ db, config, signingKey, hub, nonces, dnsFetch }));
+  app.route("/", machineRoutes({ db, config, signingKey, hub, providers, nonces, dnsFetch }));
   app.route("/", certRoutes({ db, certs: certs ?? new CertificateService({ db, config }), nonces }));
   app.route("/", serviceRoutes({ db, hub, nonces }));
   app.route("/", pierRoutes({ db, hub, nonces }));
   app.route("/", updateRoutes({ db, releases: updates, nonces }));
-  app.route("/", waveRoutes({ db, config, hub, dnsFetch }));
+  app.route("/", waveRoutes({ db, config, hub, providers, dnsFetch }));
   app.route("/", billingRoutes({ db, config, hub }));
 
   /**
