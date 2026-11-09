@@ -49,6 +49,11 @@ Keine Änderung für Anwender: Die Probe-Tests `@t82` und `@t85` in `apps/e2e` s
   verbunden, Namen und Adressen unverändert) gehen an das bestehende Konto; alle Sitzungen des getrennten Kontos
   enden, danach bist du als das bestehende Konto angemeldet. Die Anfrage gilt 10 Minuten, einmal und lässt sich
   abbrechen. **Unverändert:** eine gleiche, aber unbestätigte Adresse verknüpft nie von selbst. Deutsch und Englisch.
+  Der Hinweis steht jetzt auch dort, wo ein getrenntes Konto nach der Anmeldung landet und sonst versehentlich
+  einen weiteren Wave anlegt oder ein Gerät freigibt: auf **Wave anlegen** (`/waves/new`, auch wo Waves nur
+  über ein Abo entstehen) und in der **Gerätefreigabe** (`/devices/choose` bzw. der Zwischenschritt über
+  `/waves/new`), im Web wie auf den schlichten Seiten des Control-Servers ohne Frontend. Andere Konten sehen
+  nichts davon; Formular und Freigabe bleiben benutzbar, es wird nichts blockiert oder verknüpft.
 - **Wave löschen, verlassen und abmelden leichter finden:** In der Wave-Karte steht unter der Überschrift
   **Aufräumen** offen, was sonst eingeklappt war: **Wave löschen** (Eigentümer, weiter mit getipptem Namen)
   bzw. **Wave verlassen** (alle anderen), samt den Folgen im Klartext. Der Eigentümer liest dort, dass er nicht

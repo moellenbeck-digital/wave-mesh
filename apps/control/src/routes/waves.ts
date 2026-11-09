@@ -9,6 +9,7 @@ import { aclSubjects, getPolicy, invalidTags, removePolicy, setPolicy, setTags }
 import { checkPolicy } from "../acl/validate.ts";
 import { audit, listAudit, userActor } from "../audit.ts";
 import { setPassword } from "../auth/password.ts";
+import type { OAuthProvider } from "../auth/providers.ts";
 import type { SessionUser } from "../auth/session.ts";
 import { createSession, setSessionCookie } from "../auth/session.ts";
 import { SeatLimitError } from "../billing/seats.ts";
@@ -44,6 +45,7 @@ import {
   suggestWave,
   waveSetup,
 } from "../waves/provision.ts";
+import { plainLinkNotice } from "./account-link.ts";
 import type { NetmapHub } from "./control-ws.ts";
 import { type PageMessages, pageMessages } from "./messages.ts";
 import { safeNext } from "./next.ts";
@@ -55,6 +57,8 @@ export interface WaveRouteDeps {
   db: Database;
   config: Config;
   hub?: NetmapHub;
+  /** For the notice a split-off account gets where it makes a wave. */
+  providers: Map<string, OAuthProvider>;
   /** For the DNS providers, so a test never reaches a real API. */
   dnsFetch?: typeof fetch;
 }
@@ -72,7 +76,7 @@ type Vars = { user: SessionUser | null };
  * browser does not attach to a cross-site POST -- a forged form from another
  * origin arrives unauthenticated and is refused as such.
  */
-export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
+export function waveRoutes({ db, config, hub, providers, dnsFetch }: WaveRouteDeps) {
   const app = new Hono<{ Variables: Vars }>();
   const canCreate = mayCreateWaves(config);
 
@@ -155,6 +159,7 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
             .error { color: #b00; }
           </style>
           <h1>${m.createYourWave}</h1>
+          ${await plainLinkNotice(db, user, providers, m)}
           ${waiting}
           <form method="post" action="/waves">
             ${values.next ? raw(`<input type="hidden" name="next" value="${Bun.escapeHTML(values.next)}" />`) : ""}
@@ -203,6 +208,7 @@ export function waveRoutes({ db, config, hub, dnsFetch }: WaveRouteDeps) {
         const waiting =
           setup.state === "invited" ? html`<p>${raw(m.invitationOnlyHtml(setup.wave))}</p>` : "";
         return c.html(html`<h1>${m.noWaveCreation}</h1>
+          ${await plainLinkNotice(db, user, providers, m)}
           ${waiting}
           <p>${m.noWaveCreationBody}</p>`);
       }
