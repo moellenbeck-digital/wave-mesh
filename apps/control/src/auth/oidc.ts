@@ -54,6 +54,7 @@ const IdToken = z.looseObject({
   azp: z.string().optional(),
   exp: z.number(),
   iat: z.number().optional(),
+  auth_time: z.number().optional(),
   email: z.string().optional(),
   // A boolean by the spec; a few providers send the string. Anything else,
   // including absent, means not verified.
@@ -99,7 +100,11 @@ export class OidcProvider implements OAuthProvider {
     this.label = config.name;
   }
 
-  async createAuthorizationURL(state: string, codeVerifier: string): Promise<URL> {
+  async createAuthorizationURL(
+    state: string,
+    codeVerifier: string,
+    options: { fresh?: boolean } = {},
+  ): Promise<URL> {
     const discovery = await this.discover();
     const url = new URL(discovery.authorization_endpoint);
     url.searchParams.set("response_type", "code");
@@ -109,6 +114,13 @@ export class OidcProvider implements OAuthProvider {
     url.searchParams.set("state", state);
     url.searchParams.set("code_challenge", base64url(createHash("sha256").update(codeVerifier).digest()));
     url.searchParams.set("code_challenge_method", "S256");
+    if (options.fresh) {
+      // A fresh sign-in, not the provider's session: `prompt=login` is the
+      // request, `max_age=0` the same thing for providers that only know
+      // that one. The ID token's `auth_time` is what lets the caller check.
+      url.searchParams.set("prompt", "login");
+      url.searchParams.set("max_age", "0");
+    }
     return url;
   }
 
@@ -153,6 +165,7 @@ export class OidcProvider implements OAuthProvider {
       emailVerified: verified && Boolean(claims.email),
       name: claims.name ?? claims.preferred_username ?? null,
       avatarUrl: claims.picture ?? null,
+      ...(claims.auth_time !== undefined ? { authTime: claims.auth_time } : {}),
     };
   }
 

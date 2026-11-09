@@ -6,8 +6,70 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.16.0-develop.5 (09.11.2026)
+
+Keine Änderung für Anwender: Der Typecheck des Web-Builds prüft das Testverzeichnis nicht mehr mit.
+
+---
+
+## 🔬 Development v0.16.0-develop.4 (09.11.2026)
+
 ### Neue Funktionen
 
+- **Hinweis auf ein getrenntes Konto bei Wave-Anlage und Gerätefreigabe:** Wer mit einem Konto angemeldet ist, das
+  von einem bestehenden Konto getrennt geführt wird, sieht auf `/waves/new` und bei der Gerätefreigabe einen Hinweis
+  mit dem Weg zur Verknüpfung über `/account/link`, statt dass ein Wave unbemerkt fehlt.
+
+---
+
+## 🔬 Development v0.16.0-develop.3 (09.11.2026)
+
+Keine Änderung für Anwender: Die Probe-Tests `@t82` und `@t85` in `apps/e2e` sind entfernt.
+
+---
+
+## 🔬 Development v0.16.0-develop.2 (09.11.2026)
+
+### Intern
+
+- **Probe der roten Schleife:** Ein weiterer Oberflächentest (`apps/e2e`, Marke `@t85`) erwartet auf der Anmeldeseite
+  einen Text, der noch nicht existiert. Er dient der Prüfung des Stufen-Ablaufs und ändert nichts am Verhalten der Anwendung.
+
+---
+
+## 🔬 Development v0.16.0-develop.1 (08.11.2026)
+
+### Neue Funktionen
+
+- **Oberflächentest für die Anmeldeseite:** Ein neuer automatischer Test (`apps/e2e`) prüft, dass `/login`
+  lädt, ein Formular mit E-Mail- und Passwortfeld zeigt und eine Schaltfläche zum Anmelden hat. Die Anmeldung
+  selbst und die Seite bleiben unverändert.
+- **Tray-Fenster zeigt die Control-Server-Adresse jeder Verbindung:** Unter Wave-Name und Wave-IP steht in
+  jeder Zeile von „Verbindungen“ jetzt die Adresse des Control-Servers, so wie sie für das Profil
+  konfiguriert ist (mit Schema, Port und Pfad). Gleichnamige Waves und mehrere Server sind damit auseinanderzuhalten.
+  Unter Linux (GTK) und macOS wird eine lange Adresse in der Mitte gekürzt und steht vollständig im Tooltip der
+  Zeile; unter Windows, wo das Fenster selbst gemalt ist und keine Tooltips hat, wird sie am Ende gekürzt. Schalter und
+  Wave-Name samt Wave-IP bleiben unverändert, das Fenster wird dadurch nicht breiter. Peer- und Dienstliste,
+  Tray-Menü und IPC bleiben unberührt.
+- **Getrennte Konten nach der OIDC-Anmeldung geführt verknüpfen:** Wer sich über einen Anbieter angemeldet hat,
+  der die E-Mail-Adresse nicht bestätigt hat, bekam bisher ein eigenes Konto neben dem bestehenden – und blieb
+  auch nach der späteren Bestätigung getrennt, ohne zu sehen, warum sein Wave fehlt. Jetzt zeigt die Übersicht
+  (und `/account`) in diesem Fall, welches Konto aktiv ist und warum ein erwarteter Wave fehlen kann, und
+  `/account/link` führt in drei Schritten zusammen: **1.** die Adresse beim Anbieter frisch bestätigen (er fragt
+  erneut nach der Anmeldung), **2.** nachweisen, dass das bestehende Konto dir gehört (Passwort samt
+  Zwei-Faktor-Code oder ein anderer Anmeldeweg dieses Kontos – das meldet dich dort nicht an), **3.** eine
+  Seite nennt vorher mit Zahlen und Namen, was übergeht, und erst ein Klick auf **Konten zusammenführen**
+  führt es aus. Anmeldungen, eigene Waves (Abrechnung bleibt am Wave), Mitgliedschaften und Geräte (bleiben
+  verbunden, Namen und Adressen unverändert) gehen an das bestehende Konto; alle Sitzungen des getrennten Kontos
+  enden, danach bist du als das bestehende Konto angemeldet. Die Anfrage gilt 10 Minuten, einmal und lässt sich
+  abbrechen. **Unverändert:** eine gleiche, aber unbestätigte Adresse verknüpft nie von selbst. Deutsch und Englisch.
+  Der Hinweis steht jetzt auch dort, wo ein getrenntes Konto nach der Anmeldung landet und sonst versehentlich
+  einen weiteren Wave anlegt oder ein Gerät freigibt: auf **Wave anlegen** (`/waves/new`, auch wo Waves nur
+  über ein Abo entstehen) und in der **Gerätefreigabe** (`/devices/choose` bzw. der Zwischenschritt über
+  `/waves/new`), im Web wie auf den schlichten Seiten des Control-Servers ohne Frontend. Andere Konten sehen
+  nichts davon; Formular und Freigabe bleiben benutzbar, es wird nichts blockiert oder verknüpft.
 - **Wave löschen, verlassen und abmelden leichter finden:** In der Wave-Karte steht unter der Überschrift
   **Aufräumen** offen, was sonst eingeklappt war: **Wave löschen** (Eigentümer, weiter mit getipptem Namen)
   bzw. **Wave verlassen** (alle anderen), samt den Folgen im Klartext. Der Eigentümer liest dort, dass er nicht

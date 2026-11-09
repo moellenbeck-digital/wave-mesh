@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { LinkNotice } from "@/components/link-notice";
 import { TwoFactorPanel } from "@/components/two-factor";
 import { accountMessages } from "@/i18n/account";
 import { rich } from "@/i18n/rich";
@@ -20,6 +21,10 @@ export default async function AccountPage() {
       </a>
       <h1 className="animate-fade-in mt-4 font-display text-display-sm text-navy">{t.accountTitle}</h1>
       <p className="animate-fade-in mt-3 text-body-sm text-slate">{me.user.email ?? me.user.name}</p>
+
+      <div className="mt-8">
+        <LinkNotice me={me} />
+      </div>
 
       <section className="wc-card animate-slide-up relative mt-8 rounded-lg p-8">
         <div className="absolute top-0 right-0 left-0 h-1 rounded-t-lg bg-accent" />

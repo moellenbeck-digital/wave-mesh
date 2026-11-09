@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { LinkNotice } from "@/components/link-notice";
 import { appMessages } from "@/i18n/app";
 import { rich } from "@/i18n/rich";
 import { fetchMe } from "@/lib/control";
@@ -35,6 +36,8 @@ export default async function NewWavePage({
   if (me.canCreateWave === false) {
     return (
       <div className="mx-auto max-w-lg">
+        {/* Auch hier: ein getrenntes Konto landet hier, weil der Wave unter dem anderen Konto hängt. */}
+        <LinkNotice me={me} />
         <h1 className="animate-fade-in font-display text-display-sm text-navy">{t.noWaveBookedTitle}</h1>
         {waiting ? (
           <p className="wc-alert-success mt-6" role="status">
@@ -57,6 +60,11 @@ export default async function NewWavePage({
           {t.newLead}
         </p>
       </div>
+
+      {/* Ein getrenntes Konto landet nach der OIDC-Anmeldung hier -- und legt sonst
+          versehentlich einen weiteren Wave an, statt den vermissten zu suchen. Der
+          Hinweis nimmt dem Formular nichts: es bleibt benutzbar. */}
+      <LinkNotice me={me} />
 
       {/* Eine wartende Einladung ist fast immer der Weg, den jemand eigentlich
           gehen wollte -- deshalb steht sie vor dem Formular, verstellt es aber

@@ -655,6 +655,54 @@ export const passwordSetups = pgTable(
   ],
 );
 
+/**
+ * A guided link of two accounts that one person ended up with: B, the account
+ * a provider login made because the provider did not vouch for the address,
+ * into A, the verified account that holds the address.
+ *
+ * Three proofs, in this order, each stamped on the row and re-checked by the
+ * server at every step: the provider vouches for the address now (`verified_at`,
+ * which also fixes A), the person controls A through one of A's own ways in
+ * (`control_at`), and a POST on the summary page. Only the SHA-256 of the
+ * token is stored, like a setup link. The row is spent by the merge, which
+ * also deletes B -- and with it this row.
+ */
+export const accountLinks = pgTable(
+  "account_links",
+  {
+    id: text("id").primaryKey(),
+    /** B: the account that asked, and the only session that may continue. */
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    /** The provider (its id, e.g. `oidc`) that vouches for the address in step one. */
+    authProvider: text("auth_provider").notNull(),
+    /** B's identity that the fresh login proved, as `identities` has it. */
+    provider: text("provider"),
+    subject: text("subject"),
+    /** The confirmed address, normalised: what A is found by. */
+    email: text("email"),
+    /** A: fixed when the address is proven, checked again before anything moves. */
+    targetUserId: text("target_user_id").references(() => users.id, { onDelete: "cascade" }),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    /** A's password was right and its second factor is still to come. */
+    passwordAt: timestamp("password_at", { withTimezone: true }),
+    codeAttempts: integer("code_attempts").notNull().default(0),
+    /** A's control is proven; `control_method` says by what (`password`, a provider). */
+    controlAt: timestamp("control_at", { withTimezone: true }),
+    controlMethod: text("control_method"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("account_links_token_idx").on(t.tokenHash),
+    index("account_links_user_idx").on(t.userId),
+  ],
+);
+
 export const schema = {
   users,
   waveAuthKeys,

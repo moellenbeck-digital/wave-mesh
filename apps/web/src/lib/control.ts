@@ -43,8 +43,19 @@ export interface WaitingInvite {
   expiresAt: string;
 }
 
+/** A login of the account, and what the operator calls its provider (null: the raw id is all there is). */
+export interface AccountIdentity {
+  provider: string;
+  label: string | null;
+}
+
 export interface Me {
   user: { id: string; email: string | null; emailVerified: boolean; name: string | null };
+  /**
+   * Which logins this account has, and whether the guided link of a split-off
+   * account is on offer. Missing from an older control server.
+   */
+  account?: { identities: AccountIdentity[]; linkable: boolean };
   waves: Wave[];
   invites: WaitingInvite[];
   /** What the create form starts with, so neither field is ever empty. */
@@ -101,6 +112,63 @@ export interface InviteOffer {
 export interface DeviceRequest {
   request: { id: string; hostname: string; os: Node["os"] };
   waves: { id: string; name: string; dnsSuffix: string }[];
+}
+
+/** Where the guided link of a split-off account stands (`/api/account/link`). */
+export interface LinkAccount {
+  email: string | null;
+  name: string | null;
+  emailVerified: boolean;
+  identities: AccountIdentity[];
+}
+
+export interface LinkSummary {
+  from: { email: string | null; name: string | null; hasPassword: boolean };
+  into: { email: string | null; name: string | null };
+  identities: AccountIdentity[];
+  ownedWaves: {
+    id: string;
+    name: string;
+    billing: "active" | "suspended" | "ended" | null;
+    targetWasMember: boolean;
+  }[];
+  memberships: {
+    waveId: string;
+    name: string;
+    role: Wave["role"];
+    targetRole: Wave["role"] | null;
+    outcome: "moves" | "keeps-target-role";
+  }[];
+  devices: { id: string; hostname: string; waveName: string; ipv4: string }[];
+  sessions: number;
+}
+
+export type LinkState =
+  | { state: "none"; account: LinkAccount; linkable: boolean; providers: { id: string; label: string }[] }
+  | { state: "address"; account: LinkAccount; expiresAt: string }
+  | {
+      state: "control";
+      account: LinkAccount;
+      address: string;
+      expiresAt: string;
+      provider: string;
+      control: { password: boolean; providers: { id: string; label: string }[]; needsCode: boolean };
+    }
+  | {
+      state: "confirm";
+      account: LinkAccount;
+      address: string;
+      expiresAt: string;
+      provider: string;
+      summary: LinkSummary;
+    };
+
+/** Null means "not signed in". */
+export async function fetchLink(): Promise<LinkState | null> {
+  const res = await controlFetch("/api/account/link");
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`control server answered ${res.status} for /api/account/link`);
+  return (await res.json()) as LinkState;
 }
 
 /** A name in the wave that is not a device: reached through one node (D11). */

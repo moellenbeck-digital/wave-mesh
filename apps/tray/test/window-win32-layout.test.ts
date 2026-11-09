@@ -11,9 +11,12 @@ import {
   windowLayout,
 } from "../src/window-win32-layout.ts";
 
+const CONNECTION_HEIGHT = 66;
+
 const connection = (label: string, connected: boolean) => ({
   controlUrl: `https://${label}`,
   label,
+  server: `https://${label}`,
   connected,
   busy: false,
   detail: connected ? "10.77.0.1" : "not connected",
@@ -57,8 +60,8 @@ describe("the card's shape", () => {
   test("grows by a row for each connection and each machine", () => {
     const one = lay(view());
     const more = lay(view({ connections: [connection("one", true), connection("two", false)] }));
-    // A row and the gap above it; the same arithmetic the Cocoa card does.
-    expect(more.height - one.height).toBe(50);
+    // A connection row (three lines) and the gap above it; the same arithmetic the Cocoa card does.
+    expect(more.height - one.height).toBe(CONNECTION_HEIGHT + 2);
   });
 
   test("stops growing once the machine list would push the card off-screen", () => {
@@ -265,5 +268,94 @@ describe("the services under a machine", () => {
       expect(hit.y).toBeGreaterThanOrEqual(open.clip.y);
       expect(hit.y + hit.h).toBeLessThanOrEqual(open.clip.y + open.clip.h);
     }
+  });
+});
+
+describe("@t80 the server on a connection row", () => {
+  const longServer = `https://${"control-".repeat(20)}example.com:8443/some/long/path`;
+  const withServer = (server: string, connected = true) => ({
+    ...connection("one", connected),
+    server,
+    detail: "10.77.0.9",
+  });
+  const toggles = (layout: WindowLayout) => layout.hits.filter((hit) => hit.action.kind === "toggle");
+
+  test("is written under the name and the address, in the quiet colour", () => {
+    const paints = lay(view({ connections: [withServer("https://control.example:8080")] })).chrome;
+    const name = paints.find((paint) => paint.kind === "text" && paint.text === "one");
+    const detail = paints.find((paint) => paint.kind === "text" && paint.text === "10.77.0.9");
+    const server = paints.find(
+      (paint) => paint.kind === "text" && paint.text === "https://control.example:8080",
+    );
+    expect(name).toBeDefined();
+    expect(detail).toBeDefined();
+    expect(server).toMatchObject({ font: "detail", colour: PALETTE.muted, align: "left" });
+    // Name, then address, then server -- none of them shares a line.
+    expect(name?.y).toBeLessThan(detail?.y ?? 0);
+    expect(detail?.y).toBeLessThan(server?.y ?? 0);
+  });
+
+  test("a long address stays in the text column and never reaches the switch", () => {
+    const layout = lay(view({ connections: [withServer(longServer)] }));
+    const server = layout.chrome.find((paint) => paint.kind === "text" && paint.text === longServer);
+    const knob = layout.chrome.find((paint) => paint.kind === "switch");
+    expect(server).toBeDefined();
+    expect(knob).toBeDefined();
+    // The rectangle is what DrawText cuts the ellipsis to.
+    expect((server?.x ?? 0) + (server?.w ?? 0)).toBeLessThanOrEqual(knob?.x ?? 0);
+    expect((server?.x ?? 0) + (server?.w ?? 0)).toBeLessThanOrEqual(layout.width);
+  });
+
+  test("the lines fit inside the row, and the switch is centred in it", () => {
+    const layout = lay(view({ connections: [withServer(longServer)] }));
+    const fill = layout.chrome.find((paint) => paint.kind === "fill" && paint.colour === PALETTE.active);
+    const knob = layout.chrome.find((paint) => paint.kind === "switch");
+    const lines = layout.chrome.filter(
+      (paint) => paint.kind === "text" && ["one", "10.77.0.9", longServer].includes(paint.text),
+    );
+    expect(lines).toHaveLength(3);
+    expect(fill?.h).toBe(CONNECTION_HEIGHT);
+    for (const line of lines) {
+      expect(line.y).toBeGreaterThanOrEqual(fill?.y ?? 0);
+      expect(line.y + line.h).toBeLessThanOrEqual((fill?.y ?? 0) + (fill?.h ?? 0));
+    }
+    expect((knob?.y ?? 0) - (fill?.y ?? 0)).toBe((CONNECTION_HEIGHT - (knob?.h ?? 0)) / 2);
+  });
+
+  test("the toggle spans the whole row and the rows do not overlap", () => {
+    const layout = lay(
+      view({ connections: [withServer(longServer), withServer("https://b.example", false)] }),
+    );
+    const [first, second] = toggles(layout);
+    expect(first?.h).toBe(CONNECTION_HEIGHT);
+    expect(second?.h).toBe(CONNECTION_HEIGHT);
+    expect((second?.y ?? 0) - (first?.y ?? 0)).toBe(CONNECTION_HEIGHT + 2);
+    // Each toggle is still reachable at its switch and names its own wave.
+    for (const hit of [first, second]) {
+      const centre = { x: (hit?.x ?? 0) + (hit?.w ?? 0) / 2, y: (hit?.y ?? 0) + (hit?.h ?? 0) / 2 };
+      expect(hitTest(layout, centre.x, centre.y)).toEqual(hit?.action ?? null);
+    }
+    expect(first?.action).toMatchObject({ kind: "toggle", connect: false });
+    expect(second?.action).toMatchObject({ kind: "toggle", connect: true });
+  });
+
+  test("the machine list starts below the last connection row, and the card is as tall as its parts", () => {
+    const one = lay(view({ connections: [withServer(longServer)] }));
+    const two = lay(view({ connections: [withServer(longServer), withServer("https://b.example")] }));
+    // The clip moves down by exactly what a connection row and its gap add, and so does the card.
+    expect(two.clip.y - one.clip.y).toBe(CONNECTION_HEIGHT + 2);
+    expect(two.height - one.height).toBe(CONNECTION_HEIGHT + 2);
+    expect(one.height - one.clip.h - one.clip.y).toBe(20);
+  });
+
+  test("scales with the display like every other rectangle", () => {
+    const plain = lay(view({ connections: [withServer(longServer)] }));
+    const doubled = lay(view({ connections: [withServer(longServer)] }), 0, 2);
+    expect(doubled.height).toBe(plain.height * 2);
+    expect(toggles(doubled)[0]?.h).toBe(CONNECTION_HEIGHT * 2);
+  });
+
+  test("the card keeps its width however long the address is", () => {
+    expect(lay(view({ connections: [withServer(longServer)] })).width).toBe(WIDTH);
   });
 });

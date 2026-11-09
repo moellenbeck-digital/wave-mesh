@@ -165,6 +165,66 @@ const en = {
   apiCredentialCannotWrite: (suffix: string, reason: string) =>
     `With these credentials no record could be written in ${suffix}: ${reason}`,
   apiNoProvider: "no DNS provider set",
+
+  // --- joining an account a provider login split off ---------------------------
+  linkTitle: "Link your accounts",
+  linkActive: (who: string) => `You are signed in as ${who}, a separate account.`,
+  linkWhyMissing:
+    "The sign-in service did not confirm this address when the account was made, so it was kept apart from any account that already uses the address. The waves of such an account do not show here.",
+  linkIntro:
+    "If you have one, you can join the two in three steps: confirm the address with your sign-in service now, show that you control the other account, then confirm what moves. Nothing changes before the last step.",
+  linkNoProvider:
+    "This account has no sign-in through a provider, so there is nothing to confirm the address with.",
+  linkStartWith: (provider: string) => `Confirm the address with ${provider}`,
+  linkControlTitle: (address: string) => `Show that you control the account of ${address}`,
+  linkControlIntro:
+    "Sign in to that account once more, with one of its own ways in. This does not sign you in there: you stay in this account until you confirm in the last step.",
+  linkProvePassword: "Check password",
+  linkProveWith: (provider: string) => `Check with ${provider}`,
+  linkNoWay:
+    "That account has no way to sign in that this page can offer, so nothing can be joined. Nothing was changed.",
+  linkConfirmTitle: (from: string, into: string) => `Join ${from} into ${into}?`,
+  linkSumIdentities: (list: string[], into: string) =>
+    `Sign-ins that move to ${into}: ${list.join(", ")}. From then on they lead to ${into}.`,
+  linkSumOwned: (wave: string, billing: string | null, member: boolean) =>
+    `You own the wave ${wave}: it goes to the other account${member ? ", which is a member there already and becomes its owner" : ""}.${billing ? " Billing and subscription stay on the wave." : ""}`,
+  linkSumMember: (wave: string, role: string, target: string | null) =>
+    target
+      ? `Member of ${wave} as ${role}: the other account is in it already as ${target}, keeps that role, and this membership ends.`
+      : `Member of ${wave} as ${role}: moves to the other account.`,
+  linkSumDevices: (devices: string[]) =>
+    devices.length === 0
+      ? "No devices."
+      : `${devices.length === 1 ? "1 device moves" : `${devices.length} devices move`} over and stays connected, names and addresses unchanged: ${devices.join(", ")}.`,
+  linkSumSessions: (n: number, from: string, into: string) =>
+    `All ${n} session${n === 1 ? "" : "s"} of ${from} end. You are signed in as ${into} afterwards.`,
+  linkSumPassword: (from: string) => `${from} has a password. It ends with this account.`,
+  linkConfirm: "Join the accounts",
+  linkCancel: "Cancel",
+  linkDoneTitle: "The accounts are joined",
+  linkDoneBody:
+    "You are signed in to the account that held the address, with its waves and the ones that came over.",
+  linkError: (code: string) =>
+    (
+      ({
+        expired:
+          "This request is over -- it was cancelled or took too long. Nothing was changed. Start again.",
+        changed: "Something it was bound to changed meanwhile. Nothing was changed. Start again.",
+        unverified: "The sign-in service does not confirm this address. Nothing was changed.",
+        "foreign-identity": "That sign-in is not the one of this account. Nothing was changed.",
+        stale: "The sign-in service answered from an old session. Sign in again when asked.",
+        "no-target": "No other account holds this address as a confirmed one. Nothing was changed.",
+        ambiguous: "More than one account holds this address. Ask the operator. Nothing was changed.",
+        "wrong-password": "Wrong password.",
+        "wrong-code": "That code did not work.",
+        throttled: "Too many attempts. Try again later.",
+        "password-needed": "That took too long or went wrong too often. Enter the password again.",
+        "not-target": "That sign-in is not one of the other account's. Nothing was changed.",
+        "no-provider": "That sign-in is not one of this account's.",
+        "provider-unavailable": "The sign-in service is not available right now.",
+        "no-way": "The other account has not been shown to be yours yet.",
+      }) as Record<string, string>
+    )[code] ?? "That did not work. Nothing was changed.",
 } satisfies Messages;
 
 const de: typeof en = {
@@ -316,6 +376,70 @@ const de: typeof en = {
   apiCredentialCannotWrite: (suffix, reason) =>
     `Mit diesen Zugangsdaten ließ sich in ${suffix} kein Record schreiben: ${reason}`,
   apiNoProvider: "kein DNS-Provider gesetzt",
+
+  linkTitle: "Konten verknüpfen",
+  linkActive: (who) => `Du bist als ${who} angemeldet, einem getrennten Konto.`,
+  linkWhyMissing:
+    "Der Anmeldedienst hat diese Adresse bei der Anlage des Kontos nicht bestätigt, deshalb blieb es getrennt von einem Konto, das die Adresse schon nutzt. Die Waves jenes Kontos siehst du hier nicht.",
+  linkIntro:
+    "Hast du so ein Konto, verknüpfst du beide in drei Schritten: die Adresse jetzt beim Anmeldedienst bestätigen, nachweisen, dass du das andere Konto kontrollierst, dann bestätigen, was übergeht. Vor dem letzten Schritt ändert sich nichts.",
+  linkNoProvider:
+    "Dieses Konto hat keine Anmeldung über einen Anbieter, also gibt es nichts, womit sich die Adresse bestätigen ließe.",
+  linkStartWith: (provider) => `Adresse bei ${provider} bestätigen`,
+  linkControlTitle: (address) => `Nachweisen, dass du das Konto von ${address} kontrollierst`,
+  linkControlIntro:
+    "Melde dich noch einmal an jenem Konto an, mit einem seiner eigenen Anmeldewege. Das meldet dich dort nicht an: Du bleibst in diesem Konto, bis du im letzten Schritt bestätigst.",
+  linkProvePassword: "Passwort prüfen",
+  linkProveWith: (provider) => `Mit ${provider} prüfen`,
+  linkNoWay:
+    "Jenes Konto hat keinen Anmeldeweg, den diese Seite anbieten kann, also lässt sich nichts verknüpfen. Es wurde nichts geändert.",
+  linkConfirmTitle: (from, into) => `${from} mit ${into} zusammenführen?`,
+  linkSumIdentities: (list, into) =>
+    `Anmeldungen, die zu ${into} wechseln: ${list.join(", ")}. Danach führen sie zu ${into}.`,
+  linkSumOwned: (wave, billing, member) =>
+    `Dir gehört der Wave ${wave}: Er geht an das andere Konto${member ? ", das dort schon Mitglied ist und Eigentümer wird" : ""}.${billing ? " Abrechnung und Abo bleiben am Wave." : ""}`,
+  linkSumMember: (wave, role, target) => {
+    const names: Record<string, string> = { owner: "Eigentümer", admin: "Admin", member: "Mitglied" };
+    const of = (r: string) => names[r] ?? r;
+    return target
+      ? `Mitglied in ${wave} als ${of(role)}: Das andere Konto ist dort schon ${of(target)}, behält diese Rolle, und diese Mitgliedschaft entfällt.`
+      : `Mitglied in ${wave} als ${of(role)}: wechselt zum anderen Konto.`;
+  },
+  linkSumDevices: (devices) =>
+    devices.length === 0
+      ? "Keine Geräte."
+      : `${devices.length === 1 ? "1 Gerät wechselt" : `${devices.length} Geräte wechseln`} hinüber und bleiben verbunden, Namen und Adressen unverändert: ${devices.join(", ")}.`,
+  linkSumSessions: (n, from, into) =>
+    `${n === 1 ? "Die 1 Sitzung" : `Alle ${n} Sitzungen`} von ${from} ${n === 1 ? "endet" : "enden"}. Danach bist du als ${into} angemeldet.`,
+  linkSumPassword: (from) => `${from} hat ein Passwort. Es endet mit diesem Konto.`,
+  linkConfirm: "Konten zusammenführen",
+  linkCancel: "Abbrechen",
+  linkDoneTitle: "Die Konten sind zusammengeführt",
+  linkDoneBody:
+    "Du bist an dem Konto angemeldet, das die Adresse hielt, mit seinen Waves und denen, die dazugekommen sind.",
+  linkError: (code) =>
+    (
+      ({
+        expired:
+          "Diese Anfrage ist vorbei -- abgebrochen oder zu lange her. Es wurde nichts geändert. Fang neu an.",
+        changed:
+          "Etwas, woran sie gebunden war, hat sich inzwischen geändert. Es wurde nichts geändert. Fang neu an.",
+        unverified: "Der Anmeldedienst bestätigt diese Adresse nicht. Es wurde nichts geändert.",
+        "foreign-identity": "Diese Anmeldung gehört nicht zu diesem Konto. Es wurde nichts geändert.",
+        stale:
+          "Der Anmeldedienst hat aus einer alten Sitzung geantwortet. Melde dich neu an, wenn er danach fragt.",
+        "no-target": "Kein anderes Konto hält diese Adresse als bestätigte. Es wurde nichts geändert.",
+        ambiguous: "Mehr als ein Konto hält diese Adresse. Frag den Betreiber. Es wurde nichts geändert.",
+        "wrong-password": "Falsches Passwort.",
+        "wrong-code": "Dieser Code hat nicht funktioniert.",
+        throttled: "Zu viele Versuche. Versuch es später noch einmal.",
+        "password-needed": "Das dauerte zu lang oder ging zu oft schief. Gib das Passwort noch einmal ein.",
+        "not-target": "Diese Anmeldung gehört nicht zum anderen Konto. Es wurde nichts geändert.",
+        "no-provider": "Diese Anmeldung gehört nicht zu diesem Konto.",
+        "provider-unavailable": "Der Anmeldedienst ist gerade nicht erreichbar.",
+        "no-way": "Das andere Konto wurde noch nicht als deins nachgewiesen.",
+      }) as Record<string, string>
+    )[code] ?? "Das hat nicht funktioniert. Es wurde nichts geändert.",
 };
 
 export type PageMessages = typeof en;

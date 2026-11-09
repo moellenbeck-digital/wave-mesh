@@ -46,6 +46,11 @@ const TITLE_HEIGHT = 28;
 const SUBTITLE_HEIGHT = 15;
 const SECTION_HEIGHT = 14;
 const ROW_HEIGHT = 48;
+/**
+ * A connection has a third line, the server it is on, so it is taller than a
+ * machine: three lines of text at 7px above and below, as the other rows have.
+ */
+const CONNECTION_HEIGHT = 66;
 /** A service line: one name and its address, so it is shorter than a machine. */
 const SERVICE_HEIGHT = 30;
 /** The triangle that folds a machine's services out; drawn, like everything. */
@@ -134,7 +139,8 @@ export interface WindowLayout {
 }
 
 /** The height `count` stacked rows take. No rows is no height, not one row. */
-const rowsHeight = (count: number): number => (count === 0 ? 0 : count * ROW_HEIGHT + (count - 1) * ROW_GAP);
+const rowsHeight = (count: number, height: number = ROW_HEIGHT): number =>
+  count === 0 ? 0 : count * height + (count - 1) * ROW_GAP;
 
 /**
  * The machine list as it is stacked: a machine, and under it its services when
@@ -197,7 +203,7 @@ export function windowLayout(
     PAD +
     HEADER_HEIGHT +
     SECTION_BREAK +
-    rowsHeight(view.connections.length) +
+    rowsHeight(view.connections.length, CONNECTION_HEIGHT) +
     SECTION_BREAK +
     listHeight +
     PAD;
@@ -228,10 +234,10 @@ export function windowLayout(
 
   y = sectionBreak(chrome, y, labels.connections);
   view.connections.forEach((row, index) => {
-    const top = y + index * (ROW_HEIGHT + ROW_GAP);
+    const top = y + index * (CONNECTION_HEIGHT + ROW_GAP);
     connectionRow(chrome, hits, row, top);
   });
-  y += rowsHeight(view.connections.length);
+  y += rowsHeight(view.connections.length, CONNECTION_HEIGHT);
 
   y = sectionBreak(chrome, y, labels.machines);
   const clip = { x: PAD, y, w: CONTENT_WIDTH, h: listHeight };
@@ -291,7 +297,7 @@ function connectionRow(
       x: PAD,
       y: top,
       w: CONTENT_WIDTH,
-      h: ROW_HEIGHT,
+      h: CONNECTION_HEIGHT,
       colour: PALETTE.active,
       radius: ROW_CORNER,
     });
@@ -300,17 +306,23 @@ function connectionRow(
   chrome.push(
     text({ x: PAD + ROW_INSET, y: top + 25, w: TEXT_WIDTH, h: 16 }, row.detail, "detail", PALETTE.muted),
   );
+  // The server the wave is on. There is no tooltip to keep the full address in
+  // (see NAME_SHARE), so a long one is cut with an ellipsis at the end and
+  // stays inside the text column: it never reaches the switch.
+  chrome.push(
+    text({ x: PAD + ROW_INSET, y: top + 43, w: TEXT_WIDTH, h: 16 }, row.server, "detail", PALETTE.muted),
+  );
 
   const trailing = {
     x: PAD + CONTENT_WIDTH - ROW_INSET - TRAILING_WIDTH,
     y: top,
     w: TRAILING_WIDTH,
-    h: ROW_HEIGHT,
+    h: CONNECTION_HEIGHT,
   };
   chrome.push({
     kind: "switch",
     x: trailing.x,
-    y: top + (ROW_HEIGHT - SWITCH_HEIGHT) / 2,
+    y: top + (CONNECTION_HEIGHT - SWITCH_HEIGHT) / 2,
     w: SWITCH_WIDTH,
     h: SWITCH_HEIGHT,
     on: row.connected,
