@@ -17,16 +17,7 @@
  * Beschriftungen gelten für `en-US` (Config); Selektoren sonst über `name`, `action`, Rolle.
  */
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
-import {
-  accept,
-  createWave,
-  deleteWave,
-  env,
-  invite,
-  login,
-  newSession,
-  passwordFor,
-} from "./helpers.ts";
+import { accept, createWave, deleteWave, env, invite, login, newSession, passwordFor } from "./helpers.ts";
 
 const run = Math.random().toString(36).slice(2, 8);
 const waveName = `t78-wave-${run}`;
@@ -116,127 +107,121 @@ test.describe("Konten verknüpfen nach OIDC-Anmeldung", () => {
     }
   });
 
-  test(
-    "K1 Getrenntes Konto B: Hinweiskarte nennt das aktive Konto und warum die Wave fehlt, Wave von A nicht sichtbar",
-    { tag: "@t78" },
-    async () => {
-      const { page } = b;
+  test("K1 Getrenntes Konto B: Hinweiskarte nennt das aktive Konto und warum die Wave fehlt, Wave von A nicht sichtbar", {
+    tag: "@t78",
+  }, async () => {
+    const { page } = b;
+    await page.goto("/");
+
+    const card = notice(page);
+    await expect(card).toBeVisible();
+    await expect(page.locator("#link-notice-title")).toHaveText("You are signed in to a separate account");
+    await expect(card).toContainText(`Active account: ${mail}`);
+    await expect(card).toContainText("did not confirm your email address");
+    await expect(card).toContainText("a wave you expect can be missing");
+    await expect(card.locator('a[href="/account/link"]')).toBeVisible();
+
+    // Die Karte steht über dem Angebot, eine neue Wave anzulegen.
+    const create = page.locator('a[href="/waves/new"]').first();
+    await expect(create).toBeVisible();
+    const noticeBox = await card.boundingBox();
+    const createBox = await create.boundingBox();
+    expect(noticeBox?.y).toBeLessThan(createBox?.y ?? 0);
+
+    // Der Wave von A ist in B nicht zu sehen.
+    await expect(page.getByRole("heading", { level: 2, name: waveName, exact: true })).toHaveCount(0);
+    await expect(page.getByText(waveName)).toHaveCount(0);
+
+    // Auch die Konto-Seite trägt die Karte.
+    await page.goto("/account");
+    await expect(notice(page)).toBeVisible();
+    await expect(notice(page)).toContainText(`Active account: ${mail}`);
+  });
+
+  test("K2 Adresse beim Anbieter bestätigt: ohne Nachweis über Konto A (falsches Passwort) kein Schritt 3, nichts ändert sich", {
+    tag: "@t78",
+  }, async () => {
+    const { page } = b;
+
+    // Schritt 1: Anbieter bestätigt jetzt die Adresse (gleicher `sub`, email_verified=true).
+    await page.goto("/account/link");
+    await expect(currentStep(page)).toContainText("1.");
+    await startStepOne(page, true);
+
+    // Schritt 2: Nachweis über das andere Konto verlangt.
+    await expect(currentStep(page)).toContainText("2.");
+    await expect(page.getByRole("heading", { level: 2 })).toContainText(mail);
+    await expect(passwordInput(page)).toBeVisible();
+
+    // Falsches Passwort: Fehler, weiter Schritt 2, keine Zusammenfassung, kein Schritt 3.
+    await passwordInput(page).fill(`${passwordFor(mail)}-falsch`);
+    await page.locator('form[action="/account/link/control/password"] button[type="submit"]').click();
+    await page.waitForURL((url) => url.pathname === "/account/link" && url.searchParams.has("error"));
+    expect(new URL(page.url()).searchParams.get("error")).toBe("wrong-password");
+    await expect(page.locator('p[role="alert"]')).toHaveText("That password did not work.");
+    await expect(currentStep(page)).toContainText("2.");
+    await expect(passwordInput(page)).toBeVisible();
+    await expect(confirmForm(page)).toHaveCount(0);
+
+    // Direktes Absenden von Schritt 3 ohne Nachweis führt nirgends hin.
+    const direct = await page.request.post("/account/link/confirm", { maxRedirects: 0 });
+    expect(direct.headers().location ?? "").not.toContain("/account/link/done");
+    await page.goto("/account/link");
+    await expect(currentStep(page)).toContainText("2.");
+    await expect(confirmForm(page)).toHaveCount(0);
+
+    // Nichts hat sich geändert: B bleibt B, die Wave von A bleibt unsichtbar.
+    await page.goto("/");
+    await expect(notice(page)).toBeVisible();
+    await expect(page.getByText(waveName)).toHaveCount(0);
+
+    await cancelLink(page);
+  });
+
+  test("K3 Gleiche, aber unbestätigte Adresse führt nie zur Verknüpfung: Schritt 1 bleibt stehen", {
+    tag: "@t78",
+  }, async ({ browser }) => {
+    // Erneutes Anmelden (frische Sitzung, gleicher `sub`, weiter unbestätigt): dasselbe getrennte Konto B.
+    const again = await session(browser);
+    try {
+      const { page } = again;
+      await signInUnverified(page);
       await page.goto("/");
-
-      const card = notice(page);
-      await expect(card).toBeVisible();
-      await expect(page.locator("#link-notice-title")).toHaveText("You are signed in to a separate account");
-      await expect(card).toContainText(`Active account: ${mail}`);
-      await expect(card).toContainText("did not confirm your email address");
-      await expect(card).toContainText("a wave you expect can be missing");
-      await expect(card.locator('a[href="/account/link"]')).toBeVisible();
-
-      // Die Karte steht über dem Angebot, eine neue Wave anzulegen.
-      const create = page.locator('a[href="/waves/new"]').first();
-      await expect(create).toBeVisible();
-      const noticeBox = await card.boundingBox();
-      const createBox = await create.boundingBox();
-      expect(noticeBox?.y).toBeLessThan(createBox?.y ?? 0);
-
-      // Der Wave von A ist in B nicht zu sehen.
-      await expect(page.getByRole("heading", { level: 2, name: waveName, exact: true })).toHaveCount(0);
+      await expect(notice(page)).toBeVisible();
       await expect(page.getByText(waveName)).toHaveCount(0);
 
-      // Auch die Konto-Seite trägt die Karte.
-      await page.goto("/account");
-      await expect(notice(page)).toBeVisible();
-      await expect(notice(page)).toContainText(`Active account: ${mail}`);
-    },
-  );
+      // Schritt 1 direkt starten, der Anbieter bestätigt die Adresse weiterhin nicht.
+      await startStepOne(page, false);
+      expect(new URL(page.url()).searchParams.get("error")).toBe("unverified");
+      await expect(page.locator('p[role="alert"]')).toHaveText(
+        "The sign-in service does not confirm this address. Nothing was changed.",
+      );
+      await expect(currentStep(page)).toContainText("1.");
+      await expect(passwordInput(page)).toHaveCount(0);
+      await expect(confirmForm(page)).toHaveCount(0);
 
-  test(
-    "K2 Adresse beim Anbieter bestätigt: ohne Nachweis über Konto A (falsches Passwort) kein Schritt 3, nichts ändert sich",
-    { tag: "@t78" },
-    async () => {
-      const { page } = b;
+      // Schritte 2 und 3 lassen sich nicht überspringen, auch nicht mit dem richtigen Passwort von A.
+      const password = await page.request.post("/account/link/control/password", {
+        form: { password: passwordFor(mail) },
+        maxRedirects: 0,
+      });
+      expect(password.headers().location ?? "").not.toContain("/account/link/done");
+      const confirm = await page.request.post("/account/link/confirm", { maxRedirects: 0 });
+      expect(confirm.headers().location ?? "").not.toContain("/account/link/done");
 
-      // Schritt 1: Anbieter bestätigt jetzt die Adresse (gleicher `sub`, email_verified=true).
       await page.goto("/account/link");
       await expect(currentStep(page)).toContainText("1.");
-      await startStepOne(page, true);
-
-      // Schritt 2: Nachweis über das andere Konto verlangt.
-      await expect(currentStep(page)).toContainText("2.");
-      await expect(page.getByRole("heading", { level: 2 })).toContainText(mail);
-      await expect(passwordInput(page)).toBeVisible();
-
-      // Falsches Passwort: Fehler, weiter Schritt 2, keine Zusammenfassung, kein Schritt 3.
-      await passwordInput(page).fill(`${passwordFor(mail)}-falsch`);
-      await page.locator('form[action="/account/link/control/password"] button[type="submit"]').click();
-      await page.waitForURL((url) => url.pathname === "/account/link" && url.searchParams.has("error"));
-      expect(new URL(page.url()).searchParams.get("error")).toBe("wrong-password");
-      await expect(page.locator('p[role="alert"]')).toHaveText("That password did not work.");
-      await expect(currentStep(page)).toContainText("2.");
-      await expect(passwordInput(page)).toBeVisible();
+      await expect(passwordInput(page)).toHaveCount(0);
       await expect(confirmForm(page)).toHaveCount(0);
 
-      // Direktes Absenden von Schritt 3 ohne Nachweis führt nirgends hin.
-      const direct = await page.request.post("/account/link/confirm", { maxRedirects: 0 });
-      expect(direct.headers().location ?? "").not.toContain("/account/link/done");
-      await page.goto("/account/link");
-      await expect(currentStep(page)).toContainText("2.");
-      await expect(confirmForm(page)).toHaveCount(0);
-
-      // Nichts hat sich geändert: B bleibt B, die Wave von A bleibt unsichtbar.
+      // B bleibt B: Hinweiskarte da, Wave von A nicht sichtbar.
       await page.goto("/");
       await expect(notice(page)).toBeVisible();
       await expect(page.getByText(waveName)).toHaveCount(0);
 
       await cancelLink(page);
-    },
-  );
-
-  test(
-    "K3 Gleiche, aber unbestätigte Adresse führt nie zur Verknüpfung: Schritt 1 bleibt stehen",
-    { tag: "@t78" },
-    async ({ browser }) => {
-      // Erneutes Anmelden (frische Sitzung, gleicher `sub`, weiter unbestätigt): dasselbe getrennte Konto B.
-      const again = await session(browser);
-      try {
-        const { page } = again;
-        await signInUnverified(page);
-        await page.goto("/");
-        await expect(notice(page)).toBeVisible();
-        await expect(page.getByText(waveName)).toHaveCount(0);
-
-        // Schritt 1 direkt starten, der Anbieter bestätigt die Adresse weiterhin nicht.
-        await startStepOne(page, false);
-        expect(new URL(page.url()).searchParams.get("error")).toBe("unverified");
-        await expect(page.locator('p[role="alert"]')).toHaveText(
-          "The sign-in service does not confirm this address. Nothing was changed.",
-        );
-        await expect(currentStep(page)).toContainText("1.");
-        await expect(passwordInput(page)).toHaveCount(0);
-        await expect(confirmForm(page)).toHaveCount(0);
-
-        // Schritte 2 und 3 lassen sich nicht überspringen, auch nicht mit dem richtigen Passwort von A.
-        const password = await page.request.post("/account/link/control/password", {
-          form: { password: passwordFor(mail) },
-          maxRedirects: 0,
-        });
-        expect(password.headers().location ?? "").not.toContain("/account/link/done");
-        const confirm = await page.request.post("/account/link/confirm", { maxRedirects: 0 });
-        expect(confirm.headers().location ?? "").not.toContain("/account/link/done");
-
-        await page.goto("/account/link");
-        await expect(currentStep(page)).toContainText("1.");
-        await expect(passwordInput(page)).toHaveCount(0);
-        await expect(confirmForm(page)).toHaveCount(0);
-
-        // B bleibt B: Hinweiskarte da, Wave von A nicht sichtbar.
-        await page.goto("/");
-        await expect(notice(page)).toBeVisible();
-        await expect(page.getByText(waveName)).toHaveCount(0);
-
-        await cancelLink(page);
-      } finally {
-        await again.ctx.close();
-      }
-    },
-  );
+    } finally {
+      await again.ctx.close();
+    }
+  });
 });
