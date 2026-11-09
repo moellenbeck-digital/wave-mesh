@@ -8,6 +8,15 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.16.0-develop.2 (09.11.2026)
+
+### Intern
+
+- **Probe der roten Schleife:** Ein weiterer Oberflächentest (`apps/e2e`, Marke `@t85`) erwartet auf der Anmeldeseite
+  einen Text, der noch nicht existiert. Er dient der Prüfung des Stufen-Ablaufs und ändert nichts am Verhalten der Anwendung.
+
+---
+
 ## 🔬 Development v0.16.0-develop.1 (08.11.2026)
 
 ### Neue Funktionen
