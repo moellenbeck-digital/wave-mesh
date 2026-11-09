@@ -21,7 +21,8 @@
  * - Das Protokoll sicherheitsrelevanter Änderungen (`account.link`): In der Oberfläche nicht sichtbar.
  * - Der Control-Server ohne Web-Frontend (Variante mit eigenen Seiten): Das Testsystem läuft mit Frontend, die CI
  *   deckt die Variante ab.
- * - `/waves/new` und `/devices/choose` tragen die Hinweiskarte erst ab PR #92 (noch nicht im Testsystem): kein Fall.
+ * - `/devices/choose` trägt die Hinweiskarte (ab PR #92), ist aber ohne Geräteanfrage nicht erreichbar: kein Fall.
+ *   `/waves/new` (ab PR #92) ist in K1b geprüft.
  *
  * Testdaten: Die Waves der Paare werden am Ende entfernt (die von A/B gehörenden von deren Sitzung, die des
  * Eigentümers von ihm). Konten lassen sich in der Oberfläche nicht löschen und bleiben bestehen (Adressen
@@ -229,6 +230,21 @@ test.describe("Konten verknüpfen nach OIDC-Anmeldung", () => {
     await page.goto("/account");
     await expect(notice(page)).toBeVisible();
     await expect(notice(page)).toContainText(`Active account: ${pa.mail}`);
+  });
+
+  test("K1b Neue Wave anlegen: auch die Wave-Anlage trägt die Hinweiskarte mit aktivem Konto und Grund", {
+    tag: "@t78",
+  }, async () => {
+    const { page } = pa.b;
+    await page.goto("/waves/new");
+    await expect(page).toHaveURL(/\/waves\/new$/);
+
+    const card = notice(page);
+    await expect(card).toBeVisible();
+    await expect(page.locator("#link-notice-title")).toHaveText("You are signed in to a separate account");
+    await expect(card).toContainText(`Active account: ${pa.mail}`);
+    await expect(card).toContainText("a wave you expect can be missing");
+    await expect(card.locator('a[href="/account/link"]')).toBeVisible();
   });
 
   test("K2 Adresse beim Anbieter bestätigt: ohne Nachweis über Konto A (falsches Passwort) kein Schritt 3, nichts ändert sich", {
