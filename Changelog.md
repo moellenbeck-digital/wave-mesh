@@ -8,6 +8,39 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## ✅ Stable v0.16.0 (10.11.2026)
+
+*Stabile Version – enthält alles aus v0.16.0-develop.1 bis v0.16.0-develop.6, dazu den Firewall-Hinweis bei `wave expose`.*
+
+### Neue Funktionen (gegenüber v0.15.1)
+
+- **`wave expose` nennt eine Firewall, die den Pier aussperrt:** Ein freigegebener Name funktionierte vom eigenen
+  Gerät aus, aus dem Internet aber nicht, weil ufw (oder firewalld) die Verbindungen des Piers auf dem
+  Wave-Interface verwirft. `wave expose` und `wave expose --list` sagen das jetzt unter Linux und nennen den Befehl
+  zum Freigeben, z. B. `sudo ufw allow in on wave1 to any port 443 proto tcp`. Geöffnet wird nichts von selbst.
+  Unter macOS und Windows wird noch nicht nachgesehen. *(neu)*
+- **Getrennte Konten geführt verknüpfen:** Wer sich über einen Anbieter ohne bestätigte Adresse angemeldet hat und
+  deshalb ein zweites Konto bekam, führt es über `/account/link` in drei Schritten mit dem bestehenden zusammen –
+  Waves, Mitgliedschaften und Geräte gehen mit. Übersicht, `/account`, `/waves/new` und die Gerätefreigabe weisen
+  darauf hin. *(seit develop.1, Hinweis seit develop.4)*
+- **Wave-Auswahl auf der Startseite:** Bei mehreren Waves ein Dropdown statt aller Karten untereinander; die Auswahl
+  steht in der Adresse und wird gemerkt. *(seit develop.1)*
+- **Wave löschen, verlassen und abmelden leichter finden:** Abschnitt **Aufräumen** in der Wave-Karte und
+  **Komplett abmelden** auf `/account`. *(seit develop.1)*
+- **Tray-Fenster zeigt die Control-Server-Adresse** jeder Verbindung. *(seit develop.1)*
+- **DNS-Provider-Seite übersichtlicher**, mit **Bearbeiten** und **Entfernen** für den eingerichteten Provider.
+  *(seit develop.1)*
+- **Wave anlegen:** Fehler stehen am Feld statt auf einer nackten Seite, und das Domain-Feld nennt das Format
+  vorab. *(seit develop.1)*
+
+### Fehlerbehebungen (gegenüber v0.15.1)
+
+- **Eigene Domain als Wave-Domain:** Apex und `www` der Domain lösen wieder normal auf; an das Wave gehen nur noch
+  die Namen, die es kennt. *(seit develop.6)*
+- **Kopfzeile bei 360 px:** „?“-Link und „Abmelden“ liegen wieder ganz im Bild. *(seit develop.6)*
+
+---
+
 ## 🔬 Development v0.16.0-develop.6 (10.11.2026)
 
 ### Fehlerbehebungen
