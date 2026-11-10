@@ -307,6 +307,15 @@ export class WindowsLink implements LinkBackend {
     return { routed: true, searched: true };
   }
 
+  /**
+   * Not asked: whether the Windows Firewall lets the daemon's listener in over
+   * the wintun adapter has not been measured on a Windows machine. Null means
+   * "no hint", not "open".
+   */
+  async hostFirewall(_iface: string, _port: number): Promise<null> {
+    return null;
+  }
+
   async syncFilter(iface: string, rules: FilterRule[] | null): Promise<FilterResult> {
     // Rules in a firewall that is off hold nothing, so it is asked in the
     // same call -- and said, instead of reporting rules that do not bite.

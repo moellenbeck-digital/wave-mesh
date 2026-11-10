@@ -1,6 +1,7 @@
 /** The iproute2 backend. */
 
 import type { FilterRule } from "@wave/proto";
+import { type HostFirewallBlock, linuxHostFirewall } from "./host-firewall.ts";
 import {
   type CommandRunner,
   canonicalAddress,
@@ -40,7 +41,14 @@ export class LinuxLink implements LinkBackend {
     private readonly run: CommandRunner = spawnRunner("ip"),
     private readonly resolvectl: CommandRunner = spawnRunner("resolvectl"),
     private readonly nft: InputRunner = spawnWithInputFile("nft"),
+    // C locale: ufw translates its status, and the parser reads the English one.
+    private readonly tool: (binary: string) => CommandRunner = (binary) =>
+      spawnRunner(binary, { LC_ALL: "C", LANG: "C" }),
   ) {}
+
+  async hostFirewall(iface: string, port: number): Promise<HostFirewallBlock | null> {
+    return linuxHostFirewall(this.tool, iface, port).catch(() => null);
+  }
 
   /** Whatever is on the interface is replaced whole; see packet-filter.ts. */
   async syncFilter(iface: string, rules: FilterRule[] | null): Promise<FilterResult> {

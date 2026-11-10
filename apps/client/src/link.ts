@@ -1,4 +1,5 @@
 import type { FilterRule } from "@wave/proto";
+import type { HostFirewallBlock } from "./host-firewall.ts";
 
 /**
  * Interface, address and route handling. What the two platforms have in
@@ -91,9 +92,13 @@ export const unenforcedFilter = (platform: string, rules: FilterRule[] | null): 
     : { enforced: false, reason: `ports are not enforced on ${platform} yet` };
 
 export const spawnRunner =
-  (binary: string): CommandRunner =>
+  (binary: string, env?: Record<string, string>): CommandRunner =>
   async (args) => {
-    const proc = Bun.spawn([binary, ...args], { stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn([binary, ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
+      ...(env ? { env: { ...process.env, ...env } } : {}),
+    });
     const [stdout, stderr] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
@@ -144,6 +149,13 @@ export interface LinkBackend {
    * who may reach the device is still limited by the netmap.
    */
   syncFilter(iface: string, rules: FilterRule[] | null): Promise<FilterResult>;
+  /**
+   * Whether a firewall of this machine drops incoming TCP on `port` over this
+   * interface -- what keeps the pier away from a name put out with `wave
+   * expose` while the name still works from here (host-firewall.ts). Null
+   * when nothing is in the way, and where the platform is not asked at all.
+   */
+  hostFirewall(iface: string, port: number): Promise<HostFirewallBlock | null>;
 }
 
 export interface DnsSettings {

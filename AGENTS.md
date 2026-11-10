@@ -2170,6 +2170,24 @@ Was daran festliegt:
   Namen mit `reachable`/`unreachable` (kein Pfad, kein Handshake, oder eine Adresse, die
   kein Peer hat); auf jedem anderen Gerät stehen die fremden Namen nur für den Resolver
   in der Netmap und erscheinen dort nicht.
+- **Eine Host-Firewall wird angesagt, nicht geöffnet** (`host-firewall.ts`,
+  `LinkBackend.hostFirewall()`). Vom Gerät selbst geht der Name über Loopback, und
+  den lässt jede Firewall durch; vom Pier kommt er über `waveN`, und dort verwirft
+  ufw mit `DEFAULT_INPUT_POLICY="DROP"` das SYN. Ping geht trotzdem (ufw lässt
+  ICMP herein), der Pier loggt nur „no answer“ — am 10.11.2026 genau so gesucht.
+  `wave expose` und `--list` tragen deshalb `firewall` (`{ tool, interface,
+  command }`) und die CLI druckt die Zeile, die freigibt: bei ufw
+  `ufw allow in on <iface> to any port <port> proto tcp` (ohne Quelle — innen
+  löst der Name auf die Wave-Adresse auf, Mitglieder brauchen denselben Port;
+  wer ihn erreicht, entscheidet die Policy), bei firewalld die Zone des
+  Interfaces bzw. eine eigene `wave`. Gelesen wird `ufw status verbose` mit
+  `LC_ALL=C` (ufw übersetzt), dann `firewall-cmd`. Selbst geöffnet wird nichts:
+  die Firewall gehört dem, der sie eingerichtet hat, und ein Accept in einer
+  eigenen nftables-Tabelle hülfe nicht — ein Drop in irgendeiner Basiskette ist
+  endgültig. Kann nicht gefragt werden (nicht root), gibt es keinen Hinweis
+  statt eines falschen. **macOS und Windows werden nicht gefragt** (Application
+  Firewall bzw. Windows-Firewall, beides ungemessen); `null` heißt dort „kein
+  Hinweis“, nicht „offen“.
 - **`set-domain` lehnt ab, solange das Wave Pier-Namen oder einen Pier hat**
   (`setWaveDomain()` → `{ conflict: "piers", names }` bzw. `{ conflict: "pier", hostname,
   zone }`, in `admin.ts` und im Webformular, 409): Zertifikate und der Wildcard-Record

@@ -75,6 +75,7 @@ export async function setUp(
   extra: Partial<TunnelSnapshot> = {},
   log: string[] = [],
   socket = false,
+  link: object = {},
 ) {
   const control = fakeControl();
   fixture.control = control;
@@ -101,7 +102,7 @@ export async function setUp(
     statePath,
     log: (line) => log.push(line),
     controlSocketPath: socket ? join(dir, "waved.sock") : undefined,
-    link: { remove: async () => {} } as never,
+    link: { remove: async () => {}, ...link } as never,
     bringUp: (async (options: { controlUrl: string }) => fakeTunnel(options.controlUrl, extra)) as never,
   });
   fixture.cleanup.push(() => daemon.stop());

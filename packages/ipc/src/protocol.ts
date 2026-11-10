@@ -369,6 +369,15 @@ export const ExposedName = z.object({
   state: ExposeState,
   /** Why not, when `state` is `failed`: the system's own words. */
   detail: z.string().nullable().default(null),
+  /**
+   * A firewall of this machine that drops what the pier sends, and the line
+   * that lets it in. Defaulted: nothing signs the IPC, and an older daemon
+   * simply has no hint to give.
+   */
+  firewall: z
+    .object({ tool: z.string(), interface: z.string(), command: z.string() })
+    .nullable()
+    .default(null),
 });
 export type ExposedName = z.infer<typeof ExposedName>;
 

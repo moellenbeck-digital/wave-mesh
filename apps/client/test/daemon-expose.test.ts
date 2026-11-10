@@ -109,6 +109,30 @@ describe("putting a name out", () => {
     ]);
   });
 
+  test("a host firewall that drops the port is named, with the line that lets the pier in", async () => {
+    const svc = await service();
+    const asked: Array<[string, number]> = [];
+    const command = "sudo ufw allow in on wave0 to any port 8443 proto tcp";
+    const log: string[] = [];
+    const { daemon } = await startUp(fixture, {}, log, false, {
+      hostFirewall: async (iface: string, port: number) => {
+        asked.push([iface, port]);
+        return { tool: "ufw", command };
+      },
+    });
+    const port = await freePort();
+
+    const result = await daemon.expose(undefined, "app", `http://127.0.0.1:${svc.port}`, port);
+    if (isNotice(result)) throw new Error(englishText(result));
+    expect(result.firewall).toEqual({ tool: "ufw", interface: "wave0", command });
+    expect(asked).toEqual([["wave0", port]]);
+    expect(log.some((line) => line.includes("ufw drops incoming TCP") && line.includes(command))).toBe(true);
+
+    const list = await daemon.exposedList(undefined);
+    if (isNotice(list)) throw new Error(englishText(list));
+    expect(list.names[0]?.firewall?.command).toBe(command);
+  });
+
   test("the listener opens by itself once a certificate covers the name, and the whole path works", async () => {
     const svc = await service();
     const { daemon, statePath, control: server } = await setUp();

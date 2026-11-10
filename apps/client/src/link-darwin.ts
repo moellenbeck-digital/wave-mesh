@@ -229,6 +229,15 @@ export class DarwinLink implements LinkBackend {
     }
   }
 
+  /**
+   * Not asked: the application firewall of macOS decides per program, not per
+   * interface, and whether it lets a signed `wave` in has not been measured.
+   * Null means "no hint", not "open".
+   */
+  async hostFirewall(_iface: string, _port: number): Promise<null> {
+    return null;
+  }
+
   async syncFilter(iface: string, rules: FilterRule[] | null): Promise<FilterResult> {
     const anchor = pfAnchorName(iface);
     if (rules === null) {

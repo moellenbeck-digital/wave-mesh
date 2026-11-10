@@ -733,6 +733,13 @@ export class Daemon {
 
     const fqdn = response.dnsName.toLowerCase();
     const state = this.runtimes.get(key)?.exposeStates?.get(fqdn);
+    const firewall = await this.firewallFor(profile, response.port);
+    if (firewall) {
+      log(
+        `${firewall.tool} drops incoming TCP ${response.port} on ${firewall.interface}, so the pier cannot ` +
+          `reach ${response.dnsName}; to let it in: ${firewall.command}`,
+      );
+    }
     return {
       controlUrl: profile.controlUrl,
       name: label,
@@ -740,6 +747,7 @@ export class Daemon {
       port: response.port,
       localUrl: local.url,
       ...viewOf(state ?? { state: "tunnel-down" }),
+      firewall,
     };
   }
 
@@ -786,6 +794,7 @@ export class Daemon {
       localUrl: entry?.localUrl ?? null,
       state: "removed",
       detail: null,
+      firewall: null,
     };
   }
 
@@ -803,20 +812,22 @@ export class Daemon {
 
     const runtime = this.runtimes.get(profileKey(profile));
     const states = runtime?.exposeStates ?? new Map<string, ListenerState>();
-    const names: ExposedName[] = remote.piers.map((pier) => {
+    const names: ExposedName[] = [];
+    for (const pier of remote.piers) {
       const entry = profile.exposed.find((item) => item.name === pier.name);
       const state: ListenerState | { state: ExposeState } = !entry
         ? { state: "unmapped" }
         : (states.get(pier.dnsName.toLowerCase()) ?? { state: "tunnel-down" });
-      return {
+      names.push({
         controlUrl: profile.controlUrl,
         name: pier.name,
         dnsName: pier.dnsName,
         port: pier.port,
         localUrl: entry?.localUrl ?? null,
         ...viewOf(state),
-      };
-    });
+        firewall: entry ? await this.firewallFor(profile, pier.port) : null,
+      });
+    }
     for (const entry of profile.exposed) {
       if (remote.piers.some((pier) => pier.name === entry.name)) continue;
       names.push({
@@ -827,6 +838,7 @@ export class Daemon {
         localUrl: entry.localUrl,
         state: "not-claimed",
         detail: null,
+        firewall: null,
       });
     }
     return {
@@ -836,6 +848,19 @@ export class Daemon {
       pier: remote.pier,
       names,
     };
+  }
+
+  /**
+   * Whether a firewall here keeps the pier from the listener on `port`
+   * (host-firewall.ts). Asked on the interface the tunnel really has; without
+   * a tunnel there is nothing to ask about yet.
+   */
+  private async firewallFor(profile: Profile, port: number): Promise<ExposedName["firewall"]> {
+    const tunnel = this.runtimes.get(profileKey(profile))?.tunnel;
+    if (!tunnel) return null;
+    const link = this.options.link ?? platformLink();
+    const block = await link.hostFirewall?.(tunnel.linkName, port).catch(() => null);
+    return block ? { ...block, interface: tunnel.linkName } : null;
   }
 
   /**

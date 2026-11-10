@@ -181,6 +181,9 @@ The language follows the system (LANG, LC_ALL, …); WAVE_LANG=en|de overrides i
         return state;
     }
   },
+  exposeFirewall: (tool: string, iface: string, port: number) =>
+    `${tool} on this machine drops incoming connections on ${iface}, so the pier cannot reach port ${port} ` +
+    "(from here it works: that goes over loopback). To let them in:",
   exposeNone: "this device has put no name out",
   exposeAllowed: (allowed: boolean): string =>
     allowed
@@ -454,6 +457,9 @@ Die Sprache folgt dem System (LANG, LC_ALL, …); WAVE_LANG=en|de setzt sie fest
         return state;
     }
   },
+  exposeFirewall: (tool, iface, port) =>
+    `${tool} auf dieser Maschine verwirft eingehende Verbindungen auf ${iface}, der Pier erreicht Port ${port} ` +
+    "also nicht (von hier aus geht es, das läuft über Loopback). Freigeben mit:",
   exposeNone: "dieses Gerät hat keinen Namen freigegeben",
   exposeAllowed: (allowed) =>
     allowed

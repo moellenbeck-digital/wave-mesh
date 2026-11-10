@@ -330,6 +330,10 @@ function printExposed(exposed: ExposedName): void {
   else {
     console.log(m.exposeName(exposed.dnsName, exposed.port, exposed.localUrl));
     console.log(`  ${m.exposeState(exposed.state, exposed.dnsName, exposed.detail)}`);
+    if (exposed.firewall) {
+      console.log(`  ${m.exposeFirewall(exposed.firewall.tool, exposed.firewall.interface, exposed.port)}`);
+      console.log(`    ${exposed.firewall.command}`);
+    }
   }
 }
 
