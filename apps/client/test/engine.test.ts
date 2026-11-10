@@ -13,11 +13,13 @@ import {
   type Started,
   TUN_DEVICE,
   TUN_LOADERS,
+  Tunnel,
   unwind,
   usesDynamicName,
   watchOutput,
 } from "../src/engine.ts";
-import type { LinkBackend } from "../src/link.ts";
+import type { DnsSettings, LinkBackend } from "../src/link.ts";
+import type { Profile } from "../src/state.ts";
 
 describe("resolverRecords", () => {
   const node = (hostname: string, last: number) => ({
@@ -343,5 +345,104 @@ describe("a start that failed halfway", () => {
       () => {},
     );
     expect(done).toEqual([]);
+  });
+});
+
+describe("the system's view of the wave's names", () => {
+  const entry = (host: string, last: number, zone: string) => ({
+    dnsName: `${host}.${zone}`,
+    ipv4: `10.77.0.${last}`,
+    ipv6: `fd7a:1:2::${last}`,
+  });
+  const netmapFor = (zone: string, hosts: string[]) =>
+    ({
+      self: { ...entry(hosts[0] ?? "nas", 1, zone), addresses: ["10.77.0.1/32", "fd7a:1:2::1/128"] },
+      peers: hosts.slice(1).map((host, i) => entry(host, i + 2, zone)),
+      dns: { suffix: zone, routes: [] },
+    }) as unknown as Parameters<Tunnel["apply"]>[0];
+
+  /** A tunnel with a resolver on a free loopback port and a link that writes things down. */
+  async function harness() {
+    // A port the resolver can keep: asking for 0 would look like a move on every sync.
+    const probe = await Bun.udpSocket({ hostname: "127.0.0.1", port: 0 });
+    const port = probe.port;
+    probe.close();
+    const configured: DnsSettings[] = [];
+    const reverted: DnsSettings[] = [];
+    const logged: string[] = [];
+    const link = {
+      resolverEndpoint: () => ({ address: "127.0.0.1", port }),
+      configureDns: async (_iface: string, dns: DnsSettings) => {
+        configured.push(dns);
+        return { routed: true, searched: dns.search !== undefined };
+      },
+      revertDns: async (_iface: string, dns: DnsSettings) => void reverted.push(dns),
+    } as unknown as LinkBackend;
+    const tunnel = new Tunnel(
+      { interfaceName: "wave0" } as unknown as Profile,
+      {} as never,
+      { close: async () => {} } as never,
+      51820,
+      1280,
+      (message) => void logged.push(message),
+      [],
+      undefined,
+      "wave0",
+      link,
+      true,
+    );
+    const sync = (netmap: Parameters<Tunnel["apply"]>[0]) =>
+      (tunnel as unknown as { syncDns(n: typeof netmap): Promise<void> }).syncDns(netmap);
+    return { tunnel, sync, configured, reverted, logged };
+  }
+
+  test("a domain the user owns: only the wave's names are routed, the apex and www are not", async () => {
+    const { tunnel, sync, configured, logged } = await harness();
+    await sync(netmapFor("rolenz-digital.de", ["nas", "laptop"]));
+
+    expect(configured).toHaveLength(1);
+    expect(configured[0]?.names).toEqual(["laptop.rolenz-digital.de", "nas.rolenz-digital.de"]);
+    expect(configured[0]?.suffixes.some((s) => s.includes("rolenz-digital.de"))).toBe(false);
+    expect(configured[0]?.search).toBeUndefined();
+    expect(logged.some((line) => line.includes("no search domain"))).toBe(true);
+    await tunnel.stop();
+  });
+
+  test("a .internal zone is routed whole and searched, as before", async () => {
+    const { tunnel, sync, configured, logged } = await harness();
+    await sync(netmapFor("rl.wave.internal", ["nas", "laptop"]));
+
+    expect(configured[0]?.suffixes[0]).toBe("rl.wave.internal");
+    expect(configured[0]?.names).toEqual([]);
+    expect(configured[0]?.search).toBe("rl.wave.internal");
+    expect(logged.some((line) => line.includes("a bare hostname finds rl.wave.internal"))).toBe(true);
+    await tunnel.stop();
+  });
+
+  test("tells the link again when a name comes or goes, and not when nothing changed", async () => {
+    const { tunnel, sync, configured } = await harness();
+    await sync(netmapFor("rolenz-digital.de", ["nas", "laptop"]));
+    await sync(netmapFor("rolenz-digital.de", ["nas", "laptop"]));
+    expect(configured).toHaveLength(1);
+
+    await sync(netmapFor("rolenz-digital.de", ["nas", "laptop", "phone"]));
+    expect(configured).toHaveLength(2);
+    expect(configured[1]?.names).toContain("phone.rolenz-digital.de");
+
+    await sync(netmapFor("rolenz-digital.de", ["nas", "phone"]));
+    expect(configured).toHaveLength(3);
+    expect(configured[2]?.names).toEqual(["nas.rolenz-digital.de", "phone.rolenz-digital.de"]);
+    await tunnel.stop();
+  });
+
+  test("stopping takes back exactly the names last set", async () => {
+    const { tunnel, sync, configured, reverted } = await harness();
+    await sync(netmapFor("rolenz-digital.de", ["nas", "laptop"]));
+    await sync(netmapFor("rolenz-digital.de", ["nas"]));
+    await tunnel.stop();
+
+    expect(reverted).toHaveLength(1);
+    expect(reverted[0]).toEqual(configured.at(-1) as DnsSettings);
+    expect(reverted[0]?.names).toEqual(["nas.rolenz-digital.de"]);
   });
 });

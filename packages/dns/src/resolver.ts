@@ -21,6 +21,18 @@ import {
 /** Wave records change when a node is renamed or renumbered, so keep TTLs short. */
 const TTL_SECONDS = 60;
 
+/**
+ * Whether a zone is a reserved placeholder (`.internal`, RFC-reserved for
+ * private use) rather than a domain somebody owns. Nothing else lives under a
+ * reserved zone, so the wave may claim all of it: route it whole, search it,
+ * and answer NXDOMAIN for what it does not know. Under any other zone the wave
+ * knows only its own names and must leave the rest to whoever runs the domain.
+ */
+export const isReservedZone = (zone: string): boolean => {
+  const z = normalizeName(zone);
+  return z === "internal" || z.endsWith(".internal");
+};
+
 export interface ZoneRecord {
   name: string;
   ipv4?: string;
@@ -31,6 +43,15 @@ export interface ResolverConfig {
   /** The wave's own zone, e.g. "rl.wave.example.com". */
   zone: string;
   records: ZoneRecord[];
+  /**
+   * Whether the wave owns every name under `zone`. Then an unknown name is
+   * NXDOMAIN (the default, and right for `.internal`). When false, the zone is
+   * a domain the user already uses -- `example.com` with a website at its
+   * apex -- and the system only sends the wave's own names here: a query for
+   * anything else is stale routing (a node was just removed) and is dropped,
+   * so the system falls through instead of being told the name does not exist.
+   */
+  authoritative?: boolean;
   /** Suffixes handed to another nameserver, e.g. an internal corporate zone. */
   routes: { suffix: string; nameservers: string[] }[];
   /**
@@ -163,6 +184,7 @@ export function resolve(packet: Uint8Array, config: ResolverConfig): Resolution 
 
   const record = config.records.find((entry) => normalizeName(entry.name) === name);
   if (!record) {
+    if (config.authoritative === false) return { kind: "drop" };
     return { kind: "answer", packet: encodeResponse({ query, code: ResponseCode.NameError }) };
   }
   // A known name without the requested type answers empty, not "no such name":

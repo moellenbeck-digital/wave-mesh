@@ -151,13 +151,23 @@ export interface DnsSettings {
   resolver: string;
   /** Its port. Only ever something other than 53 where 53 is already taken. */
   port?: number;
-  /** Suffixes to send there: the wave's own zone plus any delegated ones. */
+  /**
+   * Zones to send there whole -- the name and everything under it: the wave's
+   * own zone where it is a reserved one, plus any delegated ones.
+   */
   suffixes: string[];
+  /**
+   * Single names to send there, and nothing beside or beneath them. Used when
+   * the wave's zone is a domain the user owns: only the names the wave knows
+   * are routed, so the apex and `www` of that domain resolve as ever.
+   */
+  names?: string[];
   /**
    * The wave's own zone, to be used as a search domain as well, so that a bare
    * `laptop` finds `laptop.rl.wave.internal`. Only this one: the delegated
    * suffixes belong to someone else, and appending them to every unqualified
-   * name would change how names outside the wave resolve.
+   * name would change how names outside the wave resolve. Absent where the zone
+   * is not ours alone; a search domain would then catch the whole domain.
    */
   search?: string;
 }

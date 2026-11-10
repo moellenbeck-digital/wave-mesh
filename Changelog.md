@@ -6,6 +6,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Fehlerbehebungen
+
+- **Eigene Domain als Wave-Domain: Webseite und Apex bleiben erreichbar:** Bei einer Wave-Domain wie
+  `rolenz-digital.de` schickt der Client nicht mehr die ganze Domain an das Wave, sondern nur noch die Namen, die das
+  Wave kennt (Geräte, Dienste und Pier-Namen). `rolenz-digital.de` und `www.rolenz-digital.de` löst das System wieder
+  wie vor der Wave-Installation auf. Die Namensliste wird mitgeführt, wenn ein Gerät oder Dienst dazukommt oder
+  wegfällt; Einträge einer älteren Client-Version werden entfernt. Bei einer Wave-Domain unter `.internal` ändert sich
+  nichts, dort funktioniert `ping laptop` weiter ohne Domain-Zusatz; bei einer eigenen Domain gibt es bewusst keinen
+  Such-Zusatz mehr, Namen werden vollständig geschrieben.
+
 ---
 
 ## 🔬 Development v0.16.0-develop.5 (09.11.2026)

@@ -2722,6 +2722,28 @@ Schlüssel `disclosureAccepted.v1` eine neue Nummer.
   Search-Domains stehen dort in der Konfiguration des Netzwerkdienstes und
   gehören dem Nutzer. `configureDns()` liefert deshalb `{ routed, searched }`
   statt eines Ja/Nein, und der Client sagt die Lücke ausdrücklich an.
+- **Eine Zone, die dem Nutzer gehört, wird nie als Ganzes umgeleitet.** Nur
+  `.internal` (`isReservedZone()`) ist reserviert, dort lebt sonst nichts: ganze
+  Zone umleiten, Search-Domain, NXDOMAIN für Unbekanntes. Ist die Wave-Domain
+  `rolenz-digital.de`, wären Apex und `www` sonst weg. `planDns()` gibt dann
+  nur die Namen aus `resolverRecords()` her (Knoten, Dienste, Pier), keine
+  Search-Domain — unter Linux ist ein Eintrag ohne `~` zugleich Routing der
+  ganzen Domain, und ein nackter `www` würde gegen die fremde Domain gesucht.
+  Delegierte `routes` und Rückwärtszonen bleiben ganze Zonen. Je System:
+  `~<name>` (resolved), eine Datei je Name in `/etc/resolver`, NRPT-Regel je
+  Name **ohne** führenden Punkt (ein FQDN-Namespace meint nur diesen Namen —
+  auf einem echten Windows noch nicht nachgemessen). `DnsSettings.names` trägt
+  die Einzelnamen, `suffixes` die ganzen Zonen. Der Fingerprint (`dnsFingerprint`)
+  enthält die Namensliste, und `configureDns()` ersetzt, statt zu ergänzen:
+  resolved überschreibt die Liste, Windows löscht erst alle Regeln mit dem
+  Kommentar der Schnittstelle, macOS entfernt Dateien, die auf unseren
+  Resolver zeigen und nicht mehr gewollt sind (erkannt am Inhalt, `nameserver`
+  plus `port` — so verschwindet auch die Zonendatei einer älteren Version).
+  `revertDns()` bekommt von der Engine genau die zuletzt gesetzten Einstellungen.
+  Der Resolver kennt die Zonenart über `ResolverConfig.authoritative`: unbekannte
+  Namen in einer fremden Zone werden verworfen, nicht mit NXDOMAIN beantwortet —
+  ein System, das noch auf einen gerade entfernten Knoten routet, soll
+  durchfallen und nicht „gibt es nicht“ zwischenspeichern.
 - **Eine Relay-Sitzung gehört ihrem Socket, nicht ihrem Schlüssel.** `clients`
   ist nach Disco-Key indiziert, und `close()` löschte danach — beim
   Neuverbinden mit demselben Schlüssel räumte der zufallende **alte** Socket

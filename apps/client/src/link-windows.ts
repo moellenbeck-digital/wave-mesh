@@ -253,7 +253,13 @@ export class WindowsLink implements LinkBackend {
   /**
    * An NRPT rule routes one namespace to one server and touches nothing else,
    * which is the whole requirement. The namespace has to start with a dot to
-   * mean "and everything under it".
+   * mean "and everything under it"; without the dot it is that one name only
+   * (an FQDN rule), which is what the wave's names get when the zone is a
+   * domain the user owns -- its apex and `www` are not matched.
+   *
+   * The rules of this interface are replaced as a whole on every call, so a
+   * name that left the netmap, or the whole-zone rule of an older client, does
+   * not stay behind.
    *
    * The search side is separate and, unlike macOS, available: a
    * connection-specific suffix hangs off this adapter, so `ping laptop` finds
@@ -261,7 +267,10 @@ export class WindowsLink implements LinkBackend {
    * system-wide and would change how bare names resolve outside the wave.
    */
   async configureDns(iface: string, dns: DnsSettings): Promise<DnsResult> {
-    if (dns.suffixes.length === 0) return { routed: true, searched: true };
+    const names = dns.names ?? [];
+    if (dns.suffixes.length === 0 && names.length === 0) {
+      return { routed: true, searched: dns.search !== undefined };
+    }
     // Same stance as resolvectl on Linux: without the cmdlets there is no way
     // to route a single suffix, and taking over the whole resolver instead is
     // not a trade we make.
@@ -273,14 +282,24 @@ export class WindowsLink implements LinkBackend {
     }
 
     const comment = WindowsLink.comment(iface);
-    for (const suffix of dns.suffixes) {
+    await this.removeRules(comment);
+    const namespaces = [...dns.suffixes.map((suffix) => `.${suffix}`), ...names];
+    for (const namespace of namespaces) {
       await this.ps(
-        `Add-DnsClientNrptRule -Namespace ${psQuote(`.${suffix}`)} ` +
+        `Add-DnsClientNrptRule -Namespace ${psQuote(namespace)} ` +
           `-NameServers ${psQuote(dns.resolver)} -Comment ${psQuote(comment)} -ErrorAction Stop`,
       );
     }
 
-    if (dns.search === undefined) return { routed: true, searched: false };
+    if (dns.search === undefined) {
+      // An older client may have set the zone as this adapter's suffix, and a
+      // suffix is searched -- and so catches bare names -- until it is cleared.
+      await this.powershell([
+        `Set-DnsClient -InterfaceAlias ${psQuote(iface)} -ConnectionSpecificSuffix '' ` +
+          "-ErrorAction SilentlyContinue",
+      ]);
+      return { routed: true, searched: false };
+    }
     await this.ps(
       `Set-DnsClient -InterfaceAlias ${psQuote(iface)} ` +
         `-ConnectionSpecificSuffix ${psQuote(dns.search)} -ErrorAction Stop`,
@@ -308,14 +327,18 @@ export class WindowsLink implements LinkBackend {
     return { enforced: true };
   }
 
-  async revertDns(iface: string): Promise<void> {
-    const comment = WindowsLink.comment(iface);
-    // Never fails, like the other backends: this runs on the way down, where a
-    // missing rule is the state we wanted anyway.
+  /** Every NRPT rule this interface put there, found by the comment it wrote. */
+  private async removeRules(comment: string): Promise<void> {
     await this.powershell([
       `Get-DnsClientNrptRule | Where-Object { $_.Comment -eq ${psQuote(comment)} } | ` +
         "ForEach-Object { Remove-DnsClientNrptRule -Name $_.Name -Force }",
     ]);
+  }
+
+  async revertDns(iface: string): Promise<void> {
+    // Never fails, like the other backends: this runs on the way down, where a
+    // missing rule is the state we wanted anyway.
+    await this.removeRules(WindowsLink.comment(iface));
     await this.powershell([
       `Set-DnsClient -InterfaceAlias ${psQuote(iface)} -ConnectionSpecificSuffix '' ` +
         "-ErrorAction SilentlyContinue",
