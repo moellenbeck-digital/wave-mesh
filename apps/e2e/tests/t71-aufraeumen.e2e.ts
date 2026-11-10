@@ -327,7 +327,10 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
             "document.documentElement.scrollWidth - window.innerWidth",
           );
           expect(overflow, `Seite ${path} breiter als 360 px`).toBeLessThanOrEqual(0);
-          for (const [name, el] of [["Link „?“", link], ["Abmelden-Knopf", signOut]] as const) {
+          for (const [name, el] of [
+            ["Link „?“", link],
+            ["Abmelden-Knopf", signOut],
+          ] as const) {
             const box = await el.boundingBox();
             expect(
               (box?.x ?? -1) + (box?.width ?? 0),
