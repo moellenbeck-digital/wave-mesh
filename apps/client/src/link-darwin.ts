@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile as readFileAsync, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { FilterRule } from "@wave/proto";
 import {
@@ -106,6 +106,9 @@ export interface DarwinLinkOptions {
   resolverDir?: string;
   writeFile?: (path: string, content: string) => Promise<void>;
   removeFile?: (path: string) => Promise<void>;
+  /** File names in the resolver directory; none if it does not exist. */
+  listFiles?: (dir: string) => Promise<string[]>;
+  readFile?: (path: string) => Promise<string>;
   ifconfig?: CommandRunner;
   route?: CommandRunner;
   netstat?: CommandRunner;
@@ -113,6 +116,31 @@ export interface DarwinLinkOptions {
   pidFile?: (iface: string) => string;
   pfctl?: InputRunner;
 }
+
+/**
+ * resolver(5) takes the port on a line of its own; without it macOS would ask
+ * 53 and never reach the second wave's resolver.
+ */
+const resolverFileBody = (dns: DnsSettings): string =>
+  `nameserver ${dns.resolver}\n` + (dns.port && dns.port !== 53 ? `port ${dns.port}\n` : "");
+
+/**
+ * Names become file names, and /etc/resolver is a root-owned directory: only
+ * dotted labels of letters, digits, `_` and `-` are written or removed.
+ */
+const isFileSafe = (name: string): boolean => /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/.test(name);
+
+/** The two files say the same: same lines, comments and blanks aside. */
+const sameResolver = (content: string, body: string): boolean => {
+  const lines = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "" && !line.startsWith("#"))
+      .sort()
+      .join("\n");
+  return lines(content) === lines(body);
+};
 
 export class DarwinLink implements LinkBackend {
   private readonly ifconfig: CommandRunner;
@@ -123,6 +151,8 @@ export class DarwinLink implements LinkBackend {
   private readonly resolverDir: string;
   private readonly writeFile: (path: string, content: string) => Promise<void>;
   private readonly removeFile: (path: string) => Promise<void>;
+  private readonly listFiles: (dir: string) => Promise<string[]>;
+  private readonly readFile: (path: string) => Promise<string>;
   private readonly pfctl: InputRunner;
   /**
    * The reference `pfctl -E` handed out. pf is enabled by count, not by flag:
@@ -140,6 +170,8 @@ export class DarwinLink implements LinkBackend {
     this.resolverDir = options.resolverDir ?? "/etc/resolver";
     this.writeFile = options.writeFile ?? ((path, content) => writeFile(path, content, { mode: 0o644 }));
     this.removeFile = options.removeFile ?? ((path) => rm(path, { force: true }));
+    this.listFiles = options.listFiles ?? ((dir) => readdir(dir).catch(() => []));
+    this.readFile = options.readFile ?? ((path) => readFileAsync(path, "utf8"));
     this.pfctl = options.pfctl ?? spawnWithInput("pfctl");
   }
 
@@ -159,25 +191,42 @@ export class DarwinLink implements LinkBackend {
   /**
    * macOS resolves a domain through a file named after it in /etc/resolver,
    * which is split DNS by construction: only names under that domain are sent
-   * here, and the rest of the system keeps its usual resolvers.
-   */
-  /**
-   * One file per suffix is all /etc/resolver offers: it routes names that
+   * here, and the rest of the system keeps its usual resolvers. A single name
+   * is a file like any other -- it also catches what lies beneath it, which our
+   * resolver drops, since the wave knows no such name.
+   *
+   * One file per entry is all /etc/resolver offers: it routes names that
    * already carry the suffix, but it cannot make the system append one to a
    * bare `laptop`. macOS keeps search domains in the network service's own
    * configuration -- the user's Wi-Fi or Ethernet -- and rewriting that would
    * reach well outside the wave. So routing works here and searching does not,
    * and the caller is told which, rather than being left to guess.
+   *
+   * Files of ours that are no longer wanted -- a node that was removed, or the
+   * whole zone an older client routed -- are removed: they are recognised by
+   * what they say, which is this wave's resolver and port and nobody else's.
    */
   async configureDns(_iface: string, dns: DnsSettings): Promise<DnsResult> {
     await mkdir(this.resolverDir, { recursive: true });
-    // resolver(5) takes the port on a line of its own; without it macOS would
-    // ask 53 and never reach the second wave's resolver.
-    const body = `nameserver ${dns.resolver}\n` + (dns.port && dns.port !== 53 ? `port ${dns.port}\n` : "");
-    for (const suffix of dns.suffixes) {
-      await this.writeFile(join(this.resolverDir, suffix), body);
+    const body = resolverFileBody(dns);
+    const wanted = new Set<string>();
+    for (const entry of [...dns.suffixes, ...(dns.names ?? [])]) {
+      if (!isFileSafe(entry)) continue;
+      wanted.add(entry);
+      await this.writeFile(join(this.resolverDir, entry), body);
     }
+    await this.removeOurs(body, wanted);
     return { routed: true, searched: false };
+  }
+
+  /** Removes every file in the resolver directory that points at our resolver, bar `keep`. */
+  private async removeOurs(body: string, keep: Set<string>): Promise<void> {
+    for (const file of await this.listFiles(this.resolverDir)) {
+      if (keep.has(file) || !isFileSafe(file)) continue;
+      const path = join(this.resolverDir, file);
+      const content = await this.readFile(path).catch(() => undefined);
+      if (content !== undefined && sameResolver(content, body)) await this.removeFile(path).catch(() => {});
+    }
   }
 
   async syncFilter(iface: string, rules: FilterRule[] | null): Promise<FilterResult> {
@@ -205,9 +254,11 @@ export class DarwinLink implements LinkBackend {
   }
 
   async revertDns(_iface: string, dns: DnsSettings): Promise<void> {
-    for (const suffix of dns.suffixes) {
-      await this.removeFile(join(this.resolverDir, suffix)).catch(() => {});
+    for (const entry of [...dns.suffixes, ...(dns.names ?? [])]) {
+      if (isFileSafe(entry)) await this.removeFile(join(this.resolverDir, entry)).catch(() => {});
     }
+    // Whatever else points at us was left by an earlier run or an older client.
+    await this.removeOurs(resolverFileBody(dns), new Set());
   }
 
   private async run(args: string[]): Promise<string> {

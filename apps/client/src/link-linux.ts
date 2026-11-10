@@ -115,16 +115,23 @@ export class LinuxLink implements LinkBackend {
    * resolved there is no way to do that short of rewriting /etc/resolv.conf,
    * which would capture every name on the system -- so we decline instead.
    *
-   * The wave's own zone is listed *without* the "~", which makes it a search
-   * domain on top of a routing one: that is what lets `ping laptop` find
-   * laptop.rl.wave.internal. A search domain is only ever appended to a name
-   * that is not already qualified, so nothing outside the wave changes meaning;
-   * an unqualified name that also exists elsewhere now has one more candidate,
-   * and our resolver answers NXDOMAIN for anything the wave does not know.
+   * The wave's own zone is listed *without* the "~" when it is a search
+   * domain, which makes it a search domain on top of a routing one: that is
+   * what lets `ping laptop` find laptop.rl.wave.internal. A search domain is
+   * only ever appended to a name that is not already qualified, so nothing
+   * outside the wave changes meaning; an unqualified name that also exists
+   * elsewhere now has one more candidate, and our resolver answers NXDOMAIN
+   * for anything the wave does not know. A zone somebody owns is never a
+   * search domain -- a search entry routes the whole domain as well -- and its
+   * wave names are listed one by one, each with the "~".
+   *
+   * `resolvectl domain` replaces the interface's list, so a name that has left
+   * the netmap, or a whole zone from an older client, goes with the next call.
    */
   async configureDns(iface: string, dns: DnsSettings): Promise<DnsResult> {
+    const entries = [...dns.suffixes, ...(dns.names ?? [])];
     // Nothing asked for, so nothing failed.
-    if (dns.suffixes.length === 0) return { routed: true, searched: true };
+    if (entries.length === 0) return { routed: true, searched: dns.search !== undefined };
     if ((await this.resolvectl(["--version"])).code !== 0) return { routed: false, searched: false };
 
     const server = await this.resolvectl(["dns", iface, dns.resolver]);
@@ -133,10 +140,11 @@ export class LinuxLink implements LinkBackend {
     const domains = await this.resolvectl([
       "domain",
       iface,
-      ...dns.suffixes.map((suffix) => (suffix === dns.search ? suffix : `~${suffix}`)),
+      ...entries.map((entry) => (entry === dns.search ? entry : `~${entry}`)),
     ]);
     if (domains.code !== 0) return { routed: false, searched: false };
-    return { routed: true, searched: dns.search !== undefined };
+    // Only a search domain that is in the list is one.
+    return { routed: true, searched: dns.search !== undefined && entries.includes(dns.search) };
   }
 
   async revertDns(iface: string): Promise<void> {

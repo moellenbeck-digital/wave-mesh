@@ -10,6 +10,7 @@ import {
 } from "./message.ts";
 import {
   addressFromPtrName,
+  isReservedZone,
   type ResolverConfig,
   resolve,
   reverseZonesFor,
@@ -166,6 +167,52 @@ describe("resolving", () => {
 
   test("ignores a packet that is not a query at all", () => {
     expect(resolve(new Uint8Array([1, 2, 3]), config).kind).toBe("drop");
+  });
+});
+
+describe("a zone the user owns", () => {
+  // `rolenz.example` has a website at its apex and at www; only the wave's own
+  // names are ours, so the system routes just those here.
+  const owned: ResolverConfig = { ...config, authoritative: false };
+
+  test("still answers a name the wave knows", () => {
+    const { code, records } = readAnswers(answered(resolve(query("laptop.rl.wave.example.com"), owned)));
+    expect(code).toBe(ResponseCode.NoError);
+    expect(records).toHaveLength(1);
+  });
+
+  test("drops an unknown name instead of saying NXDOMAIN", () => {
+    // The system may still route a name that has just left the netmap; an
+    // NXDOMAIN would be cached as "does not exist", silence lets it fall through.
+    expect(resolve(query("nothere.rl.wave.example.com"), owned).kind).toBe("drop");
+    expect(resolve(query("www.rl.wave.example.com"), owned).kind).toBe("drop");
+  });
+
+  test("drops the zone's apex, which the wave does not hold", () => {
+    expect(resolve(query("rl.wave.example.com"), owned).kind).toBe("drop");
+  });
+
+  test("keeps forwarding a delegated suffix", () => {
+    expect(resolve(query("db.corp.example.com"), owned)).toEqual({
+      kind: "forward",
+      nameservers: ["10.77.0.9"],
+    });
+  });
+
+  test("the default stays NXDOMAIN, as for .internal", () => {
+    const { code } = readAnswers(answered(resolve(query("nothere.rl.wave.example.com"), config)));
+    expect(code).toBe(ResponseCode.NameError);
+  });
+});
+
+describe("reserved zones", () => {
+  test("only .internal is the wave's to claim whole", () => {
+    expect(isReservedZone("rl.wave.internal")).toBe(true);
+    expect(isReservedZone("Internal.")).toBe(true);
+    expect(isReservedZone("internal")).toBe(true);
+    expect(isReservedZone("rolenz-digital.de")).toBe(false);
+    expect(isReservedZone("not-internal.example.com")).toBe(false);
+    expect(isReservedZone("internal.example.com")).toBe(false);
   });
 });
 

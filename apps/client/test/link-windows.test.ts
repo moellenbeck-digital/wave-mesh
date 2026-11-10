@@ -236,6 +236,59 @@ describe("WindowsLink.configureDns", () => {
     expect(scripts.every((s) => !s.includes("Set-DnsClientGlobalSetting"))).toBe(true);
   });
 
+  test("routes a name alone, without the leading dot, under a zone the user owns", async () => {
+    const { powershell, scripts } = fake([HAS_NRPT]);
+    const link = new WindowsLink({ powershell });
+
+    const result = await link.configureDns("wave0", {
+      resolver: "10.77.0.2",
+      suffixes: ["corp.example.com"],
+      names: ["nas.rolenz-digital.de", "laptop.rolenz-digital.de"],
+    });
+
+    expect(result).toEqual({ routed: true, searched: false });
+    const rules = scripts.filter((s) => s.includes("Add-DnsClientNrptRule -Namespace"));
+    expect(rules).toHaveLength(3);
+    expect(rules[0]).toContain("-Namespace '.corp.example.com'");
+    // No dot: an NRPT rule for an FQDN matches that name only, not the zone
+    // above it (rolenz-digital.de, www) and not what lies beneath.
+    expect(rules[1]).toContain("-Namespace 'nas.rolenz-digital.de'");
+    expect(rules[2]).toContain("-Namespace 'laptop.rolenz-digital.de'");
+    expect(rules.some((r) => r.includes("-Namespace '.rolenz-digital.de'"))).toBe(false);
+    expect(rules.some((r) => r.includes("-Namespace 'rolenz-digital.de'"))).toBe(false);
+  });
+
+  test("replaces the interface's rules first, so nothing of an older set stays", async () => {
+    const { powershell, scripts } = fake([HAS_NRPT]);
+    const link = new WindowsLink({ powershell });
+
+    await link.configureDns("wave0", {
+      resolver: "10.77.0.2",
+      suffixes: [],
+      names: ["nas.rolenz-digital.de"],
+    });
+
+    const remove = scripts.findIndex((s) => s.includes("$_.Comment -eq 'wave:wave0'"));
+    const add = scripts.findIndex((s) => s.includes("Add-DnsClientNrptRule -Namespace"));
+    expect(remove).toBeGreaterThanOrEqual(0);
+    expect(remove).toBeLessThan(add);
+  });
+
+  test("clears an adapter suffix an older client set when there is no search domain now", async () => {
+    const { powershell, scripts } = fake([HAS_NRPT]);
+    const link = new WindowsLink({ powershell });
+
+    await link.configureDns("wave0", {
+      resolver: "10.77.0.2",
+      suffixes: [],
+      names: ["nas.rolenz-digital.de"],
+    });
+
+    const suffix = scripts.filter((s) => s.includes("Set-DnsClient "));
+    expect(suffix).toHaveLength(1);
+    expect(suffix[0]).toContain("-ConnectionSpecificSuffix ''");
+  });
+
   test("declines rather than taking over the resolver when NRPT is missing", async () => {
     const { powershell, scripts } = fake();
     const link = new WindowsLink({ powershell });
@@ -261,7 +314,7 @@ describe("WindowsLink.configureDns", () => {
 
     expect(await link.configureDns("wave0", { resolver: "10.77.0.2", suffixes: [] })).toEqual({
       routed: true,
-      searched: true,
+      searched: false,
     });
     expect(scripts).toEqual([]);
   });

@@ -1,12 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
-import { type DnsServer, type ResolverConfig, reverseZonesFor, startDnsServer } from "@wave/dns";
+import {
+  type DnsServer,
+  isReservedZone,
+  type ResolverConfig,
+  reverseZonesFor,
+  startDnsServer,
+} from "@wave/dns";
 import { MagicSock, RelayClient } from "@wave/magicsock";
 import { type Candidate, formatEndpoint, type Netmap } from "@wave/proto";
 import { ControlClient, verifyNetmap } from "./api.ts";
 import { ControlSocket, type ControlSocketOptions } from "./control-socket.ts";
+import { dnsFingerprint, planDns } from "./dns-plan.ts";
 import { findTool } from "./install.ts";
-import { interfaceIndex, type LinkBackend } from "./link.ts";
+import { type DnsSettings, interfaceIndex, type LinkBackend } from "./link.ts";
 import { nameFilePath, pidFilePath, RUN_DIR } from "./link-darwin.ts";
 import { platformLink } from "./link-platform.ts";
 import { pidFilePath as windowsPidFilePath, runDir as windowsRunDir } from "./link-windows.ts";
@@ -530,7 +537,9 @@ export class Tunnel {
   private rebinds = 0;
   private relay?: { url: string; client: RelayClient };
   private dns?: DnsServer;
-  private dnsSuffixes = "";
+  /** What the link was last told, so a change is seen and exactly that is taken back. */
+  private dnsApplied?: DnsSettings;
+  private dnsFingerprint = "";
 
   constructor(
     readonly state: Profile,
@@ -682,9 +691,13 @@ export class Tunnel {
    * Serves the wave's names and asks the system to send only those here.
    *
    * Deliberately narrow: the resolver listens on this node's own tunnel
-   * address, and the operating system is told to route just the wave's zone
+   * address, and the operating system is told to route just the wave's names
    * and any delegated suffixes to it. Every other name on the machine keeps
    * resolving exactly as it did before wave was installed.
+   *
+   * What counts as the wave's names depends on the zone: a reserved one
+   * (`.internal`) is routed whole, a domain the user owns only name by name --
+   * its apex and `www` are not ours. See {@link planDns}.
    */
   private async syncDns(netmap: Netmap): Promise<void> {
     if (!this.dnsEnabled) return;
@@ -695,6 +708,9 @@ export class Tunnel {
     const config: ResolverConfig = {
       zone: netmap.dns.suffix,
       records: resolverRecords(netmap),
+      // Under a domain the user owns, a name the wave does not know is not ours
+      // to call nonexistent.
+      authoritative: isReservedZone(netmap.dns.suffix),
       routes: netmap.dns.routes,
       reverse,
     };
@@ -710,9 +726,12 @@ export class Tunnel {
       );
       running.close();
       this.dns = undefined;
-      // Force the link to be told again; the suffixes did not change, but where
-      // to send them did.
-      this.dnsSuffixes = "";
+      // Take back what points at the old address -- on macOS the files carry the
+      // port -- and force the link to be told again; the names did not change,
+      // but where to send them did.
+      if (this.dnsApplied) await this.link.revertDns(this.linkName, this.dnsApplied).catch(() => {});
+      this.dnsApplied = undefined;
+      this.dnsFingerprint = "";
     }
 
     if (!this.dns) {
@@ -734,22 +753,31 @@ export class Tunnel {
     // The reverse zones are routed here too, or the system resolver would send
     // "what is 10.77.0.2 called?" upstream, where nobody knows and nobody says
     // so -- and anything that looks a name up before printing simply waits.
-    const suffixes = [netmap.dns.suffix, ...netmap.dns.routes.map((route) => route.suffix), ...reverse];
-    const fingerprint = suffixes.join(",");
-    if (fingerprint === this.dnsSuffixes) return;
+    const plan = planDns({
+      zone: netmap.dns.suffix,
+      records: config.records,
+      routes: netmap.dns.routes,
+      reverse,
+    });
+    const fingerprint = dnsFingerprint(plan, this.dns.address, this.dns.port);
+    if (fingerprint === this.dnsFingerprint) return;
 
-    // The wave's own zone doubles as the search domain, so `ping laptop` works
-    // without spelling out the suffix.
-    const settings = {
+    // A reserved zone doubles as the search domain, so `ping laptop` works
+    // without spelling out the suffix; any other zone has none.
+    const settings: DnsSettings = {
       resolver: this.dns.address,
       port: this.dns.port,
-      suffixes,
-      search: netmap.dns.suffix,
+      suffixes: plan.suffixes,
+      names: plan.names,
+      search: plan.search,
     };
     const configured = await this.link
       .configureDns(this.linkName, settings)
       .catch(() => ({ routed: false, searched: false }));
-    this.dnsSuffixes = fingerprint;
+    this.dnsFingerprint = fingerprint;
+    // Kept even if the link declined: it is what `stop` takes back, and taking
+    // back what was never set is harmless.
+    this.dnsApplied = settings;
 
     if (!configured.routed) {
       this.log(
@@ -758,11 +786,19 @@ export class Tunnel {
       );
       return;
     }
+    const routed = [...plan.suffixes, ...(plan.names.length > 0 ? [`${plan.names.length} wave names`] : [])];
+    if (plan.search === undefined) {
+      this.log(
+        `resolving ${routed.join(", ")} via ${this.dns.address}; ${netmap.dns.suffix} is not a reserved zone, ` +
+          "so only the wave's own names are routed and there is no search domain",
+      );
+      return;
+    }
     this.log(
       configured.searched
-        ? `resolving ${suffixes.join(", ")} via ${this.dns.address}; a bare hostname finds ${netmap.dns.suffix}`
-        : `resolving ${suffixes.join(", ")} via ${this.dns.address}; this platform has no per-interface ` +
-            `search domain, so names need their .${netmap.dns.suffix} suffix`,
+        ? `resolving ${routed.join(", ")} via ${this.dns.address}; a bare hostname finds ${plan.search}`
+        : `resolving ${routed.join(", ")} via ${this.dns.address}; this platform has no per-interface ` +
+            `search domain, so names need their .${plan.search} suffix`,
     );
   }
 
@@ -908,9 +944,10 @@ export class Tunnel {
     if (this.stunTimer) clearInterval(this.stunTimer);
     if (this.rebindTimer) clearInterval(this.rebindTimer);
     if (this.dns) {
-      await this.link
-        .revertDns(this.linkName, { resolver: this.dns.address, suffixes: this.dnsSuffixes.split(",") })
-        .catch(() => {});
+      // Exactly what was set, names included: a stale list would leave files or
+      // rules behind that nothing else removes.
+      const applied = this.dnsApplied ?? { resolver: this.dns.address, port: this.dns.port, suffixes: [] };
+      await this.link.revertDns(this.linkName, applied).catch(() => {});
       this.dns.close();
     }
     this.relay?.client.close();
