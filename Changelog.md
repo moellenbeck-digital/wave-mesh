@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.16.0-develop.6 (10.11.2026)
+
 ### Fehlerbehebungen
 
 - **Kopfzeile auf schmalen Schirmen:** Bei 360 px Breite liegen „?“-Link und „Abmelden“ wieder vollständig im Bild. Die E-Mail-Adresse wird dort zuerst gekürzt; Sprachumschalter, Link und Knopf behalten ihre Größe. Ab mittlerer Breite bleibt alles wie bisher.
