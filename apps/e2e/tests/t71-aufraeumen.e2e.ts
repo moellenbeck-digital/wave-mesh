@@ -188,14 +188,11 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
         .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
       expect(tops.length).toBeGreaterThanOrEqual(3);
       expect(tops.at(-1) ?? 0).toBeGreaterThan(tops.at(-2) ?? Number.POSITIVE_INFINITY);
-      // Lesbare Schrift: Hinweis in Fließtextgröße (14 px), nicht mehr als 13-px-Beschriftung.
-      // Als String: der Ausdruck läuft im Browser, die Typprüfung hier kennt kein DOM.
-      const hintSize = Number(
-        await c
-          .getByText(t.ownerCannotLeave, { exact: true })
-          .evaluate("(el) => Number.parseFloat(getComputedStyle(el).fontSize)"),
+      // Lesbare Schrift: Hinweis in Fließtextgröße (mindestens 14 px), nicht mehr als 13-px-Beschriftung.
+      await expect(c.getByText(t.ownerCannotLeave, { exact: true })).toHaveCSS(
+        "font-size",
+        /^(1[4-9]|[2-9]\d)(\.\d+)?px$/,
       );
-      expect(hintSize).toBeGreaterThanOrEqual(14);
     });
 
     test(`K2 [${lang}] Löschen nur mit exakt getipptem Namen: falscher Name löscht nichts`, {
@@ -204,7 +201,7 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
       await setLang(owner, lang);
       const c = await open(owner, dropName);
       await expect(c.locator('form[action$="/delete"] label')).toHaveText(t.deleteLabel(dropName));
-      for (const wrong of ["falsch", dropName.toUpperCase(), `${dropName} `, dropName.slice(0, -1)]) {
+      for (const wrong of ["falsch", dropName.toUpperCase(), `${dropName}x`, dropName.slice(0, -1)]) {
         const form = (await open(owner, dropName)).locator('form[action$="/delete"]');
         await form.locator('input[name="name"]').fill(wrong);
         await form.getByRole("button", { name: t.deleteBtn }).click();
@@ -274,7 +271,8 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
       // Der Link steht neben „Abmelden“; seine Beschriftung ist auch der zugängliche Name.
       const link = page.locator("header").getByRole("link", { name: t.signOutHelp });
       await expect(link).toBeVisible();
-      await expect(link).toHaveText(t.signOutHelp);
+      // Die Zeile trägt zusätzlich ein „?“-Zeichen für schmale Schirme (md:hidden): der volle Text steht sichtbar darin.
+      await expect(link.getByText(t.signOutHelp, { exact: true })).toBeVisible();
       await expect(page.locator("header").getByRole("button", { name: t.signOut })).toBeVisible();
       await link.click();
       await page.waitForURL((url) => url.pathname === "/account" && url.hash === "#abmelden");
@@ -317,7 +315,9 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
           await page.goto(path);
           const link = page.locator('header a[href="/account#abmelden"]');
           await expect(link).toBeVisible();
-          await expect(link).toHaveText("?");
+          // toHaveText läse auch den ausgeblendeten Langtext (textContent): sichtbar ist nur das „?“.
+          await expect(link.getByText("?", { exact: true })).toBeVisible();
+          await expect(link.getByText(t.signOutHelp, { exact: true })).toBeHidden();
           await expect(link).toHaveAttribute("aria-label", t.signOutHelp);
           const signOut = page.locator("header").getByRole("button", { name: t.signOut });
           await expect(signOut).toBeVisible();
@@ -327,10 +327,16 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
             "document.documentElement.scrollWidth - window.innerWidth",
           );
           expect(overflow, `Seite ${path} breiter als 360 px`).toBeLessThanOrEqual(0);
-          for (const el of [link, signOut]) {
+          for (const [name, el] of [
+            ["Link „?“", link],
+            ["Abmelden-Knopf", signOut],
+          ] as const) {
             const box = await el.boundingBox();
-            expect((box?.x ?? -1) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
-            expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+            expect(
+              (box?.x ?? -1) + (box?.width ?? 0),
+              `${name} auf ${path}: rechte Kante ${JSON.stringify(box)}`,
+            ).toBeLessThanOrEqual(360);
+            expect(box?.x ?? -1, `${name} auf ${path}: linke Kante`).toBeGreaterThanOrEqual(0);
           }
         }
       } finally {
