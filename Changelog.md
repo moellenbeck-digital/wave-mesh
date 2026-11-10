@@ -8,6 +8,7 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ### Fehlerbehebungen
 
+- **Kopfzeile auf schmalen Schirmen:** Bei 360 px Breite liegen „?“-Link und „Abmelden“ wieder vollständig im Bild. Die E-Mail-Adresse wird dort zuerst gekürzt; Sprachumschalter, Link und Knopf behalten ihre Größe. Ab mittlerer Breite bleibt alles wie bisher.
 - **Eigene Domain als Wave-Domain: Webseite und Apex bleiben erreichbar:** Bei einer Wave-Domain wie
   `rolenz-digital.de` schickt der Client nicht mehr die ganze Domain an das Wave, sondern nur noch die Namen, die das
   Wave kennt (Geräte, Dienste und Pier-Namen). `rolenz-digital.de` und `www.rolenz-digital.de` löst das System wieder

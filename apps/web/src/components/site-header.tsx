@@ -57,7 +57,7 @@ export function SiteHeader({ me, locale }: { me: Me | null; locale: Locale }) {
                 </span>
               </a>
               <form method="post" action="/auth/logout" className="shrink-0">
-                <button type="submit" className="wc-btn wc-btn-secondary">
+                <button type="submit" className="wc-btn wc-btn-secondary max-sm:px-3">
                   {t.signOut}
                 </button>
               </form>
