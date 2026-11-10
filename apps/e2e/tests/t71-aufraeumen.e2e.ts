@@ -321,23 +321,33 @@ test.describe("Löschen, Verlassen, Abmelden auffindbar", () => {
           await expect(link).toHaveAttribute("aria-label", t.signOutHelp);
           const signOut = page.locator("header").getByRole("button", { name: t.signOut });
           await expect(signOut).toBeVisible();
-          // Nichts läuft über: weder die Seite noch Link und Knopf im Header.
-          // Als String: der Ausdruck läuft im Browser, die Typprüfung hier kennt kein DOM.
-          const overflow = await page.evaluate<number>(
-            "document.documentElement.scrollWidth - window.innerWidth",
-          );
-          expect(overflow, `Seite ${path} breiter als 360 px`).toBeLessThanOrEqual(0);
-          for (const [name, el] of [
-            ["Link „?“", link],
-            ["Abmelden-Knopf", signOut],
-          ] as const) {
-            const box = await el.boundingBox();
-            expect(
-              (box?.x ?? -1) + (box?.width ?? 0),
-              `${name} auf ${path}: rechte Kante ${JSON.stringify(box)}`,
-            ).toBeLessThanOrEqual(360);
-            expect(box?.x ?? -1, `${name} auf ${path}: linke Kante`).toBeGreaterThanOrEqual(0);
-          }
+          // Nichts läuft über: weder die Seite noch Link und Knopf im Header. Einmal mit der echten
+          // Adresse, einmal mit einer sehr langen: die Adresse muss zuerst nachgeben (Kürzung),
+          // nie „?“ und Abmelden hinausdrängen.
+          const checkFit = async (variant: string) => {
+            // Als String: der Ausdruck läuft im Browser, die Typprüfung hier kennt kein DOM.
+            const overflow = await page.evaluate<number>(
+              "document.documentElement.scrollWidth - window.innerWidth",
+            );
+            expect(overflow, `Seite ${path} (${variant}) breiter als 360 px`).toBeLessThanOrEqual(0);
+            for (const [name, el] of [
+              ["Link „?“", link],
+              ["Abmelden-Knopf", signOut],
+            ] as const) {
+              const box = await el.boundingBox();
+              expect(
+                (box?.x ?? -1) + (box?.width ?? 0),
+                `${name} auf ${path} (${variant}): rechte Kante ${JSON.stringify(box)}`,
+              ).toBeLessThanOrEqual(360);
+              expect(box?.x ?? -1, `${name} auf ${path} (${variant}): linke Kante`).toBeGreaterThanOrEqual(0);
+            }
+          };
+          await checkFit("eigene Adresse");
+          await page.evaluate(`(() => {
+            const a = document.querySelector('header a[href="/account"]');
+            if (a) a.textContent = "eine-sehr-lange.adresse.mit-vielen-teilen+und-tag@subdomain.beispiel-firma.example.test";
+          })()`);
+          await checkFit("sehr lange Adresse");
         }
       } finally {
         await ctx.close();
