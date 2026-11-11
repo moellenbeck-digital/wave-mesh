@@ -260,6 +260,8 @@ export function spk(version: string, arch: string, files: Record<string, Uint8Ar
     { path: "package.tgz", content: inner, mode: 0o644 },
     { path: "scripts/", mode: 0o755 },
     { path: "scripts/start-stop-status", content: packaged("scripts/start-stop-status"), mode: 0o755 },
+    { path: "scripts/preupgrade", content: packaged("scripts/preupgrade"), mode: 0o755 },
+    { path: "scripts/postupgrade", content: packaged("scripts/postupgrade"), mode: 0o755 },
     { path: "scripts/preuninst", content: packaged("scripts/preuninst"), mode: 0o755 },
     // Not one of DSM's hooks: the step as root that DSM 7 does not give a package.
     { path: "scripts/setup", content: packaged("scripts/setup"), mode: 0o755 },

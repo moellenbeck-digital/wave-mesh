@@ -1,0 +1,5 @@
+#!/bin/sh
+# DSM 7.4 requires this hook when replacing an installed third-party package.
+# The daemon and its state live outside the package lifecycle; there is nothing
+# to change before DSM replaces the package payload.
+exit 0

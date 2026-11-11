@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   defaultBinaryPath,
   install,
@@ -606,6 +609,23 @@ describe("a machine without shadow-utils", () => {
     const plan = planInstall({ ...options, lookup: syno });
     expect(plan.commands).toContainEqual(["/usr/syno/sbin/synogroup", "--add", "wave", "shared"]);
     expect(plan.commands).toContainEqual(["/usr/syno/sbin/synogroup", "--member", "wave", "shared"]);
+  });
+
+  test("a repeat setup on DSM does not try to create the existing group again", async () => {
+    const { planInstall } = await import("../src/install.ts");
+    const dir = mkdtempSync(join(tmpdir(), "wave-install-groups-"));
+    try {
+      const groupPath = join(dir, "group");
+      writeFileSync(groupPath, "users:x:100:shared\nwave:x:65536:shared\n");
+      const syno = (name: string): string | null =>
+        name === "synogroup" ? "/usr/syno/sbin/synogroup" : null;
+      const plan = planInstall({ ...options, groupPath, lookup: syno });
+      expect(plan.commands.some((command) => command.includes("--add"))).toBe(false);
+      expect(plan.commands).toContainEqual(["/usr/syno/sbin/synogroup", "--member", "wave", "shared"]);
+      expect(plan.commands).toContainEqual(["systemctl", "restart", "wave"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   // What the DSM package's start script asks for: no account behind it (DSM

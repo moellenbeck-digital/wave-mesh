@@ -11,6 +11,7 @@ import {
   type DaemonLink,
   handle,
   isAdministrator,
+  readCgiBody,
   type UiDeps,
 } from "../src/dsm-ui.ts";
 import { escapeHtml, safeHref, statusFragment } from "../src/dsm-ui-view.ts";
@@ -132,6 +133,20 @@ const deps = (connect: Connect, overrides: Partial<UiDeps> = {}): UiDeps => ({
 const parse = (response: { body: string }): { html?: string; error?: string } => JSON.parse(response.body);
 
 describe("the CGI environment", () => {
+  test("reads only CONTENT_LENGTH bytes even when stdin stays open", () => {
+    const source = Buffer.from('{"controlUrl":"https://wave.example.com"}next request');
+    let cursor = 0;
+    const length = source.indexOf("next request");
+    const body = readCgiBody(length, (_fd, target, offset, count) => {
+      const size = Math.min(count, 3);
+      source.copy(target, offset, cursor, cursor + size);
+      cursor += size;
+      return size;
+    });
+    expect(JSON.parse(body)).toEqual({ controlUrl: "https://wave.example.com" });
+    expect(cursor).toBe(length);
+  });
+
   test("is read into a request", () => {
     const parsed = cgiRequest(
       {
@@ -281,6 +296,8 @@ describe("what it shows", () => {
     expect(html).toContain("via relay · 21 ms");
     expect(html).toContain('href="https://grafana.rl.wave.example.com/"');
     expect(html).toContain('data-action="down" data-id="https://wave.example.com"');
+    expect(html).toContain('data-action="logout" data-id="https://wave.example.com"');
+    expect(html).toContain("Remove from this device");
     expect(daemon.open).toBe(0);
   });
 
@@ -381,6 +398,29 @@ describe("signing in", () => {
     expect(daemon.open).toBe(0);
   });
 
+  test("says when the daemon never starts the sign-in", async () => {
+    const daemon = fakeDaemon(status);
+    const response = await handle(
+      post("/api/login", { controlUrl: "https://wave.example.com" }, { acceptLanguage: "de" }),
+      deps(daemon.connect),
+    );
+    expect(parse(response).error).toContain("Anmeldung noch nicht gestartet");
+  });
+
+  test("shows a certificate failure prominently and in the wave row", async () => {
+    const daemon = fakeDaemon(() =>
+      status([
+        { controlUrl: "https://wave.example.com", state: "failed", message: "certificate verify failed" },
+      ]),
+    );
+    const response = await handle(
+      post("/api/login", { controlUrl: "https://wave.example.com" }, { acceptLanguage: "de" }),
+      deps(daemon.connect),
+    );
+    expect(parse(response).error).toContain("TLS-Zertifikat unter https://wave.example.com");
+    expect(parse(response).html).toContain("TLS-Zertifikat unter https://wave.example.com");
+  });
+
   test("stops waiting as soon as the daemon says why it cannot get on", async () => {
     const daemon = fakeDaemon(() =>
       status([
@@ -392,8 +432,12 @@ describe("signing in", () => {
         },
       ]),
     );
-    await handle(post("/api/login", { controlUrl: "https://wave.example.com" }), deps(daemon.connect));
+    const response = await handle(
+      post("/api/login", { controlUrl: "https://wave.example.com" }),
+      deps(daemon.connect),
+    );
     expect(daemon.statusCalls).toBe(1);
+    expect(parse(response).error).toContain("ECONNREFUSED");
   });
 
   test("an address that is not one is refused before the daemon hears of it", async () => {
@@ -418,6 +462,17 @@ describe("signing in", () => {
 });
 
 describe("connecting and disconnecting", () => {
+  test("removes only the named local wave profile", async () => {
+    let removed = false;
+    const daemon = fakeDaemon(() => status(removed ? [] : [UP]), { logout: { type: "ok" } });
+    const pending = handle(post("/api/logout", { id: "https://wave.example.com" }), deps(daemon.connect));
+    removed = true;
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(daemon.sent).toContainEqual({ command: "logout", controlUrl: "https://wave.example.com" });
+    expect(parse(response).html).toContain("not in a wave yet");
+  });
+
   test("names the wave by its key and answers with the status after", async () => {
     let down = false;
     const daemon = fakeDaemon(

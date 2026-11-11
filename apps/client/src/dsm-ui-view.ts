@@ -35,6 +35,9 @@ const en = {
   signingIn: "Signing in…",
   connect: "Connect",
   disconnect: "Disconnect",
+  remove: "Remove from this device",
+  confirmRemove:
+    "Remove {name} from this DiskStation? This deletes its local keys and disconnects this device from the wave.",
   approve: "Approve in the browser",
   approveHint: "Open the link, sign in and approve this DiskStation. This page notices by itself.",
   loading: "Asking the wave service…",
@@ -53,6 +56,9 @@ const en = {
   notAdmin: "Only administrators of this DiskStation can manage wave.",
   notAControlUrl: (typed: string) => `“${typed}” is not the address of a control server.`,
   stale: "Lost touch with the wave service -- this is how things stood before.",
+  loginNoProgress: "The wave service has not started signing in. Please try again.",
+  certificateFailure: (url: string) =>
+    `The TLS certificate at ${url} could not be verified. Check the control server address and its certificate.`,
   version: (version: string) => `wave ${version}`,
 } satisfies Messages;
 
@@ -68,6 +74,9 @@ const de: typeof en = {
   signingIn: "Melde an…",
   connect: "Verbinden",
   disconnect: "Trennen",
+  remove: "Von diesem Gerät entfernen",
+  confirmRemove:
+    "{name} von dieser DiskStation entfernen? Die lokalen Schlüssel werden gelöscht und dieses Gerät verlässt den Wave.",
   approve: "Im Browser freigeben",
   approveHint: "Öffne den Link, melde dich an und gib die DiskStation frei. Diese Seite merkt es von selbst.",
   loading: "Frage den wave-Dienst…",
@@ -87,6 +96,9 @@ const de: typeof en = {
   notAdmin: "Nur Administratoren dieser DiskStation können wave verwalten.",
   notAControlUrl: (typed) => `„${typed}“ ist keine Adresse eines Control-Servers.`,
   stale: "Keine Verbindung zum wave-Dienst -- so stand es zuletzt.",
+  loginNoProgress: "Der wave-Dienst hat die Anmeldung noch nicht gestartet. Bitte versuche es erneut.",
+  certificateFailure: (url) =>
+    `Das TLS-Zertifikat unter ${url} konnte nicht geprüft werden. Prüfe die Adresse und das Zertifikat des Control-Servers.`,
   version: (version) => `wave ${version}`,
 };
 
@@ -133,15 +145,25 @@ function describePath(peer: ProfileStatus["peers"][number], locale: Locale): str
   return peer.rttMs === null ? text : `${text} · ${Math.round(peer.rttMs)} ms`;
 }
 
+export function profileProblem(profile: ProfileStatus, locale: Locale): string | null {
+  if (profile.state === "starting" && profile.notice) return readNotice(profile, locale);
+  if (profile.state !== "failed") return null;
+  const message = profile.message;
+  if (message && /certificate|x509|SSL|TLS|ALTNAME/i.test(message)) {
+    return uiText(locale).certificateFailure(profile.controlUrl);
+  }
+  return message ?? uiText(locale).failed;
+}
+
 function waveDetail(profile: ProfileStatus, locale: Locale): string {
   const text = uiText(locale);
   if (profile.state === "up") {
     return profile.self ? `${profile.self.ipv4} · ${profile.self.dnsName}` : (profile.dnsSuffix ?? "");
   }
   if (profile.state === "waiting-for-approval") return tunnelWords(locale).waitingInBrowser;
-  if (profile.state === "starting") return readNotice(profile, locale) ?? tunnelWords(locale).connecting;
+  if (profile.state === "starting") return profileProblem(profile, locale) ?? tunnelWords(locale).connecting;
   // A raw reason from deeper down, shown as it came.
-  if (profile.state === "failed") return profile.message ?? text.failed;
+  if (profile.state === "failed") return profileProblem(profile, locale) ?? text.failed;
   return text.notConnected;
 }
 
@@ -156,6 +178,9 @@ function waveRow(profile: ProfileStatus, locale: Locale): string {
   const button = `<button type="button" class="btn secondary" data-action="${action}" data-id="${escapeHtml(
     profileKeyOf(profile),
   )}">${escapeHtml(action === "down" ? text.disconnect : text.connect)}</button>`;
+  const remove = `<button type="button" class="btn secondary remove" data-action="logout" data-id="${escapeHtml(
+    profileKeyOf(profile),
+  )}" data-name="${escapeHtml(profileName(profile))}">${escapeHtml(text.remove)}</button>`;
 
   const approval =
     profile.state === "waiting-for-approval" && profile.authUrl
@@ -168,7 +193,7 @@ function waveRow(profile: ProfileStatus, locale: Locale): string {
     profileName(profile),
   )}</div><div class="meta${profile.state === "failed" ? " error-text" : ""}">${escapeHtml(
     waveDetail(profile, locale),
-  )}</div></div>${button}</div>${approval}</li>`;
+  )}</div></div><div class="actions">${button}${remove}</div></div>${approval}</li>`;
 }
 
 function machineRows(profiles: ProfileStatus[], locale: Locale): string {
@@ -240,7 +265,12 @@ const scriptJson = (value: unknown): string => JSON.stringify(value).replace(/</
  */
 export function page(locale: Locale, nonce: string): string {
   const text = uiText(locale);
-  const client = { stale: text.stale, signIn: text.signIn, signingIn: text.signingIn };
+  const client = {
+    stale: text.stale,
+    signIn: text.signIn,
+    signingIn: text.signingIn,
+    confirmRemove: text.confirmRemove,
+  };
   return `<!doctype html>
 <html lang="${locale}">
 <head>
@@ -293,6 +323,7 @@ main{max-width:46rem;margin:0 auto;padding:1.5rem 1rem 3rem;display:grid;gap:1re
 .list>li{padding:.625rem 0;border-bottom:1px solid var(--line)}
 .list>li:last-child{border-bottom:0}
 .row{display:flex;align-items:flex-start;gap:.75rem}
+.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.4rem}
 .grow{flex:1;min-width:0}
 .name{color:var(--navy);font-weight:500;overflow-wrap:anywhere}
 .meta{color:var(--slate);font-size:.8125rem;overflow-wrap:anywhere}
@@ -316,6 +347,7 @@ main{max-width:46rem;margin:0 auto;padding:1.5rem 1rem 3rem;display:grid;gap:1re
 .btn.primary:hover{background:var(--accent-strong)}
 .btn.secondary{background:transparent;color:var(--navy);border:1px solid #0f274426}
 .btn.secondary:hover{background:#0f274408}
+.btn.remove{color:var(--red)}
 .btn:disabled{opacity:.6;cursor:default}
 .btn:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 label{display:block;color:var(--navy);font-size:.875rem;font-weight:500;margin-bottom:.25rem}
@@ -364,15 +396,15 @@ async function api(path, body) {
   return answer;
 }
 
-function show(answer) {
+function show(answer, preserveError = false) {
   if (answer.html !== undefined) status.innerHTML = answer.html;
-  say(answer.error);
+  if (!preserveError || answer.error) say(answer.error);
 }
 
 async function refresh() {
   if (busy) return;
   try {
-    show(await api("view"));
+    show(await api("view"), true);
   } catch {
     say(TEXT.stale);
   }
@@ -381,6 +413,7 @@ async function refresh() {
 status.addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
+  if (button.dataset.action === "logout" && !confirm(TEXT.confirmRemove.replace("{name}", button.dataset.name || ""))) return;
   button.disabled = true;
   busy = true;
   try {

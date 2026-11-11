@@ -1,0 +1,8 @@
+#!/bin/sh
+# DSM runs this as the package user. It cannot restart the root-owned daemon.
+# Keep the package upgrade successful and tell the administrator how to load
+# the new binary into the running service.
+if systemctl cat wave >/dev/null 2>&1; then
+  echo "wave: package upgraded. Run /var/packages/wave/scripts/setup as root to restart the daemon with the new binary"
+fi
+exit 0

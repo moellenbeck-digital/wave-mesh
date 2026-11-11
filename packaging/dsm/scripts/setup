@@ -40,6 +40,9 @@ case "$1" in
     # --socket-user hands the daemon's socket to the package's user as well:
     # DSM runs the package's page (ui/index.cgi) as that user, and the page is
     # how the NAS is signed in and looked at without a shell.
+    # A DSM has no per-user tray session. sudo provides SUDO_USER from the SSH
+    # account, but that user is not part of this package's service setup.
+    unset SUDO_USER SUDO_UID
     exec "$WAVE" install --binary "$WAVE" --socket-user wave-pkg
     ;;
   uninstall)

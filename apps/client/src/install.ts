@@ -508,15 +508,20 @@ export function planInstall(options: InstallOptions = {}): InstallPlan {
       // synogroup takes its members along with the group, so there the second
       // command confirms the membership rather than being the other half of
       // the job. It lives in /usr/syno/sbin, which is why TOOL_DIRS names it.
-      const create = firstAvailable(
-        [
-          ["groupadd", "-f", "wave"],
-          ["addgroup", "wave"],
-          user ? ["synogroup", "--add", "wave", user] : ["synogroup", "--add", "wave"],
-        ],
-        lookup,
-      );
-      if (create) commands.push(create);
+      // Synology's synogroup --add fails when the group already exists. A
+      // repeat of the package's root setup is the normal upgrade path, so
+      // only create a group the account database does not already contain.
+      if (!groupExists(group, groups)) {
+        const create = firstAvailable(
+          [
+            ["groupadd", "-f", "wave"],
+            ["addgroup", "wave"],
+            user ? ["synogroup", "--add", "wave", user] : ["synogroup", "--add", "wave"],
+          ],
+          lookup,
+        );
+        if (create) commands.push(create);
+      }
       const member = user
         ? firstAvailable(
             [

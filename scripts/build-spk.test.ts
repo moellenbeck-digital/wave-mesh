@@ -109,6 +109,8 @@ describe("the packages", () => {
             "conf/resource",
             "package.tgz",
             "scripts/",
+            "scripts/preupgrade",
+            "scripts/postupgrade",
             "scripts/preuninst",
             "scripts/setup",
             "scripts/start-stop-status",
@@ -118,7 +120,13 @@ describe("the packages", () => {
         // builder's own uid is no one's there.
         for (const line of listing) expect(line).toContain("root");
         // DSM runs these directly.
-        for (const script of ["scripts/start-stop-status", "scripts/preuninst", "scripts/setup"]) {
+        for (const script of [
+          "scripts/start-stop-status",
+          "scripts/preupgrade",
+          "scripts/postupgrade",
+          "scripts/preuninst",
+          "scripts/setup",
+        ]) {
           expect(listing.find((line) => line.endsWith(script))?.startsWith("-rwxr-xr-x")).toBe(true);
         }
       });
@@ -263,7 +271,7 @@ describe("run-as in a privilege file", () => {
 const scriptPath = (name: string): string => join(import.meta.dir, "..", "packaging", "dsm", "scripts", name);
 
 describe("the scripts DSM runs", () => {
-  for (const script of ["start-stop-status", "preuninst", "setup"]) {
+  for (const script of ["start-stop-status", "preupgrade", "postupgrade", "preuninst", "setup"]) {
     test(`${script} is valid shell`, async () => {
       await run(["sh", "-n", scriptPath(script)]);
     });
@@ -325,6 +333,15 @@ exit 0`,
 
 describe("the package as the package user", () => {
   // DSM runs these as the package's own user, who is no one's root.
+  test("upgrade hooks leave the root daemon alone and ask for setup afterward", async () => {
+    const box = sandbox({ uid: 1024, unit: true, active: true });
+    expect((await box.run("preupgrade")).code).toBe(0);
+    const result = await box.run("postupgrade");
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("scripts/setup as root");
+    expect(result.calls).toEqual(["systemctl cat wave"]);
+  });
+
   test("start does not fail, and does not try to be root, while the daemon is not set up", async () => {
     const result = await sandbox({ uid: 1024, unit: false }).run("start-stop-status", "start");
     expect(result.code).toBe(0);

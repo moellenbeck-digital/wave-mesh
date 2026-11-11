@@ -1,16 +1,17 @@
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readSync } from "node:fs";
 import { type Locale, requestLocale } from "@wave/i18n";
 import {
   type ConnectFailure,
   DaemonClient,
   DEFAULT_SOCKET_PATH,
+  profileKeyOf,
   type Response as Reply,
   type Request,
   readNotice,
   type Status,
 } from "@wave/ipc";
-import { page, statusFragment, uiText, unreachableFragment } from "./dsm-ui-view.ts";
+import { page, profileProblem, statusFragment, uiText, unreachableFragment } from "./dsm-ui-view.ts";
 import { normaliseControlUrl } from "./state.ts";
 
 /**
@@ -74,6 +75,7 @@ const REASONS: Record<number, string> = {
   403: "Forbidden",
   404: "Not Found",
   405: "Method Not Allowed",
+  413: "Content Too Large",
   415: "Unsupported Media Type",
 };
 
@@ -155,7 +157,7 @@ export async function handle(request: CgiRequest, deps: UiDeps): Promise<CgiResp
     };
   }
 
-  const action = /^\/api\/(view|login|up|down)$/.exec(request.path)?.[1];
+  const action = /^\/api\/(view|login|up|down|logout)$/.exec(request.path)?.[1];
   if (!action) return json(404, { error: "not-found" });
 
   // DSM's token first: without it, authenticate.cgi is not even asked.
@@ -213,6 +215,19 @@ export async function handle(request: CgiRequest, deps: UiDeps): Promise<CgiResp
 
   const id = typeof body.id === "string" ? body.id : "";
   if (!id) return json(400, { error: "id" });
+  if (action === "logout") {
+    return json(
+      200,
+      await act(
+        deps.connect,
+        { command: "logout", controlUrl: id },
+        locale,
+        sleep,
+        LOGIN_WAIT_MS,
+        (status) => !status.profiles.some((profile) => profileKeyOf(profile) === id),
+      ),
+    );
+  }
   return json(
     200,
     await act(
@@ -286,7 +301,13 @@ async function act(
       status = reply.response?.type === "status" ? reply.response.status : await statusOf(watcher.client);
       if (reply.response || (status && done(status)) || waited >= waitMs) break;
     }
-    return { html: status ? statusFragment(status, locale) : unreachableFragment("unreachable", locale) };
+    const html = status ? statusFragment(status, locale) : unreachableFragment("unreachable", locale);
+    if (command.command !== "login") return { html };
+    const profile = status?.profiles.find((entry) => entry.controlUrl === command.controlUrl);
+    return {
+      html,
+      error: profile ? (profileProblem(profile, locale) ?? undefined) : uiText(locale).loginNoProgress,
+    };
   } finally {
     // Closing does not stop what was asked: the daemon carries an enrolment on
     // without anyone listening, and the page's next poll shows where it got.
@@ -331,11 +352,37 @@ export function isAdministrator(user: string, groupFile = "/etc/group"): boolean
 /** Runs one request from the CGI environment and writes the answer to stdout. */
 export async function runDsmUi(env: Record<string, string | undefined> = process.env): Promise<void> {
   const length = Number(env.CONTENT_LENGTH ?? 0);
-  const body = length > 0 ? (await Bun.stdin.text()).slice(0, length) : "";
+  // A CGI server may keep stdin open after the request bytes. Reading until
+  // EOF leaves the browser's POST pending forever on DSM, so read exactly the
+  // declared byte count. The limit keeps a forged length from allocating
+  // arbitrary memory in one CGI process.
+  if (!Number.isSafeInteger(length) || length < 0 || length > 8192) {
+    await Bun.write(Bun.stdout, cgiOutput(json(413, { error: "body-too-large" })));
+    return;
+  }
+  let body: string;
+  try {
+    body = readCgiBody(length);
+  } catch {
+    await Bun.write(Bun.stdout, cgiOutput(json(400, { error: "incomplete-body" })));
+    return;
+  }
   const response = await handle(cgiRequest(env, body), {
     authenticate: authenticateWithDsm,
     isAdmin: (user) => isAdministrator(user),
     connect: () => DaemonClient.open(env.WAVE_SOCKET ?? DEFAULT_SOCKET_PATH),
   });
   await Bun.write(Bun.stdout, cgiOutput(response));
+}
+
+type ReadStdin = (fd: number, buffer: Buffer, offset: number, length: number, position: null) => number;
+
+export function readCgiBody(length: number, read: ReadStdin = readSync): string {
+  const buffer = Buffer.alloc(length);
+  for (let offset = 0; offset < length; ) {
+    const count = read(0, buffer, offset, length - offset, null);
+    if (count === 0) throw new Error("incomplete CGI request body");
+    offset += count;
+  }
+  return buffer.toString("utf8");
 }

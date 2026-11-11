@@ -4,11 +4,104 @@ Das Installationspaket (SPK) und die Zertifikatsablage für DSM. Gebaut wird mit
 `bun scripts/build-spk.ts [dist]` nach `scripts/build-clients.sh --package`;
 im Release übernimmt das `release.yml`.
 
-**Nicht auf echter Hardware geprüft.** Alles unten ist aus Synologys
-Entwicklerdoku, aus dem Quelltext von Tailscale und aus Community-Paketen
-abgeleitet (Quellen am Ende), und die Tests laufen gegen einen nachgebauten
-DSM-Zertifikatspeicher. Vor dem ersten Release gehört ein Lauf auf einem NAS
-dazu — siehe „Abnahme“.
+## Inbetriebnahme ohne SSH
+
+1. Das SPK für die Architektur des NAS im **Paketzentrum → Manuelle
+   Installation** installieren und das Paket starten. Die DS920+ nimmt
+   `x86_64`; andere Modelle müssen passend zu ihrer CPU gewählt werden.
+2. Einmal unter **Systemsteuerung → Aufgabenplaner → Erstellen → Geplante
+   Aufgabe → Benutzerdefiniertes Skript** eine Aufgabe mit Benutzer **root**
+   anlegen. Unter *Aufgabeneinstellungen* als Skript
+   `/var/packages/wave/scripts/setup` eintragen. Die Aufgabe speichern,
+   markieren, **Ausführen** und danach löschen. Vor dem Lauf lässt sich unter
+   *Einstellungen* das Speichern der Ausgabe einschalten; das Ergebnis steht
+   dann unter **Aktion → Ergebnis anzeigen**. Der Dienst startet danach bei
+   NAS-Neustarts über systemd, ohne wiederkehrende Aufgabe.
+   Nach einem SPK-Upgrade denselben Befehl erneut ausführen, damit der laufende
+   Daemon das neue Binary nutzt. Die Wave-Anmeldung bleibt dabei erhalten.
+3. **wave** im DSM-Hauptmenü öffnen. Unter **Einem Wave beitreten** die ganze
+   `https://`-Adresse des Control-Servers eingeben und **Anmelden** drücken.
+   Den angezeigten Freigabelink im Browser öffnen, dort anmelden und die
+   DiskStation freigeben.
+   Läuft der Control-Server nur im LAN, ist die Adresse die vom NAS aus
+   erreichbare Hostadresse, zum Beispiel `http://<LAN-IP>:8080` bei der
+   Compose-Entwicklungsumgebung. `localhost` bezeichnet hier die DiskStation,
+   nicht den anderen Server. Ein Hostname muss auf der DiskStation auflösbar
+   sein; ein bloßer Rechnername aus einer anderen Maschine genügt nicht.
+4. Nach der Freigabe zeigt die Seite den Wave, seine Verbindung und die
+   anderen Geräte mit ihren Diensten. **Verbinden** und **Trennen** wirken je
+   Wave. **Von diesem Gerät entfernen** löscht nach einer Rückfrage die lokalen
+   Schlüssel und lässt nur diese DiskStation den Wave verlassen; der Wave auf
+   dem Control-Server bleibt bestehen. Die Seite fragt den Status selbst neu
+   ab; ein Neuladen ist nicht nötig.
+
+Die Seite liegt auf derselben Herkunft wie DSM unter
+`/webman/3rdparty/wave/index.cgi/`. Das einmalige Setup und die Anmeldung an
+einem echten Control-Server sind verschiedene Schritte: Ein laufender Dienst
+allein kann noch keine Geräte zeigen.
+
+**Auf echter Hardware geprüft.** Das SPK 0.15.1 wurde auf einer
+DS920+ mit DSM 7.4.1 über `synopkg install` installiert und über
+`synopkg start` gestartet. Das einmalige
+`scripts/setup` richtete `wave.service` ein; der Dienst war anschließend
+`active` und `enabled`, und der DSM-Paketbenutzer konnte den Steuersocket
+lesen. Die DSM-Seite antwortete unter `/webman/3rdparty/wave/index.cgi/` mit
+HTTP 200, auch auf Deutsch. `modprobe tun` erzeugte `/dev/net/tun`. Die Seite
+war anschließend in einer angemeldeten DSM-Sitzung sichtbar. Ein fehlgeschlagener
+Anmeldeversuch zeigte den TLS-Zertifikatsfehler der falschen Serveradresse;
+dieses nicht autorisierte Profil wurde wieder entfernt. Später meldete sich
+die DiskStation am Control-Server an und baute einen Tunnel auf. Beim Nachtest
+am 11.11.2026 war das lokale Profil im Ops-Wave (`10.160.0.104`); das alte
+Profil im Wave `martin` war entfernt. Ein HTTPS-GET auf einen Dienst über
+dessen Wave-Adresse antwortete mit HTTP 200; der Peer zeigte unmittelbar
+danach einen WireGuard-Handshake über das Relay. Ein NAS-Neustart und die
+Zertifikatsablage sind noch offen — siehe „Abnahme“.
+DSM bietet diesem Client derzeit keine Schnittstelle für die Weiterleitung
+einzelner DNS-Zonen an den Wave-Resolver; `wave status` meldet deshalb, dass
+Wave-interne Namen auf dem NAS nicht automatisch aufgelöst werden.
+
+**CGI-POST auf echter Hardware:** DSM ließ stdin nach den in `CONTENT_LENGTH`
+gemeldeten Bytes offen. `Bun.stdin.text()` wartete daher auf EOF und hielt
+„Melde an…“ ohne Antwort fest. Die CGI liest nun genau diese Bytes mit
+`readSync`; ein Test mit absichtlich offen gehaltenem stdin antwortete auf
+der DS920+ in unter einer Sekunde. Die Korrektur lief erst als Test-Binary
+und ist seit dem lokalen Test-SPK vom 11.11.2026 auch im Paket enthalten.
+
+**Upgrade-Probe vom 11.11.2026:** DSM 7.4.1 verweigerte das Upgrade des
+installierten Pakets 0.15.1 vor dem Dateiaustausch mit Fehler 261
+(`package does not have preupgrade / postupgrade script`). Beide Hooks sind nun
+im SPK enthalten; sie laufen als Paketbenutzer und ändern den root-Daemon
+nicht selbst. Das lokale Test-SPK `0.16.1-develop.2` wurde danach erfolgreich
+als Upgrade installiert. `scripts/setup` lief erneut als root ohne Fehler;
+Paket, root-Daemon und CGI-Seite meldeten sich einsatzbereit (HTTP 200). Der
+Daemon blieb mit dem Control-Server verbunden. Ein Konto ohne root sah bei
+`synopkg status wave` Fehler 263, derselbe Befehl mit `sudo` meldete
+`running` und Status 0.
+
+**Hardwareprobe vom 08.11.2026:** Auf einer DS920+ mit DSM 7.4.1 wurde ein
+getrenntes, unprivilegiertes Prüf-SPK installiert. DSM hat dessen Datei
+`conf/systemd/pkg-waveprobe.service` als root nach
+`/usr/local/lib/systemd/system` kopiert. Beim Start des Pakets konnte dessen
+`start-stop-status` als Paketbenutzer die Unit aber nicht mit
+`synosystemctl start` starten (Paketstart: Fehler 272; die genaue Ursache
+dieses Fehlers wurde noch nicht isoliert). Die Unit blieb
+`inactive`. Das Prüf-SPK wurde wieder entfernt; DSM entfernte auch die Unit.
+**Das bloße Beilegen einer System-Unit beseitigte den manuellen Root-Schritt
+in dieser Probe nicht.** Der spätere Test des eigentlichen wave-SPK mit
+laufendem Tunnel steht oben.
+
+**Capability-Probe auf derselben DS920+:** Ein zweites Prüf-SPK mit
+`run-as: package` und einem statischen Go-Programm ließ sich ohne
+`tool.capabilities` installieren. Unter dem Paketbenutzer hatte es
+`CapPrm=CapEff=CapAmb=0`; `/dev/net/tun` fehlte. Sobald die
+`conf/privilege` unter `tool` einen `capabilities`-Eintrag enthielt,
+verweigerte DSM die Installation schon bei `prepare_install` mit Fehler 319.
+Das geschah mit `cap_net_admin,cap_net_raw`, mit `cap_net_raw` allein und
+mit `cap_chown` allein. Das Paketlog sagte jeweils wörtlich
+`Failed to pass privilege check, tool capabilities should not exist`.
+Der Capability-Weg ist damit für ein auf dieser DSM-Version manuell
+installiertes Drittanbieter-SPK nicht verfügbar; ein Tunneltest mit diesen
+Rechten fand nicht statt. Auch dieses Prüf-SPK wurde entfernt.
 
 ## Vorabklärung: was DSM 7 verlangt
 
@@ -24,8 +117,9 @@ dazu — siehe „Abnahme“.
 - **Root bekommt der Daemon auf anderem Weg.** Er braucht root für das
   TUN-Gerät, Routen, Firewall und `/usr/syno/etc/certificate`; Dateirechte oder
   `setcap` auf dem Binary geben weder `insmod` noch Schreibzugriff auf den
-  Zertifikatspeicher (Tailscale reicht `setcap` für das TUN-Gerät; wave braucht
-  darüber hinaus Firewall, Routen und den Zertifikatspeicher). Also läuft der Daemon nicht aus dem Paket,
+  Zertifikatspeicher. Ein manuell installiertes SPK mit `tool.capabilities`
+  wurde auf DSM 7.4.1 sogar schon vor der Installation abgewiesen (siehe
+  Capability-Probe). Also läuft der Daemon nicht aus dem Paket,
   sondern unter systemd, und **einmalig richtet ihn jemand mit `sudo` ein** —
   so wie Tailscale (`tailscale configure-host`, root) und runfalks
   WireGuard-Paket (`sudo …/scripts/start`) für DSM 7 einen Handschritt
@@ -49,8 +143,7 @@ dazu — siehe „Abnahme“.
 
   Danach läuft der Daemon als Dienst `wave`. Die Konten, die `wave` bedienen
   dürfen, trägt man in **Systemsteuerung → Benutzer & Gruppe → Gruppe** in die
-  Gruppe `wave` ein (die `setup` angelegt hat; das Konto, das `sudo` aufgerufen
-  hat, ist schon Mitglied) und meldet sie neu an: Die Gruppe darf den Socket
+  Gruppe `wave` ein (die `setup` angelegt hat) und meldet sie neu an: Die Gruppe darf den Socket
   des Daemons benutzen, ohne sie sagt `wave status` „Permission denied“. Mit
   der Gruppe `wave-pkg` hat das nichts zu tun — die gehört DSM und dem Paket.
 - **Ohne SSH: der Aufgabenplaner.** Derselbe Schritt geht auch über die
@@ -70,12 +163,12 @@ dazu — siehe „Abnahme“.
      Ohne `sudo`: die Aufgabe läuft schon als root.
   5. Die Aufgabe markieren, **Ausführen**, danach löschen.
 
-  Zwei Dinge sind dabei anders als per SSH:
+  Zwei Dinge sind dabei zu beachten:
 
-  - **Niemand ist automatisch in der Gruppe `wave`.** Per SSH nimmt `setup` das
-    Konto auf, das `sudo` aufgerufen hat (`SUDO_USER`); im Aufgabenplaner gibt
-    es keines. Die Gruppe entsteht trotzdem, und die Konten trägt man danach wie
-    oben unter **Benutzer & Gruppe → Gruppe** ein.
+  - **Niemand ist automatisch in der Gruppe `wave`.** `setup` richtet auf dem
+    NAS keinen Benutzer-Tray ein und ordnet auch keinen SSH-Benutzer zu. Die
+    Gruppe entsteht trotzdem; die Konten trägt man unter **Benutzer & Gruppe
+    → Gruppe** ein.
   - **Die Ausgabe sieht man nicht von selbst.** Der Aufgabenplaner zeigt sie
     nur, wenn unter **Einstellungen** das Speichern der Ausgabeergebnisse
     eingeschaltet ist — also *vor* dem Ausführen einschalten; danach steht sie
@@ -86,20 +179,20 @@ dazu — siehe „Abnahme“.
   Anders als bei Tailscale gehört die Aufgabe **nicht** auf „Hochfahren“.
   Tailscale braucht das, weil `configure-host` nur `/dev/net/tun` und die
   Capabilities von `tailscaled` setzt und DSM beides beim Neustart
-  zurücknimmt. Hier ist `setup` einmalig: danach trägt systemd den Daemon
-  durch jeden Neustart, und das TUN-Modul lädt der Daemon selbst (siehe
+  zurücknimmt. Nach der Erstinstallation trägt systemd den Daemon durch jeden
+  Neustart, und das TUN-Modul lädt der Daemon selbst (siehe
   „TUN“). Bei jedem Hochfahren ausgeführt, schriebe die Aufgabe die Unit neu
   und startete den Daemon ein zweites Mal. Schaden täte das nicht (`install`
-  ist wiederholbar), nützen auch nicht.
+  ist wiederholbar), nützen auch nicht. Nach einem SPK-Upgrade wird `setup`
+  einmal erneut ausgeführt, damit der laufende Dienst das neue Binary nutzt.
 
   Zum Entfernen genauso, mit `/var/packages/wave/scripts/setup uninstall` als
   Skript, **bevor** das Paket deinstalliert wird.
-- **Nicht auf echter Hardware geprüft:** dass DSM 7 das Paket mit
-  `run-as: package` über „Manuelle Installation“ ohne die Root-Meldung
-  annimmt, folgt aus Synologys Regel und den Paketen oben, ist aber an keinem
-  NAS ausprobiert. Ebenso die Namen `wave-pkg` für Benutzer und Gruppe (frei
-  gewählt, damit sie nicht mit der Gruppe `wave` kollidieren, die `wave
-  install` anlegt) und das Verhalten des Paketzentrums bei `status`. Siehe
+- **Noch offen:** Die Installation über den Dialog „Manuelle Installation“
+  im Paketzentrum wurde nicht geprüft; die Hardwaretests nutzten `synopkg`.
+  Der Paketbenutzer und die Paketgruppe `wave-pkg` funktionierten auf der
+  DS920+. Der Status im Paketzentrum selbst wurde nicht geprüft; `synopkg
+  status wave` meldete nach dem Upgrade mit root-Rechten `running`. Siehe
   „Abnahme“.
 - **TUN.** DSM lädt das Modul nach einem Neustart nicht. Das ist schon gelöst:
   `ensureTunDevice` (`apps/client/src/engine.ts`) versucht bei jedem Start des
@@ -120,7 +213,7 @@ dazu — siehe „Abnahme“.
 | `PACKAGE_ICON.PNG`, `PACKAGE_ICON_256.PNG` | die Marke des Trays, zur Bauzeit gezeichnet (72 und 256 px) |
 | `conf/privilege` | `run-as: package` (nie root), Benutzer und Gruppe `wave-pkg` |
 | `conf/resource` | legt `wave` per `usr-local-linker` in den PATH |
-| `scripts/start-stop-status`, `scripts/preuninst` | Lebenszyklus als Paketbenutzer, siehe unten |
+| `scripts/start-stop-status`, `scripts/preupgrade`, `scripts/postupgrade`, `scripts/preuninst` | Lebenszyklus als Paketbenutzer, siehe unten |
 | `scripts/setup` | der Schritt als root, von Hand: `sudo /var/packages/wave/scripts/setup` |
 | `package.tgz` | `wave`, `wireguard-go`, `LICENSE`, `LICENSE.wireguard-go`, dazu `ui/` (siehe „Die Seite in DSM“) |
 | INFO `dsmuidir`, `dsmappname` | `ui` und `SYNO.SDS.wave` — der Eintrag im Hauptmenü |
