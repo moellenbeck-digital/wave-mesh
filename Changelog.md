@@ -8,6 +8,23 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## ✅ Stable v0.16.1 (11.11.2026)
+
+### Fehlerbehebungen
+
+- **Synology DSM 7:** Die Anmeldung reagiert auch dann, wenn DSM die CGI-Eingabe nach dem Formular offen hält. TLS-Fehler werden sichtbar angezeigt, und ein lokales Wave-Profil lässt sich nach Rückfrage aus der DiskStation entfernen.
+- **Paket-Upgrade:** DSM findet die benötigten Upgrade-Hooks. Das erneute Setup als root funktioniert auch dann, wenn die Gruppe `wave` bereits existiert, und versucht auf einer DiskStation keinen Benutzer-Tray zu starten.
+
+### Installation
+
+- Die DSM-Anleitung beschreibt Installation und Upgrade ohne SSH über den Aufgabenplaner. Nach jedem SPK-Upgrade muss `/var/packages/wave/scripts/setup` einmal erneut als root ausgeführt werden.
+
+### Technische Änderungen
+
+- `8f2b723` korrigiert CGI-Eingabe, Fehleranzeige, lokales Profil-Entfernen, wiederholbares Setup und DSM-Upgrade-Hooks. Die Paketstruktur und der Hardwaretest auf der DS920+ sind in `docs/DSM.md` dokumentiert.
+
+---
+
 ## ✅ Stable v0.16.0 (10.11.2026)
 
 *Stabile Version – enthält alles aus v0.16.0-develop.1 bis v0.16.0-develop.6, dazu den Firewall-Hinweis bei `wave expose`.*
