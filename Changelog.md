@@ -8,6 +8,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.17.0-develop.3 (12.11.2026)
+
+Keine fachlichen Änderungen gegenüber v0.17.0-develop.2. Der Stand entspricht Stable v0.16.2 (Release-Ticket #110).
+
+---
+
 ## ✅ Stable v0.16.2 (12.11.2026)
 
 ### Fehlerbehebungen
