@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { profileStatusFromSnapshot, type Status } from "@wave/ipc";
+import { locale, setLocale } from "../src/messages.ts";
 import { renderStatus, shouldWatch } from "../src/render.ts";
 
 /** The view is coloured; assertions care about the text. */
@@ -264,5 +265,46 @@ describe("a wave that is waiting for its control server", () => {
       events: [],
     };
     expect(plain(renderStatus(status))).toContain("Starting…");
+  });
+});
+
+describe("@t104 a wave that waits for the system clock", () => {
+  const skewed = (state: "starting" | "failed" = "starting"): Status => ({
+    profiles: [
+      profileStatusFromSnapshot(undefined, {
+        controlUrl: "http://control.example",
+        state,
+        message: "system clock is off, waiting for time synchronization …",
+        notice: { code: "waiting-for-clock", params: {} },
+      }),
+    ],
+    events: [],
+  });
+
+  const inLocale = (wanted: "en" | "de", run: () => void) => {
+    const before = locale();
+    setLocale(wanted);
+    try {
+      run();
+    } finally {
+      setLocale(before);
+    }
+  };
+
+  test("names the clock as the cause in German, not Starting… and not failed", () => {
+    inLocale("de", () => {
+      const text = plain(renderStatus(skewed()));
+      expect(text).toContain("Systemuhr weicht ab, warte auf Zeitsynchronisation");
+      expect(text).not.toContain("failed");
+      expect(text).not.toContain("Control-Server");
+    });
+  });
+
+  test("and in English", () => {
+    inLocale("en", () => {
+      const text = plain(renderStatus(skewed()));
+      expect(text).toContain("system clock is off, waiting for time synchronization");
+      expect(text).not.toContain("Starting…");
+    });
   });
 });

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { LocaleProvider } from "@/components/locale-provider";
 import { PlausibleScript } from "@/components/plausible-script";
@@ -10,13 +10,25 @@ import { fetchMe } from "@/lib/control";
 import { getLocale } from "@/lib/i18n";
 import "./globals.css";
 
-// Self-hosted by next/font, so no request leaves the browser at runtime.
-const display = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+// The fonts are files in this repo (src/fonts, latin subset, licences beside
+// them), loaded by next/font/local. Neither the build nor the browser asks a
+// font host for anything. The Google loader fetched them at build time, and
+// a network hiccup there failed the whole image build.
+const display = localFont({
+  src: [
+    { path: "../fonts/space-grotesk-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "../fonts/space-grotesk-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../fonts/space-grotesk-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-space-grotesk",
 });
-const body = Inter({ subsets: ["latin"], variable: "--font-inter" });
+// Inter ships as one variable file covering every weight the pages use.
+const body = localFont({
+  src: "../fonts/inter-latin-wght-normal.woff2",
+  weight: "100 900",
+  style: "normal",
+  variable: "--font-inter",
+});
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: "wave-mesh Control", description: appMessages(await getLocale()).metaDescription };

@@ -22,12 +22,15 @@ const (
 
 // Retriable says whether a failure to reach the control server is worth
 // another try. The same rule as retry.ts on the desktop; a change to which
-// errors count as "the server is not there yet" is a change to both.
+// errors count as "the server is not there yet" -- or, with the clock-skew
+// 401, "not yet" for a reason on this device -- is a change to both.
 //
 // Retried: connection refused or reset, timeout, network or host unreachable,
 // a resolver that times out or fails (the desktop's `getaddrinfo ETIMEOUT`,
-// EAI_AGAIN, ESERVFAIL, ...), HTTP 502, 503 and 504. Reported at once: every other answer (a wrong
-// address, a refusal) and everything that is not a connection problem at all
+// EAI_AGAIN, ESERVFAIL, ...), HTTP 502, 503 and 504, and HTTP 401 whose reason
+// is `clock-skew` (the clock is not set yet after boot; same backoff).
+// Reported at once: every other answer (a wrong address, a refusal, any other
+// 401 such as `bad-signature`) and everything that is not a connection problem at all
 // -- retrying those would hide the real reason behind a wait that never ends.
 //
 // knownAddress is whether this device has enrolled at that address before. A
@@ -42,7 +45,8 @@ func Retriable(err error, knownAddress bool) bool {
 	}
 	var status *StatusError
 	if errors.As(err, &status) {
-		return status.Status == http.StatusBadGateway ||
+		return ClockSkew(err) ||
+			status.Status == http.StatusBadGateway ||
 			status.Status == http.StatusServiceUnavailable ||
 			status.Status == http.StatusGatewayTimeout
 	}

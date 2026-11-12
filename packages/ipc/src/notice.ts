@@ -57,6 +57,7 @@ const en = {
   "update-installing": (p: Params) => `installing ${p.version}`,
   "update-failed": (p: Params) => `the update to ${p.version} failed: ${p.reason}`,
   "waiting-for-control": (p: Params) => `waiting for the control server … (${p.reason})`,
+  "waiting-for-clock": () => "system clock is off, waiting for time synchronization …",
 } satisfies Messages;
 
 const de: typeof en = {
@@ -95,6 +96,7 @@ const de: typeof en = {
   "update-installing": (p) => `installiere ${p.version}`,
   "update-failed": (p) => `das Update auf ${p.version} ist gescheitert: ${p.reason}`,
   "waiting-for-control": (p) => `wartet auf den Control-Server … (${p.reason})`,
+  "waiting-for-clock": () => "Systemuhr weicht ab, warte auf Zeitsynchronisation …",
 };
 
 type Params = Record<string, string | undefined>;

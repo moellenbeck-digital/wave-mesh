@@ -147,6 +147,89 @@ func TestAGatewayErrorIsRetried(t *testing.T) {
 	}
 }
 
+func TestAClockSkewRefusalIsRetriedUntilTheClockIsRight(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		if requests.Add(1) <= 2 {
+			w.Header().Set("content-type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"clock-skew"}`))
+			return
+		}
+		pending(w, r)
+	}))
+	t.Cleanup(server.Close)
+	client := wavecontrol.NewClient(identityAt(t, server.URL), nil)
+	said := &recorded{}
+
+	_, err := wavecontrol.Retrying(context.Background(), said.options(false),
+		func(ctx context.Context) (waveproto.RegisterResponse, error) {
+			return client.Register(ctx, "")
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests.Load() != 3 {
+		t.Fatalf("the server saw %d requests, want two refusals for the clock and then the answer", requests.Load())
+	}
+	if said.recovered != 1 {
+		t.Fatalf("recovery was reported %d times", said.recovered)
+	}
+}
+
+func TestOnlyTheClockSkewReasonMakesA401Retriable(t *testing.T) {
+	status := func(code int, body string) error {
+		return &wavecontrol.StatusError{Method: "POST", Path: "/v1/machine/register", Status: code, Body: body}
+	}
+	for _, known := range []bool{false, true} {
+		if !wavecontrol.Retriable(status(401, `{"error":"clock-skew"}`), known) {
+			t.Errorf("known=%v: 401 clock-skew was not retried", known)
+		}
+	}
+	for _, err := range []error{
+		status(401, `{"error":"bad-signature"}`),
+		status(401, `{"error":"unknown-machine"}`),
+		status(401, `{"error":"clock-skew-ish"}`),
+		status(401, `clock-skew`),
+		status(401, ""),
+		// Cut off at 200 characters and no longer JSON: not the reason.
+		status(401, `{"error":"clock-sk`),
+		// Only a 401 carries it.
+		status(403, `{"error":"clock-skew"}`),
+	} {
+		if wavecontrol.Retriable(err, true) {
+			t.Errorf("%v was retried; only a 401 with the reason clock-skew may be", err)
+		}
+	}
+}
+
+func TestAnotherRefusalWithA401IsStillReportedAtOnce(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		requests.Add(1)
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"bad-signature"}`))
+	}))
+	t.Cleanup(server.Close)
+	client := wavecontrol.NewClient(identityAt(t, server.URL), nil)
+
+	_, err := wavecontrol.Retrying(context.Background(), (&recorded{}).options(true),
+		func(ctx context.Context) (waveproto.RegisterResponse, error) {
+			return client.Register(ctx, "")
+		})
+
+	var refused *wavecontrol.StatusError
+	if !errors.As(err, &refused) || refused.Reason() != "bad-signature" {
+		t.Fatalf("got %v", err)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("bad-signature was tried %d times", requests.Load())
+	}
+}
+
 func TestARefusalIsReportedAtOnce(t *testing.T) {
 	for _, status := range []int{401, 403, 404, 405} {
 		var requests atomic.Int32
