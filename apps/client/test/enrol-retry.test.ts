@@ -157,6 +157,114 @@ describe("the first connect", () => {
   });
 });
 
+const skewed = () => Response.json({ error: "clock-skew" }, { status: 401 });
+const badSignature = () => Response.json({ error: "bad-signature" }, { status: 401 });
+
+describe("a clock that is not set yet", () => {
+  test("registering is retried after 401 clock-skew and runs through without anyone stepping in", async () => {
+    let registers = 0;
+    const server = lateServer(() => (++registers <= 2 ? skewed() : Response.json(authorized())));
+    server.start();
+    const { profile, statePath } = await profileFor(server.url, true);
+    const lines: string[] = [];
+    const waits: Array<{ reason: string; delayMs: number; cause?: string } | null> = [];
+
+    const { netmap } = await enrol(profile, statePath, (line) => lines.push(line), undefined, undefined, {
+      ...fast,
+      onControlWait: (wait) => waits.push(wait),
+    });
+
+    expect(netmap.self.hostname).toBe("laptop");
+    expect(registers).toBe(3);
+    // The cause is named, and it is not the "server not reachable" line.
+    const said = lines.filter((line) => line.startsWith("system clock differs"));
+    expect(said.length).toBe(2);
+    expect(said[0]).toMatch(/waiting for time synchronization, retrying in \d+ms$/);
+    expect(lines.filter((line) => line.startsWith("control server not reachable"))).toEqual([]);
+    expect(waits.slice(0, 2).map((wait) => wait?.cause)).toEqual(["clock-skew", "clock-skew"]);
+    expect(waits.at(-1)).toBeNull();
+    expect(lines).toContain("control server reachable again");
+  });
+
+  test("a poll that is refused for the clock is waited out too, and approval still comes", async () => {
+    let polls = 0;
+    const server = lateServer((path) => {
+      if (path === "/v1/machine/register") return Response.json(pending());
+      return ++polls <= 2 ? skewed() : Response.json(authorized());
+    });
+    server.start();
+    const { profile, statePath } = await profileFor(server.url);
+    const lines: string[] = [];
+
+    await enrol(profile, statePath, (line) => lines.push(line), undefined, undefined, fast);
+
+    expect(polls).toBe(3);
+    expect(lines.filter((line) => line.startsWith("system clock differs")).length).toBe(2);
+  });
+
+  test("any other 401 is reported at once, not repeated", async () => {
+    const server = lateServer(() => badSignature());
+    server.start();
+    const { profile, statePath } = await profileFor(server.url, true);
+    const lines: string[] = [];
+
+    await expect(
+      enrol(profile, statePath, (line) => lines.push(line), undefined, undefined, fast),
+    ).rejects.toThrow("bad-signature");
+    expect(server.requests).toEqual(["/v1/machine/register"]);
+    expect(lines.filter((line) => /^(system clock|control server not)/.test(line))).toEqual([]);
+  });
+
+  test("several waves of one device recover independently of each other", async () => {
+    const counts = { a: 0, b: 0, c: 0 };
+    const make = (key: keyof typeof counts, skews: number) =>
+      lateServer(() => (++counts[key] <= skews ? skewed() : Response.json(authorized())));
+    const a = make("a", 1);
+    const b = make("b", 4);
+    const c = make("c", 0);
+    for (const server of [a, b, c]) server.start();
+
+    const runs = await Promise.all(
+      [a, b, c].map(async (server) => {
+        const { profile, statePath } = await profileFor(server.url, true);
+        const lines: string[] = [];
+        const result = await enrol(
+          profile,
+          statePath,
+          (line) => lines.push(line),
+          undefined,
+          undefined,
+          fast,
+        );
+        return { result, lines };
+      }),
+    );
+
+    expect(runs.map((run) => run.result.state.nodeId)).toEqual(["n_1", "n_1", "n_1"]);
+    expect(counts).toEqual({ a: 2, b: 5, c: 1 });
+    expect(
+      runs.map((run) => run.lines.filter((line) => line.startsWith("system clock differs")).length),
+    ).toEqual([1, 4, 0]);
+  });
+
+  test("the signal ends the wait for a clock that never comes right", async () => {
+    const server = lateServer(() => skewed());
+    server.start();
+    const { profile, statePath } = await profileFor(server.url, true);
+    const controller = new AbortController();
+
+    const running = enrol(profile, statePath, () => {}, undefined, undefined, {
+      ...fast,
+      signal: controller.signal,
+    });
+    await Bun.sleep(100);
+    controller.abort();
+
+    expect(isAbort(await running.catch((e) => e))).toBe(true);
+    expect(server.requests.length).toBeGreaterThan(1);
+  });
+});
+
 describe("a name that does not resolve", () => {
   // The resolver says it cannot find this whether or not it has a network.
   const nowhere = "http://no-such-host.invalid";

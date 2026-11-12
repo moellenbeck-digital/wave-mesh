@@ -39,7 +39,7 @@ import {
 } from "./expose.ts";
 import { platformLink } from "./link-platform.ts";
 import { describeConflict, findConflict } from "./overlap.ts";
-import { HttpError } from "./retry.ts";
+import { HttpError, serverReason } from "./retry.ts";
 import {
   ambiguity,
   ensureProfile,
@@ -100,20 +100,6 @@ const RENEWAL_CHECK_MS = 60 * 60 * 1000;
 const EXPOSE_CHECK_MS = 5_000;
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-/** The server's own sentence out of a failed request's message, which carries its JSON body. */
-function serverReason(error: HttpError): string {
-  const start = error.message.indexOf("{");
-  if (start >= 0) {
-    try {
-      const body = JSON.parse(error.message.slice(start)) as { error?: unknown };
-      if (typeof body.error === "string") return body.error;
-    } catch {
-      // Cut off at 200 characters: say what there is.
-    }
-  }
-  return error.message;
-}
 
 /**
  * The pier zone as far as this device can tell without asking: the netmap's,
@@ -399,7 +385,11 @@ export class Daemon {
         // wave's fault and does not end the attempt. The sentence in `message`
         // stays English for an older client; see notice.ts.
         onControlWait: (wait) => {
-          const waiting = wait && notice("waiting-for-control", { reason: wait.reason });
+          const waiting =
+            wait &&
+            (wait.cause === "clock-skew"
+              ? notice("waiting-for-clock")
+              : notice("waiting-for-control", { reason: wait.reason }));
           runtime.notice = waiting;
           runtime.message = waiting && englishText(waiting);
           if (waiting) for (const wake of runtime.onWaiting.splice(0)) wake();

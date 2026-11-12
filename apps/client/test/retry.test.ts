@@ -39,6 +39,21 @@ describe("which failures are waited out", () => {
       expect(wait(new HttpError(status, `POST /x failed: ${status}`))).toBe(true);
   });
 
+  test("401 with the reason clock-skew is retried: the clock is not set yet after boot", () => {
+    const skew = new HttpError(401, 'POST /v1/machine/register failed: 401 {"error":"clock-skew"}');
+    expect(classify(skew, false)).toEqual({ retry: true, reason: skew.message, cause: "clock-skew" });
+    expect(wait(skew, true)).toBe(true);
+  });
+
+  test("every other 401 is final, however it is worded", () => {
+    for (const body of ['{"error":"bad-signature"}', '{"error":"unknown-machine"}', "", "clock-skew"]) {
+      expect(wait(new HttpError(401, `POST /v1/machine/register failed: 401 ${body}`), true)).toBe(false);
+    }
+    // The reason must be the whole sentence, and only a 401 carries it.
+    expect(wait(new HttpError(401, 'failed: 401 {"error":"clock-skew-ish"}'), true)).toBe(false);
+    expect(wait(new HttpError(403, 'failed: 403 {"error":"clock-skew"}'), true)).toBe(false);
+  });
+
   test("any other answer is reported at once: a wrong address or a refusal", () => {
     for (const status of [400, 401, 403, 404, 405, 500]) {
       expect(wait(new HttpError(status, `POST /x failed: ${status}`), true)).toBe(false);

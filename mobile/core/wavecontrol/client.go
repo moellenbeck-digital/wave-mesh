@@ -10,6 +10,7 @@ package wavecontrol
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -117,6 +118,47 @@ type StatusError struct {
 
 func (e *StatusError) Error() string {
 	return fmt.Sprintf("%s %s failed: %d %s", e.Method, e.Path, e.Status, e.Body)
+}
+
+// ClockSkewReason is what the server answers a signed request whose timestamp
+// is outside its window (MAX_CLOCK_SKEW_SECONDS): {"error":"clock-skew"}.
+const ClockSkewReason = "clock-skew"
+
+// Reason is the server's own sentence out of the JSON body ({"error":"..."}),
+// the same reading as serverReason in the desktop client's retry.ts. Without a
+// readable error field it is the body as it came.
+func (e *StatusError) Reason() string {
+	if reason, ok := e.jsonReason(); ok {
+		return reason
+	}
+	return e.Body
+}
+
+func (e *StatusError) jsonReason() (string, bool) {
+	start := strings.Index(e.Body, "{")
+	if start < 0 {
+		return "", false
+	}
+	var parsed struct {
+		Error any `json:"error"`
+	}
+	if json.Unmarshal([]byte(e.Body[start:]), &parsed) != nil {
+		return "", false
+	}
+	reason, ok := parsed.Error.(string)
+	return reason, ok
+}
+
+// ClockSkew says whether err is the server refusing a request because this
+// device's clock is off: a 401 whose JSON body says clock-skew, and nothing
+// else. Right after boot that is a clock NTP has not set yet.
+func ClockSkew(err error) bool {
+	var status *StatusError
+	if !errors.As(err, &status) || status.Status != http.StatusUnauthorized {
+		return false
+	}
+	reason, ok := status.jsonReason()
+	return ok && reason == ClockSkewReason
 }
 
 // Register enrols this device. With a pre-auth key it is enrolled straight
