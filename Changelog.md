@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.2 (12.11.2026)
+
 ### Technisch
 
 - **Web-Oberfläche baut ohne Font-Download:** Die Schriften (Space Grotesk, Inter) liegen jetzt im Repository und
