@@ -153,6 +153,40 @@ func TestAKnownWaveRetriesItsRegistrationRefresh(t *testing.T) {
 	}
 }
 
+func TestAKnownWaveWaitsForTheClockAndSaysWhy(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("content-type", "application/json")
+		if requests.Add(1) <= 2 {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"clock-skew"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"authorized"}`))
+	}))
+	t.Cleanup(server.Close)
+	engine, host := newTestEngine(t)
+	engine.options.RetryMin = 5 * time.Millisecond
+	entry := addWave(t, engine, server.URL)
+	entry.client = newClientFor(entry)
+
+	engine.refreshRegistration(context.Background(), entry)
+
+	if requests.Load() != 3 {
+		t.Fatalf("the server saw %d requests, want two refusals for the clock and then the answer", requests.Load())
+	}
+	if said(host, "could not refresh") != 0 {
+		t.Fatalf("it gave up: %q", host.lines)
+	}
+	if said(host, "system clock differs") != 2 || said(host, "waiting for time synchronization") != 2 {
+		t.Fatalf("the cause was not in the log: %q", host.lines)
+	}
+	if said(host, "control server not reachable") != 0 {
+		t.Fatalf("a wrong clock was reported as an unreachable server: %q", host.lines)
+	}
+}
+
 func TestTheRefreshEndsWithItsWave(t *testing.T) {
 	engine, host := newTestEngine(t)
 	engine.options.RetryMin = 5 * time.Millisecond

@@ -494,6 +494,11 @@ func (e *Engine) retryFor(profile Profile) wavecontrol.RetryOptions {
 		MinBackoff:   e.options.RetryMin,
 		MaxBackoff:   e.options.RetryMax,
 		OnWait: func(err error, delay time.Duration) {
+			if wavecontrol.ClockSkew(err) {
+				// Right after boot, before NTP has set the clock; it passes by itself.
+				e.log("[%s] system clock differs from the control server's (%v) — waiting for time synchronization, retrying in %dms", label, err, delay.Milliseconds())
+				return
+			}
 			e.log("[%s] control server not reachable (%v) — retrying in %dms", label, err, delay.Milliseconds())
 		},
 		OnRecovered: func() {

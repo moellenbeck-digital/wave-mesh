@@ -6,6 +6,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Fehlerbehebungen
+
+- **Client verbindet sich nach dem Neustart von selbst:** Direkt nach dem Booten ist die Systemuhr oft noch nicht
+  synchronisiert, der Server lehnte die Anmeldung mit „clock-skew" ab, und alle Waves blieben getrennt, bis man
+  eingriff. Der Client (Desktop und Mobil-Kern) wartet jetzt auf die Zeitsynchronisation, versucht es erneut und
+  zeigt „Systemuhr weicht ab, warte auf Zeitsynchronisation“; jede andere Ablehnung wird weiter sofort gemeldet.
+
 ---
 
 ## ✅ Stable v0.16.0 (10.11.2026)

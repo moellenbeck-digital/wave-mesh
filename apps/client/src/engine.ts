@@ -84,6 +84,8 @@ const noop = () => {};
 export interface ControlWait {
   reason: string;
   delayMs: number;
+  /** Set when the server is there but refused the request's timestamp: the clock is off. */
+  cause?: "clock-skew";
 }
 
 /**
@@ -975,8 +977,15 @@ function retryFor(state: Profile, log: (message: string) => void, options: Enrol
     maxBackoffMs: options.maxBackoffMs,
     onWait: (wait) => {
       const reason = wait.reason.replace(/\s+/g, " ").trim();
-      log(`control server not reachable (${reason}) — retrying in ${wait.delayMs}ms`);
-      options.onControlWait?.({ reason, delayMs: wait.delayMs });
+      if (wait.cause === "clock-skew") {
+        // Right after boot, before NTP has set the clock; it passes by itself.
+        log(
+          `system clock differs from the control server's (${reason}) — waiting for time synchronization, retrying in ${wait.delayMs}ms`,
+        );
+      } else {
+        log(`control server not reachable (${reason}) — retrying in ${wait.delayMs}ms`);
+      }
+      options.onControlWait?.({ reason, delayMs: wait.delayMs, cause: wait.cause });
     },
     onRecovered: () => {
       log("control server reachable again");

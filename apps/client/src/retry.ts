@@ -7,8 +7,9 @@
  * and a daemon that starts before the network does ended up "failed" for good.
  *
  * The same rule lives in the Go core (mobile/core/wavecontrol/retry.go); a
- * change to which errors count as "the server is not there yet" is a change
- * to both.
+ * change to which errors count as "the server is not there yet" -- or, with
+ * the clock-skew 401, "not yet" for a reason on this device -- is a change to
+ * both.
  */
 
 /** Same bounds as the control socket's reconnect (control-socket.ts). */
@@ -34,6 +35,30 @@ export class HttpError extends Error {
 }
 
 export const isAbort = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
+
+/**
+ * The server's own sentence out of a failed request's message, which carries
+ * its JSON body (`POST /v1/... failed: 401 {"error":"clock-skew"}`).
+ */
+export function serverReason(error: HttpError): string {
+  const start = error.message.indexOf("{");
+  if (start >= 0) {
+    try {
+      const body = JSON.parse(error.message.slice(start)) as { error?: unknown };
+      if (typeof body.error === "string") return body.error;
+    } catch {
+      // Cut off at 200 characters: say what there is.
+    }
+  }
+  return error.message;
+}
+
+/**
+ * The reason the server gives a signed request whose timestamp is outside its
+ * window (MAX_CLOCK_SKEW_SECONDS). Right after boot that is a clock NTP has not
+ * set yet, and it fixes itself within seconds: the one 401 that is waited out.
+ */
+export const CLOCK_SKEW_REASON = "clock-skew";
 
 /** The server is there but not serving: a proxy in front of a restarting control server. */
 const GATEWAY_STATUSES = new Set([502, 503, 504]);
@@ -85,15 +110,21 @@ const RESOLVER_TEXT = /getaddrinfo (ETIMEOUT|EAI_AGAIN|ESERVFAIL|EREFUSED|ECONNR
 const CERTIFICATE_TEXT = /certificate|x509/i;
 const CERTIFICATE_CODE = /CERT|TLS|SSL|SELF_SIGNED|VERIFY|ALTNAME/i;
 
-export type Verdict = { retry: true; reason: string } | { retry: false };
+/**
+ * `cause` is set when the wait has a reason a person can act on or just be told
+ * about, apart from "the server is not there": today only the clock.
+ */
+export type Verdict = { retry: true; reason: string; cause?: "clock-skew" } | { retry: false };
 
 /**
  * Whether an error from reaching the control server is worth another try.
  *
  * Retried: connection refused or reset, timeout, network or host unreachable,
  * a resolver that times out or fails (`getaddrinfo ETIMEOUT`, EAI_AGAIN,
- * ESERVFAIL, ...), HTTP 502/503/504. Reported at once: every other HTTP answer (a wrong
- * address, a refusal) and everything that is not a connection problem at all
+ * ESERVFAIL, ...), HTTP 502/503/504, and HTTP 401 whose reason is `clock-skew`
+ * (the clock is not set yet after boot; the backoff is the same). Reported at
+ * once: every other HTTP answer (a wrong address, a refusal, any other 401 such
+ * as `bad-signature`) and everything that is not a connection problem at all
  * (an expired request, a netmap that does not verify) -- retrying those would
  * hide the real reason behind a wait that never ends.
  *
@@ -106,7 +137,11 @@ export type Verdict = { retry: true; reason: string } | { retry: false };
  */
 export function classify(error: unknown, knownAddress: boolean): Verdict {
   if (error instanceof HttpError) {
-    return GATEWAY_STATUSES.has(error.status) ? { retry: true, reason: error.message } : { retry: false };
+    if (GATEWAY_STATUSES.has(error.status)) return { retry: true, reason: error.message };
+    if (error.status === 401 && serverReason(error) === CLOCK_SKEW_REASON) {
+      return { retry: true, reason: error.message, cause: "clock-skew" };
+    }
+    return { retry: false };
   }
   if (!(error instanceof Error)) return { retry: false };
   if (isAbort(error)) return { retry: false };
@@ -158,7 +193,7 @@ export interface RetryOptions {
   minBackoffMs?: number;
   maxBackoffMs?: number;
   /** Called after each failed attempt, before the wait. */
-  onWait?: (wait: { reason: string; delayMs: number }) => void;
+  onWait?: (wait: { reason: string; delayMs: number; cause?: "clock-skew" }) => void;
   /** Called when an attempt that followed a failure succeeds. */
   onRecovered?: () => void;
   /**
@@ -192,7 +227,7 @@ export async function retrying<T>(
       const verdict = classify(error, options.knownAddress);
       if (!verdict.retry) throw error;
       if (options.deadline && Date.now() >= options.deadline.at) throw options.deadline.error;
-      options.onWait?.({ reason: verdict.reason, delayMs: delay });
+      options.onWait?.({ reason: verdict.reason, delayMs: delay, cause: verdict.cause });
       waited = true;
       await sleep(delay, options.signal);
       delay = Math.min(delay * 2, max);

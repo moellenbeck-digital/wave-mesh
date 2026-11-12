@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { noticeText } from "@wave/ipc";
 
 /**
  * Enrolment waits for a human at a browser, so `up` stays in flight for as
@@ -16,7 +17,7 @@ let script: ((options: UpOptions) => Promise<void>) | null = null;
 interface UpOptions {
   controlUrl: string;
   signal?: AbortSignal;
-  onControlWait?: (wait: { reason: string; delayMs: number } | null) => void;
+  onControlWait?: (wait: { reason: string; delayMs: number; cause?: "clock-skew" } | null) => void;
 }
 
 /**
@@ -126,6 +127,32 @@ describe("a control server that cannot be reached", () => {
       expect(back?.state).toBe("starting");
       expect(back?.message).toBeNull();
       expect(back?.notice ?? null).toBeNull();
+    } finally {
+      await daemon.down();
+      script = null;
+    }
+  });
+
+  test("a clock the server refuses is named as such, in both languages, and stays starting", async () => {
+    const daemon = await daemonWith("http://skew.example");
+    script = async (options) => {
+      options.onControlWait?.({
+        reason: 'POST /v1/machine/register failed: 401 {"error":"clock-skew"}',
+        delayMs: 500,
+        cause: "clock-skew",
+      });
+      await neverEnds(options);
+    };
+    try {
+      await daemon.up();
+
+      const waiting = (await daemon.status()).profiles[0];
+      expect(waiting?.state).toBe("starting");
+      expect(waiting?.notice).toEqual({ code: "waiting-for-clock", params: {} });
+      expect(waiting?.message).toBe("system clock is off, waiting for time synchronization …");
+      expect(noticeText(waiting?.notice as never, "de")).toBe(
+        "Systemuhr weicht ab, warte auf Zeitsynchronisation …",
+      );
     } finally {
       await daemon.down();
       script = null;
