@@ -8,6 +8,22 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## ✅ Stable v0.16.2 (12.11.2026)
+
+### Fehlerbehebungen
+
+- **Client verbindet sich nach dem Neustart von selbst:** Direkt nach dem Booten ist die Systemuhr oft noch nicht
+  synchronisiert, der Server lehnte die Anmeldung mit „clock-skew" ab, und alle Waves blieben getrennt, bis man
+  eingriff. Der Client (Desktop und Mobil-Kern) wartet jetzt auf die Zeitsynchronisation, versucht es erneut und
+  zeigt „Systemuhr weicht ab, warte auf Zeitsynchronisation“; jede andere Ablehnung wird weiter sofort gemeldet. *(seit develop.1)*
+
+### Technisch
+
+- **Web-Oberfläche baut ohne Font-Download:** Die Schriften (Space Grotesk, Inter) liegen jetzt im Repository und
+  werden lokal eingebunden, statt beim Bauen von Google geladen zu werden. Das Schriftbild bleibt unverändert. *(seit develop.2)*
+
+---
+
 ## 🔬 Development v0.17.0-develop.2 (12.11.2026)
 
 ### Technisch
