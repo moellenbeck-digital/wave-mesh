@@ -1,0 +1,26 @@
+pkgbase = wave-mesh
+	pkgdesc = Self-hosted mesh VPN based on WireGuard
+	pkgver = 0.16.2
+	pkgrel = 1
+	url = https://github.com/moellenbeck-digital/wave-mesh
+	install = wave-mesh.install
+	arch = x86_64
+	arch = aarch64
+	license = LicenseRef-Elastic-2.0
+	depends = iproute2
+	depends = nftables
+	options = !strip
+	options = !debug
+	backup = etc/wave/wave.env
+	source = wave-mesh.service
+	source = wave-mesh.sysusers.conf
+	source = wave-mesh.env
+	sha256sums = d585daae9a1699a72932c35dd2acab30499039e68bb8ffe9bc6e7a3a914548a8
+	sha256sums = 1d3fd2dcb0021aecb45435b2d6e104aacc9b5ac550024c121763f47b2d7f5e7b
+	sha256sums = 11bebc41e879201d47a3e820190d8d914c4dc0981142e1723228d0bfcb1dbb0f
+	source_x86_64 = https://github.com/moellenbeck-digital/wave-mesh/releases/download/v0.16.2/wave-linux-amd64.tar.gz
+	sha256sums_x86_64 = 6706fefb63663269c5d3fbaf6a28f857458b64ad2be02b68db420fd110a06581
+	source_aarch64 = https://github.com/moellenbeck-digital/wave-mesh/releases/download/v0.16.2/wave-linux-arm64.tar.gz
+	sha256sums_aarch64 = d9fa7a515186fdfc039dcb24fac6d1183067cac79fbdbf899ee520fdee3a7f09
+
+pkgname = wave-mesh

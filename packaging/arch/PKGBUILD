@@ -1,0 +1,76 @@
+# Maintainer: Max Möllenbeck <max222.moellenbeck@gmail.com>
+pkgname=wave-mesh
+pkgver=0.16.2
+pkgrel=1
+pkgdesc='Self-hosted mesh VPN based on WireGuard'
+arch=('x86_64' 'aarch64')
+url='https://github.com/moellenbeck-digital/wave-mesh'
+license=('LicenseRef-Elastic-2.0')
+depends=('iproute2' 'nftables')
+# systemd is an implicit dependency on Arch; resolvectl is part of systemd.
+backup=('etc/wave/wave.env')
+install=wave-mesh.install
+# Pre-compiled binaries: skip stripping and debug-package generation.
+# Bun compiled binaries embed the app after the ELF sections; strip removes
+# that payload and leaves a broken binary.  wireguard-go has DWARF that the
+# packaged debugedit cannot parse anyway.
+options=('!strip' '!debug')
+
+# Local files (architecture-independent)
+source=(
+    'wave-mesh.service'
+    'wave-mesh.sysusers.conf'
+    'wave-mesh.env'
+)
+sha256sums=(
+    'd585daae9a1699a72932c35dd2acab30499039e68bb8ffe9bc6e7a3a914548a8'
+    '1d3fd2dcb0021aecb45435b2d6e104aacc9b5ac550024c121763f47b2d7f5e7b'
+    '11bebc41e879201d47a3e820190d8d914c4dc0981142e1723228d0bfcb1dbb0f'
+)
+
+# Architecture-specific release archives.
+# The archives ship `wave`, `wireguard-go`, `LICENSE`, and `LICENSE.wireguard-go`.
+# wireguard-go is a pinned userspace WireGuard implementation tested with this
+# release.  It is installed under /usr/lib/wave-mesh/ so it does not conflict
+# with the wireguard-go Arch package.  The wave daemon prepends that directory
+# to PATH automatically via the service unit.
+source_x86_64=("https://github.com/moellenbeck-digital/wave-mesh/releases/download/v${pkgver}/wave-linux-amd64.tar.gz")
+sha256sums_x86_64=('6706fefb63663269c5d3fbaf6a28f857458b64ad2be02b68db420fd110a06581')
+
+source_aarch64=("https://github.com/moellenbeck-digital/wave-mesh/releases/download/v${pkgver}/wave-linux-arm64.tar.gz")
+sha256sums_aarch64=('d9fa7a515186fdfc039dcb24fac6d1183067cac79fbdbf899ee520fdee3a7f09')
+
+# The tarball extracts flat (no subdirectory), so $srcdir contains the files
+# directly after extraction.
+
+package() {
+    # --- wave binary ---
+    # Installing to /usr/bin/ is intentional: the built-in auto-updater
+    # recognises /usr/bin/ as package-manager territory and disables itself
+    # automatically (see apps/client/src/update.ts: PACKAGE_MANAGED).
+    install -Dm755 "$srcdir/wave" "$pkgdir/usr/bin/wave"
+
+    # --- wireguard-go (pinned, bundled with this release) ---
+    # Placed in /usr/lib/wave-mesh/ rather than /usr/bin/ to avoid conflicting
+    # with the optional wireguard-go Arch package.  The service unit prepends
+    # /usr/lib/wave-mesh to PATH so the daemon finds it next to itself.
+    install -Dm755 "$srcdir/wireguard-go" "$pkgdir/usr/lib/wave-mesh/wireguard-go"
+
+    # --- systemd unit ---
+    install -Dm644 "$srcdir/wave-mesh.service" \
+        "$pkgdir/usr/lib/systemd/system/wave-mesh.service"
+
+    # --- sysusers (creates the `wave` group on first boot) ---
+    install -Dm644 "$srcdir/wave-mesh.sysusers.conf" \
+        "$pkgdir/usr/lib/sysusers.d/wave-mesh.conf"
+
+    # --- environment file (editable, backed up by pacman) ---
+    install -Dm644 "$srcdir/wave-mesh.env" \
+        "$pkgdir/etc/wave/wave.env"
+
+    # --- licenses ---
+    install -Dm644 "$srcdir/LICENSE" \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "$srcdir/LICENSE.wireguard-go" \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE.wireguard-go"
+}
