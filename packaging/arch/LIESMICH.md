@@ -86,8 +86,8 @@ Variablen wie `WAVE_CONTROL_URL` können aus der Omarchy-Konfiguration kommen.
 
 - **Selbstaktualisierung deaktiviert durch Pfad**: Die eingebaute
   Selbstaktualisierung erkennt `/usr/bin/` als paketverwaltet und deaktiviert
-  sich automatisch (siehe `update.ts` → `PACKAGE_MANAGED`). Explizit
-  konfigurierbar über `/etc/wave/wave.env` → `WAVE_AUTO_UPDATE=false`.
+  sich automatisch (siehe `update.ts` → `PACKAGE_MANAGED`). Es gibt keinen
+  eigenen Schalter dafür; Updates kommen nur über ein neues `pkgver`.
 
 - **Nicht im AUR**: Dieses Paket ist nicht ins AUR hochgeladen und soll dort
   nicht erscheinen – es ist für lokale Nutzung und Omarchy gedacht.
