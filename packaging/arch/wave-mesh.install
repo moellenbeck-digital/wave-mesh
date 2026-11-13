@@ -1,0 +1,20 @@
+post_install() {
+    echo ""
+    echo "wave-mesh wurde installiert."
+    echo ""
+    echo "Dienst starten und beim Boot aktivieren:"
+    echo "  sudo systemctl enable --now wave-mesh"
+    echo ""
+    echo "Damit normale Benutzer wave ohne sudo verwenden können, müssen sie"
+    echo "Mitglied der Gruppe 'wave' sein (Neuanmeldung danach erforderlich):"
+    echo "  sudo usermod -aG wave \$USER"
+    echo ""
+    echo "Danach Wave-Server beitreten:"
+    echo "  wave login <control-server-url>"
+    echo "  wave up"
+    echo ""
+}
+
+post_upgrade() {
+    post_install
+}

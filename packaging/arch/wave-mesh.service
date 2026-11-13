@@ -1,0 +1,26 @@
+[Unit]
+Description=wave-mesh tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/wave/wave.env
+Environment=WAVE_SOCKET_GROUP=wave
+# wireguard-go lives beside the binary in /usr/lib/wave-mesh; prepend that
+# directory so the daemon finds it without conflicting with the wireguard-go
+# Arch package.
+Environment=PATH=/usr/lib/wave-mesh:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/wave daemon
+Restart=always
+RestartSec=2
+RuntimeDirectory=wave
+StateDirectory=wave
+# The daemon needs CAP_NET_ADMIN: TUN interface, routes, nftables, port 53.
+# It runs as root (UID 0) so no additional capability grants are needed.
+# Users who want to run `wave up`/`wave login` as non-root need to be in the
+# `wave` group (created by wave-mesh.sysusers.conf).  The daemon sets the
+# socket group to $WAVE_SOCKET_GROUP on startup.
+
+[Install]
+WantedBy=multi-user.target
