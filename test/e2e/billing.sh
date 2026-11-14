@@ -5,7 +5,9 @@
 #
 #   - a checkout makes a wave and an owner without a password; the owner sets
 #     one through the single-use setup link and is signed in;
-#   - two devices join it and ping each other;
+#   - two devices join it and ping each other; on a billing server a person with
+#     a confirmed address may start a free account of their own, one without is
+#     refused (403 unverified-email);
 #   - "suspended" empties every netmap: the devices stay enrolled but have
 #     nobody to talk to, and no new device gets in -- not through the browser,
 #     not with a pre-auth key, which is not spent by the refusal;
@@ -188,12 +190,35 @@ reach "" "$B_IP" "A could not reach B in the live wave"
 reach nodeb "$A_IP" "B could not reach A in the live wave"
 ok "A ($A_IP) <-> B ($B_IP)"
 
-# Where waves are sold, an account gets one through a subscription only -- not
-# through the form every self-hosted server offers.
-code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -X POST "$CONTROL/waves" \
-  --data-urlencode "name=free" --data-urlencode "suffix=free.wave.internal")
-[[ "$code" == 403 ]] || fail "an account on a billing server created a wave of its own ($code)"
-ok "no wave of one's own on a billing server (403)"
+# Where waves are sold, a wave belongs to a customer account (ticket #117), and
+# a person with a confirmed address starts a free one by making a wave. The
+# checkout above is not the only door: one who never confirmed the address is
+# refused, with the code the pages and /api/me say.
+wave_post() { # <cookie jar> <name> -> status code, JSON body in $WORK/create.json
+  curl -s -b "$1" -o "$WORK/create.json" -w '%{http_code}' -X POST "$CONTROL/waves" \
+    -H 'accept: application/json' \
+    --data-urlencode "name=$2" --data-urlencode "suffix=$2.wave.internal"
+}
+UNCONFIRMED_TOKEN=$(curl -s -X POST "$CONTROL/__e2e/unverified-session?email=nobody@example.net" | jq -r .token)
+[[ -n "$UNCONFIRMED_TOKEN" && "$UNCONFIRMED_TOKEN" != null ]] || fail "could not make a session for an unconfirmed address"
+code=$(curl -s -o "$WORK/create.json" -w '%{http_code}' -X POST "$CONTROL/waves" \
+  -H 'accept: application/json' -H "cookie: wave_session=$UNCONFIRMED_TOKEN" \
+  --data-urlencode "name=nobody" --data-urlencode "suffix=nobody.wave.internal")
+[[ "$code" == 403 && "$(jq -r .error "$WORK/create.json")" == unverified-email ]] \
+  || fail "an unconfirmed address got a wave on a billing server: $code $(cat "$WORK/create.json")"
+ok "an address nobody confirmed gets no wave (403 unverified-email)"
+
+FREE_JAR="$WORK/free-cookies.txt"
+FREE_REDIRECT=$(curl -s -c "$FREE_JAR" -o /dev/null -w '%{redirect_url}' "$CONTROL/auth/dev/start")
+FREE_STATE=$(sed -n 's/.*state=\([^&]*\).*/\1/p' <<<"$FREE_REDIRECT")
+curl -s -b "$FREE_JAR" -c "$FREE_JAR" -o /dev/null "$CONTROL/auth/dev/callback?code=free%40example.org&state=$FREE_STATE"
+grep -q wave_session "$FREE_JAR" || fail "the second person could not sign in"
+code=$(wave_post "$FREE_JAR" free)
+[[ "$code" == 303 ]] || fail "a confirmed address got no free wave: $code $(cat "$WORK/create.json")"
+FREE_ME=$(curl -s -b "$FREE_JAR" "$CONTROL/api/me")
+[[ "$(jq -r '.waves | length' <<<"$FREE_ME")" == 1 && "$(jq -r '.waves[0].role' <<<"$FREE_ME")" == owner ]] \
+  || fail "the free wave is not the person's own: $FREE_ME"
+ok "a confirmed address starts a free account with a wave of its own (303)"
 
 step "suspended: the mesh stops, the devices stay"
 mark a
