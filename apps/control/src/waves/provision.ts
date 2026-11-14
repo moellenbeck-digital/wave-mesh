@@ -156,15 +156,15 @@ export type WaveSetup =
   | { state: "closed" };
 
 /**
- * Whether an account may start a wave of its own on this server.
+ * Whether the **shell** may make a wave for someone without being asked to:
+ * `wave-admin set-password`, which has no browser to ask for a domain.
  *
- * Not where waves are sold. There a wave is what a subscription buys, and
- * every account in the system got there through one: a payer, or someone
- * invited onto a booked seat. Left open, the person removed from that seat --
- * or anyone still on it -- could create a wave the next minute, with the same
- * devices and none of the bill. So with billing configured the only way to a
- * wave is the billing API; on a server someone runs for themselves nothing
- * changes.
+ * Not where waves are sold. There a placeholder wave would be a wave nobody
+ * paid for -- the person removed from a booked seat could get one with a new
+ * password. Whether a *person* may create a wave in the browser is decided per
+ * user, in one place, by `waveCreationDenial()` (billing/free-account.ts, ticket
+ * #117): a confirmed user may, up to the free limits of their account.
+ * `wave-admin create-wave` is the explicit operator way and stays.
  */
 export const mayCreateWaves = (config: { billing?: unknown }): boolean => !config.billing;
 

@@ -3,6 +3,7 @@ import { type Context, Hono } from "hono";
 import { html } from "hono/html";
 import { z } from "zod";
 import { createSession, setSessionCookie } from "../auth/session.ts";
+import { applyAccountSubscription } from "../billing/account-subscriptions.ts";
 import { loadSetup, ownerAccess, redeemSetup } from "../billing/setup-links.ts";
 import { applySubscription, billedWave, NoCapacityError } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
@@ -26,6 +27,14 @@ const SubscriptionBody = z.object({
   seats: z.number().int().min(1).max(100_000),
   state: z.enum(["active", "suspended", "ended"]),
   /** When the site read this state (ms); older than the last one applied means stale. */
+  asOf: z.number().int().nonnegative().optional(),
+});
+
+/** The subscription of a whole customer account (ticket #117); no name, the account exists already. */
+const AccountSubscriptionBody = z.object({
+  email: z.string().optional(),
+  seats: z.number().int().min(1).max(100_000),
+  state: z.enum(["active", "suspended", "ended"]),
   asOf: z.number().int().nonnegative().optional(),
 });
 
@@ -106,6 +115,48 @@ export function billingRoutes({ db, config, hub }: BillingRouteDeps) {
     const { meshChanged, ...answer } = result.view;
     if (meshChanged) await hub?.broadcast(answer.waveId);
     return c.json(answer);
+  });
+
+  /**
+   * The subscription of a customer account: more room (people) for every wave
+   * of the account at once. Same contract as the wave subscriptions above --
+   * the state is said, not the change; `asOf` orders deliveries; ended is final
+   * (409 `ended`) -- with these answers of its own:
+   *
+   * - `404 {"error":"unknown-subscription"}`: never seen, and not enough said to
+   *   create it (an address and `active`).
+   * - `404 {"error":"unknown-account"}`: no confirmed user has that address, so
+   *   there is no account to put it under. Nothing was created.
+   * - `409 {"error":"account-has-subscription"}`: the account has another live one.
+   * - `409 {"error":"wave-subscription"}`: the id is already a wave's.
+   */
+  app.put("/api/billing/account-subscriptions/:subscriptionId", async (c) => {
+    const subscriptionId = c.req.param("subscriptionId");
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "not JSON" }, 400);
+    }
+    const parsed = AccountSubscriptionBody.safeParse(body);
+    if (!parsed.success) return c.json({ error: "invalid request", detail: parsed.error.issues }, 400);
+
+    let result: Awaited<ReturnType<typeof applyAccountSubscription>>;
+    try {
+      result = await applyAccountSubscription(db, subscriptionId, parsed.data, {
+        retentionDays: billing?.retentionDays,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith("not an email address")) return c.json({ error: message }, 400);
+      console.error(`billing: account subscription ${subscriptionId}: ${message}`);
+      return c.json({ error: "could not apply the subscription" }, 500);
+    }
+    if (result.kind === "unknown") return c.json({ error: "unknown-subscription" }, 404);
+    if (result.kind === "unknown-account") return c.json({ error: "unknown-account" }, 404);
+    if (result.kind === "ended") return c.json({ error: "ended" }, 409);
+    if (result.kind === "conflict") return c.json({ error: result.reason }, 409);
+    return c.json(result.view);
   });
 
   app.post("/api/billing/subscriptions/:subscriptionId/owner-link", async (c) => {

@@ -24,6 +24,7 @@ import {
   type SessionUser,
   setSessionCookie,
 } from "./auth/session.ts";
+import { creationPolicyOf, waveCreationDenial } from "./billing/free-account.ts";
 import { sweepEndedWaves } from "./billing/subscriptions.ts";
 import { CertificateService } from "./certs/issue.ts";
 import type { Database } from "./db/client.ts";
@@ -46,13 +47,13 @@ import { passwordRoutes } from "./routes/password.ts";
 import { pierRoutes } from "./routes/piers.ts";
 import { serviceRoutes } from "./routes/services.ts";
 import { updateRoutes } from "./routes/update.ts";
-import { waveRoutes } from "./routes/waves.ts";
+import { type CreationThrottles, waveRoutes } from "./routes/waves.ts";
 import { websocket } from "./routes/ws.ts";
 import { ReleaseFeed } from "./updates/releases.ts";
 import { listDevices } from "./waves/devices.ts";
 import { invitesFor } from "./waves/invites.ts";
 import { wavesOf } from "./waves/members.ts";
-import { mayCreateWaves, suggestWave, waveSetup } from "./waves/provision.ts";
+import { suggestWave, waveSetup } from "./waves/provision.ts";
 
 export interface AppDeps {
   db: Database;
@@ -74,6 +75,8 @@ export interface AppDeps {
   releases?: ReleaseFeed;
   /** How the DNS providers are reached when the pier's record goes. Only the tests replace it. */
   dnsFetch?: typeof fetch;
+  /** Throttles for creating waves on a hosted server (ticket #117). Only the tests replace them. */
+  creationThrottles?: CreationThrottles;
 }
 
 type Vars = { user: SessionUser | null };
@@ -93,6 +96,7 @@ export function createApp({
   certs,
   releases,
   dnsFetch,
+  creationThrottles,
 }: AppDeps) {
   const app = new Hono<{ Variables: Vars }>();
 
@@ -158,7 +162,7 @@ export function createApp({
   app.route("/", serviceRoutes({ db, hub, nonces }));
   app.route("/", pierRoutes({ db, hub, nonces }));
   app.route("/", updateRoutes({ db, releases: updates, nonces }));
-  app.route("/", waveRoutes({ db, config, hub, providers, dnsFetch }));
+  app.route("/", waveRoutes({ db, config, hub, providers, dnsFetch, creationThrottles }));
   app.route("/", billingRoutes({ db, config, hub }));
 
   /**
@@ -209,9 +213,15 @@ export function createApp({
     });
   }
 
+  // Whether a user may create a wave is decided per user, in one place, and every
+  // answer below -- /api/me, the login redirect -- takes it from there (ticket #117).
+  const creationPolicy = creationPolicyOf(config);
+  const denialOf = (userId: string) => waveCreationDenial(db, creationPolicy, userId);
+
   app.get("/api/me", async (c) => {
     const user = c.get("user");
     if (!user) return c.json({ error: "unauthenticated" }, 401);
+    const denial = await denialOf(user.id);
     return c.json({
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, name: user.name },
       // Which logins this account has, and whether the guided link of a split-off
@@ -230,9 +240,11 @@ export function createApp({
       // What the create form starts with, so the frontend never has to invent
       // a name or guess what the placeholder domain is called.
       suggestion: suggestWave(user.email ?? user.name),
-      // False where waves are sold: the frontend then explains instead of
-      // offering a form whose POST would be refused anyway.
-      canCreateWave: mayCreateWaves(config),
+      // False where this user may not create one: the frontend then explains
+      // instead of offering a form whose POST would be refused anyway. The code
+      // says why (`placeholder`, `unverified-email`, `email-domain`, `wave-limit`).
+      canCreateWave: denial === null,
+      waveCreation: { allowed: denial === null, reason: denial },
     });
   });
 
@@ -327,7 +339,7 @@ export function createApp({
     if (isLinkFlow(flow)) return links.callback(c, flow, providerId, claims);
 
     const { userId } = await resolveUser(db, claims);
-    const setup = await waveSetup(db, userId, claims.email, mayCreateWaves(config));
+    const setup = await waveSetup(db, userId, claims.email, (await denialOf(userId)) === null);
 
     const { token, expiresAt } = await createSession(db, userId, {
       userAgent: c.req.header("user-agent") ?? null,

@@ -24,6 +24,7 @@ import type { ProviderClaims } from "../auth/identity.ts";
 import type { LoginThrottle } from "../auth/password.ts";
 import type { OAuthProvider } from "../auth/providers.ts";
 import { createSession, type SessionUser, setSessionCookie } from "../auth/session.ts";
+import { freeLimitsOf } from "../billing/plan.ts";
 import type { Database } from "../db/client.ts";
 import { identities } from "../db/schema.ts";
 import type { Config } from "../env.ts";
@@ -63,7 +64,10 @@ export type LinkError =
   | "not-target"
   | "no-provider"
   | "provider-unavailable"
-  | "no-way";
+  | "no-way"
+  | "free-limits-waves"
+  | "free-limits-people"
+  | "free-limits-devices";
 
 const belongsTo = (identityProvider: string, providerId: string): boolean =>
   identityProvider === providerId || identityProvider.startsWith(`${providerId}:`);
@@ -351,8 +355,10 @@ export function accountLinkRoutes({ db, config, providers, hub, throttle, codeTh
     if (!user) return toLogin(c);
     if (!link) return back(c, "expired");
 
-    const result = await mergeAccounts(db, link.id, user.id);
+    const result = await mergeAccounts(db, link.id, user.id, new Date(), freeLimitsOf(config));
     if (result.kind === "gone") return back(c, "expired");
+    // Two free accounts that do not fit one: nothing was changed, and the page says which limit.
+    if (result.kind === "free-limits") return back(c, `free-limits-${result.reason}`);
     if (result.kind === "changed") return back(c, "changed");
     if (result.kind === "not-controlled") return back(c, stageOf(link) === "address" ? "expired" : "no-way");
 

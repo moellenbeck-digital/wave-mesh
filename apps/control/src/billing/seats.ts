@@ -1,6 +1,16 @@
 import { and, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { waveBilling, waveInvites, waveMembers } from "../db/schema.ts";
+import { waveBilling, waveInvites, waveMembers, waves } from "../db/schema.ts";
+import { logFreeDecision } from "./free-log.ts";
+import {
+  accountPlan,
+  accountRoster,
+  countPeople,
+  DEFAULT_FREE_LIMITS,
+  lockAccount,
+  seatCost,
+  seatRule,
+} from "./plan.ts";
 
 /**
  * A billed wave that has no seat left for another person.
@@ -15,6 +25,25 @@ export class SeatLimitError extends Error {
   ) {
     super(`wave ${waveId} has no seat left (${seats} booked)`);
     this.name = "SeatLimitError";
+  }
+}
+
+/**
+ * A hosted account that has no room for another person (ticket #117): the
+ * free limit of three people, or the seats of its subscriptions.
+ *
+ * A `SeatLimitError` for every caller that already handles one -- `seats` is the
+ * limit that applied -- with the account added for those that want to say more.
+ */
+export class AccountSeatLimitError extends SeatLimitError {
+  constructor(
+    waveId: string,
+    readonly accountId: string,
+    readonly limit: number,
+    readonly plan: "free" | "paid",
+  ) {
+    super(waveId, limit);
+    this.name = "AccountSeatLimitError";
   }
 }
 
@@ -41,7 +70,9 @@ export async function ensureSeatFor(db: Database, waveId: string, email: string)
     .limit(1)
     .for("update");
   const seats = billed[0]?.seats;
-  if (seats === undefined) return;
+  // A wave without a billing row of its own: the account's limit applies, if
+  // it has one (ticket #117). Self-hosted waves have no account and no limit.
+  if (seats === undefined) return ensureAccountSeat(db, waveId, email);
 
   const [members] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -60,4 +91,48 @@ export async function ensureSeatFor(db: Database, waveId: string, email: string)
       ),
     );
   if ((members?.count ?? 0) + (invites?.count ?? 0) >= seats) throw new SeatLimitError(waveId, seats);
+}
+
+/**
+ * The account-wide limit for a wave that has no `wave_billing` row (ticket #117).
+ *
+ * What the limit is and how people are counted depends on the derived plan
+ * (`seatRule()` in plan.ts): three distinct people for a free account, the
+ * seats of its subscription for an account with one, and for an account that is
+ * paid only through `wave_billing` rows the sum of their seats, counted as
+ * memberships plus open invitations. Waves *with* a row keep their own check
+ * above; their people are in the roster, but the account check does not run for
+ * them.
+ *
+ * Locks, in the order `createNode` takes them: the wave, then the account. The
+ * account row makes "count, then add" one step for two callers at once.
+ */
+async function ensureAccountSeat(db: Database, waveId: string, email: string): Promise<void> {
+  const [wave] = await db
+    .select({ accountId: waves.accountId })
+    .from(waves)
+    .where(eq(waves.id, waveId))
+    .limit(1)
+    .for("no key update");
+  const accountId = wave?.accountId;
+  if (!accountId) return;
+
+  await lockAccount(db, accountId);
+  const plan = await accountPlan(db, accountId);
+  const rule = seatRule(plan, DEFAULT_FREE_LIMITS);
+  const roster = await accountRoster(db, accountId);
+  const replaced = { waveId, email };
+  const have = countPeople(roster, rule.mode, replaced);
+  if (have + seatCost(roster, rule.mode, email, replaced) > rule.limit) {
+    if (plan.kind === "free") {
+      logFreeDecision("denied", {
+        reason: "people-limit",
+        account: accountId,
+        wave: waveId,
+        limit: rule.limit,
+        have,
+      });
+    }
+    throw new AccountSeatLimitError(waveId, accountId, rule.limit, plan.kind);
+  }
 }

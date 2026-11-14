@@ -138,4 +138,19 @@ export class LoginThrottle {
   succeed(email: string, source: string): void {
     this.attempts.delete(this.key(email, source));
   }
+
+  /**
+   * Counts one event that is not a failure -- the creation of a free account or
+   * wave (ticket #117), where every attempt counts and none resets the count.
+   */
+  hit(key: string, source: string): void {
+    this.fail(key, source);
+  }
+
+  /** Seconds until a blocked key is let through again; 0 when it is not blocked. */
+  retryAfterSeconds(key: string, source: string): number {
+    if (!this.blocked(key, source)) return 0;
+    const entry = this.attempts.get(this.key(key, source));
+    return entry ? Math.max(1, Math.ceil((entry.until - this.now()) / 1000)) : 0;
+  }
 }

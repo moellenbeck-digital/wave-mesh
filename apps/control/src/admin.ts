@@ -21,7 +21,7 @@ import { audit, listAudit, shellActor } from "./audit.ts";
 import { setPassword } from "./auth/password.ts";
 import { disableTwoFactor, hasTwoFactor } from "./auth/two-factor.ts";
 import { MigrationInvariantError, migrateAccounts } from "./billing/migrate-accounts.ts";
-import { ensureSeatFor, SeatLimitError } from "./billing/seats.ts";
+import { AccountSeatLimitError, ensureSeatFor, SeatLimitError } from "./billing/seats.ts";
 import { billingStateOf } from "./billing/subscriptions.ts";
 import { createDb } from "./db/client.ts";
 import { certificateOrders, nodes, users, waveMembers } from "./db/schema.ts";
@@ -933,6 +933,9 @@ async function main(): Promise<never> {
         return addMember(t, target.id, found.id, asRole(role));
       });
     } catch (error) {
+      if (error instanceof AccountSeatLimitError) {
+        return done(1, m.accountNoSeatLeft(target.name, error.limit, error.plan === "free"));
+      }
       if (error instanceof SeatLimitError) return done(1, m.noSeatLeft(target.name, error.seats));
       throw error;
     }
@@ -992,6 +995,9 @@ async function main(): Promise<never> {
     } catch (error) {
       // The operator is held to the booking like everyone else: more seats
       // are bought on the site, not granted on the shell.
+      if (error instanceof AccountSeatLimitError) {
+        return done(1, m.accountNoSeatLeft(target.name, error.limit, error.plan === "free"));
+      }
       if (error instanceof SeatLimitError) return done(1, m.noSeatLeft(target.name, error.seats));
       throw error;
     }

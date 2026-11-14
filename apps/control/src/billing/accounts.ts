@@ -1,7 +1,16 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { customerAccounts, users, waveBilling, waveMembers, waves } from "../db/schema.ts";
+import { customerAccounts, nodes, users, waveBilling, waveMembers, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
+import { logFreeDecision } from "./free-log.ts";
+import {
+  accountPlan,
+  accountRoster,
+  accountWaveCount,
+  DEFAULT_FREE_LIMITS,
+  type FreeLimits,
+  isFreePlan,
+} from "./plan.ts";
 
 /**
  * The hosted customer account ("Kundenkonto", `customer_accounts`, ids `ca_…`).
@@ -45,6 +54,20 @@ export async function oldestAccountOf(db: Database, userId: string): Promise<str
   return rows[0]?.id ?? null;
 }
 
+/** Why two free accounts could not be made one: which limit the waves of the second would break. */
+export interface MergeRefusal {
+  reason: "waves" | "people" | "devices";
+  /** What the one account would hold afterwards. */
+  have: number;
+  limit: number;
+  /** The free account the waves were to go to. */
+  into: string;
+}
+
+export type MoveAccountsResult =
+  | { ok: true; consolidated: Array<{ from: string; into: string; waves: number }> }
+  | ({ ok: false } & MergeRefusal);
+
 /**
  * Hands every customer account of a user to another user.
  *
@@ -52,12 +75,121 @@ export async function oldestAccountOf(db: Database, userId: string): Promise<str
  * the first (`moveTo` in setup-links.ts, `mergeAccounts` in auth/account-link.ts):
  * `customer_accounts.owner_user_id` cascades, so without this the deletion
  * would take the account with it and leave its waves without one.
+ *
+ * **Never two free accounts for one user** (ticket #117). A paid account goes
+ * over as it is. A free one of the first user, when the second user already has
+ * a free one, does not: its waves move into the second's if what the two hold
+ * together fits the free limits (waves, people, devices), and the emptied
+ * account row goes. If they do not fit, nothing is written and the refusal says
+ * which limit it was -- the caller refuses the whole link. Never merged
+ * silently, never partly.
+ *
+ * Call it before anything else of the move is written: a refusal leaves no
+ * trace. The people of the first user are counted as the second user, who they
+ * become.
  */
-export async function moveAccounts(db: Database, fromUserId: string, toUserId: string): Promise<void> {
+export async function moveAccounts(
+  db: Database,
+  fromUserId: string,
+  toUserId: string,
+  limits: FreeLimits = DEFAULT_FREE_LIMITS,
+): Promise<MoveAccountsResult> {
+  const fromRows = await db
+    .select({ id: customerAccounts.id })
+    .from(customerAccounts)
+    .where(eq(customerAccounts.ownerUserId, fromUserId))
+    .orderBy(asc(customerAccounts.createdAt), asc(customerAccounts.id));
+  if (fromRows.length === 0) return { ok: true, consolidated: [] };
+  const toRows = await db
+    .select({ id: customerAccounts.id })
+    .from(customerAccounts)
+    .where(eq(customerAccounts.ownerUserId, toUserId))
+    .orderBy(asc(customerAccounts.createdAt), asc(customerAccounts.id));
+
+  // Every account involved, in one order, so two merges cannot wait for each other.
+  const all = [...fromRows, ...toRows].map((row) => row.id).sort();
   await db
-    .update(customerAccounts)
-    .set({ ownerUserId: toUserId })
-    .where(eq(customerAccounts.ownerUserId, fromUserId));
+    .select({ id: customerAccounts.id })
+    .from(customerAccounts)
+    .where(inArray(customerAccounts.id, all))
+    .orderBy(asc(customerAccounts.id))
+    .for("update");
+
+  let freeTarget: string | null = null;
+  for (const row of toRows) {
+    if (isFreePlan(await accountPlan(db, row.id))) {
+      freeTarget = row.id;
+      break;
+    }
+  }
+
+  const consolidated: Array<{ from: string; into: string; waves: number }> = [];
+  for (const row of fromRows) {
+    const free = isFreePlan(await accountPlan(db, row.id));
+    if (!free || !freeTarget) {
+      await db.update(customerAccounts).set({ ownerUserId: toUserId }).where(eq(customerAccounts.id, row.id));
+      if (free) freeTarget = row.id;
+      continue;
+    }
+    const refusal = await freeAccountsFit(db, row.id, freeTarget, fromUserId, toUserId, limits);
+    if (refusal) {
+      logFreeDecision("denied", {
+        reason: "merge-limit",
+        limit_kind: refusal.reason,
+        from: row.id,
+        into: freeTarget,
+        have: refusal.have,
+        limit: refusal.limit,
+      });
+      return { ok: false, ...refusal };
+    }
+    const moved = await db
+      .update(waves)
+      .set({ accountId: freeTarget })
+      .where(eq(waves.accountId, row.id))
+      .returning({ id: waves.id });
+    await db.delete(customerAccounts).where(eq(customerAccounts.id, row.id));
+    consolidated.push({ from: row.id, into: freeTarget, waves: moved.length });
+  }
+  return { ok: true, consolidated };
+}
+
+/** Whether what two free accounts hold fits the free limits as one; the first limit broken, else null. */
+async function freeAccountsFit(
+  db: Database,
+  fromAccount: string,
+  intoAccount: string,
+  fromUserId: string,
+  toUserId: string,
+  limits: FreeLimits,
+): Promise<MergeRefusal | null> {
+  const wavesTogether = (await accountWaveCount(db, fromAccount)) + (await accountWaveCount(db, intoAccount));
+  if (wavesTogether > limits.waves) {
+    return { reason: "waves", have: wavesTogether, limit: limits.waves, into: intoAccount };
+  }
+
+  const a = await accountRoster(db, fromAccount);
+  const b = await accountRoster(db, intoAccount);
+  const people = new Set<string>();
+  for (const id of [...a.userIds, ...b.userIds]) people.add(id === fromUserId ? toUserId : id);
+  const members = new Set([...a.memberEmails, ...b.memberEmails]);
+  const invited = new Set<string>();
+  for (const invite of [...a.invites, ...b.invites])
+    if (!members.has(invite.email)) invited.add(invite.email);
+  const peopleTogether = people.size + invited.size;
+  if (peopleTogether > limits.people) {
+    return { reason: "people", have: peopleTogether, limit: limits.people, into: intoAccount };
+  }
+
+  const [devices] = await db
+    .select({ count: sql<number>`count(distinct ${nodes.machineKey})::int` })
+    .from(nodes)
+    .innerJoin(waves, eq(waves.id, nodes.waveId))
+    .where(inArray(waves.accountId, [fromAccount, intoAccount]));
+  if ((devices?.count ?? 0) > limits.devices) {
+    return { reason: "devices", have: devices?.count ?? 0, limit: limits.devices, into: intoAccount };
+  }
+  return null;
 }
 
 /**

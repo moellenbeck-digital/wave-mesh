@@ -40,6 +40,14 @@ export async function resolveUser(db: Database, claims: ProviderClaims): Promise
   const email = normalizeEmail(claims.email);
 
   return db.transaction(async (tx) => {
+    // One login of one provider identity at a time: two simultaneous first logins
+    // of the same Pocket-ID account would otherwise both find "no identity yet",
+    // and the second would fail on the unique index -- or, worse, make a second
+    // user, and with it a second free customer account (ticket #117). The lock is
+    // taken before the address lock below, and nothing else takes it.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`identity:${claims.provider}:${claims.subject}`}))`,
+    );
     const existing = await tx
       .select({ userId: identities.userId })
       .from(identities)

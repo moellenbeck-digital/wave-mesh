@@ -102,6 +102,12 @@ const en = {
     "no-provider": "That sign-in is not one of this account's.",
     "provider-unavailable": "The sign-in service is not available right now. Try again later.",
     "no-way": "The other account has not been shown to be yours yet.",
+    "free-limits-waves":
+      "Both accounts have a free plan, and together their waves would be more than a free account may hold. Nothing was changed. Delete a wave or subscribe, then link again.",
+    "free-limits-people":
+      "Both accounts have a free plan, and together their people would be more than a free account may hold. Nothing was changed. Remove a person or an invitation, or subscribe, then link again.",
+    "free-limits-devices":
+      "Both accounts have a free plan, and together their devices would be more than a free account may hold. Nothing was changed. Remove a device or subscribe, then link again.",
     unknown: "That did not work. Nothing was changed.",
   } as Record<string, string>,
 };
@@ -193,6 +199,12 @@ const de: typeof en = {
     "no-provider": "Diese Anmeldung gehört nicht zu diesem Konto.",
     "provider-unavailable": "Der Anmeldedienst ist gerade nicht erreichbar. Versuch es später noch einmal.",
     "no-way": "Das andere Konto wurde noch nicht als deins nachgewiesen.",
+    "free-limits-waves":
+      "Beide Konten sind kostenlos, und ihre Waves zusammen wären mehr, als ein kostenloses Konto fassen darf. Es wurde nichts geändert. Lösche einen Wave oder schließe ein Abo ab und verknüpfe dann erneut.",
+    "free-limits-people":
+      "Beide Konten sind kostenlos, und ihre Personen zusammen wären mehr, als ein kostenloses Konto fassen darf. Es wurde nichts geändert. Entferne eine Person oder eine Einladung oder schließe ein Abo ab und verknüpfe dann erneut.",
+    "free-limits-devices":
+      "Beide Konten sind kostenlos, und ihre Geräte zusammen wären mehr, als ein kostenloses Konto fassen darf. Es wurde nichts geändert. Entferne ein Gerät oder schließe ein Abo ab und verknüpfe dann erneut.",
     unknown: "Das hat nicht geklappt. Es wurde nichts geändert.",
   },
 };

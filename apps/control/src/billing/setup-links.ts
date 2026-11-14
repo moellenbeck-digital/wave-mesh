@@ -259,7 +259,11 @@ async function moveTo(db: Database, fromUserId: string, toUserId: string): Promi
   await db.update(waves).set({ ownerUserId: toUserId }).where(eq(waves.ownerUserId, fromUserId));
   // The customer accounts (billing units, not users) go along: the row below
   // that deletes the placeholder would otherwise cascade into them.
-  await moveAccounts(db, fromUserId, toUserId);
+  const moved = await moveAccounts(db, fromUserId, toUserId);
+  // A placeholder only ever came from a payment, so its accounts are paid and
+  // go over as they are; a free one would need a confirmed address, which a
+  // placeholder never has. Should it happen anyway, nothing is written.
+  if (!moved.ok) throw new Error(`placeholder ${fromUserId} cannot be merged: ${moved.reason} limit`);
   const moving = await db
     .select({ waveId: waveMembers.waveId, role: waveMembers.role })
     .from(waveMembers)
