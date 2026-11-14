@@ -308,3 +308,49 @@ describe("@t104 a wave that waits for the system clock", () => {
     });
   });
 });
+
+describe("a wave that the free device limit turned away", () => {
+  const full = () =>
+    ({
+      profiles: [
+        profileStatusFromSnapshot(undefined, {
+          controlUrl: "http://control.example",
+          state: "failed",
+          message: "this device was not added: its free account already holds 100 / 100 devices",
+          notice: {
+            code: "device-limit",
+            params: { limit: "100", used: "100", upgradeUrl: "http://control.example/account#plan" },
+          },
+        }),
+      ],
+      events: [],
+    }) satisfies Status;
+
+  const inLocale = (wanted: "en" | "de", run: () => void) => {
+    const before = locale();
+    setLocale(wanted);
+    try {
+      run();
+    } finally {
+      setLocale(before);
+    }
+  };
+
+  test("says used / limit and the next step in English", () => {
+    inLocale("en", () => {
+      const text = plain(renderStatus(full()));
+      expect(text).toContain("100 / 100 devices");
+      expect(text).toContain("remove a device you no longer use");
+      expect(text).toContain("http://control.example/account#plan");
+    });
+  });
+
+  test("and in German, with the same numbers", () => {
+    inLocale("de", () => {
+      const text = plain(renderStatus(full()));
+      expect(text).toContain("100 / 100 Geräte");
+      expect(text).toContain("nächster Schritt");
+      expect(text).toContain("http://control.example/account#plan");
+    });
+  });
+});

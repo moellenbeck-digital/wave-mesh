@@ -440,6 +440,30 @@ describe("signing in", () => {
     expect(parse(response).error).toContain("ECONNREFUSED");
   });
 
+  test("a device the free limit turned away gets used / limit and the next step, in the page's language", async () => {
+    const daemon = fakeDaemon(() =>
+      status([
+        {
+          controlUrl: "https://wave.example.com",
+          state: "failed",
+          message: "this device was not added",
+          notice: {
+            code: "device-limit",
+            params: { limit: "100", used: "100", upgradeUrl: "https://wave.example.com/account#plan" },
+          },
+        },
+      ]),
+    );
+    const response = await handle(
+      post("/api/login", { controlUrl: "https://wave.example.com" }, { acceptLanguage: "de" }),
+      deps(daemon.connect),
+    );
+    const error = parse(response).error as string;
+    expect(error).toContain("100 / 100 Geräte");
+    expect(error).toContain("nächster Schritt");
+    expect(error).toContain("https://wave.example.com/account#plan");
+  });
+
   test("an address that is not one is refused before the daemon hears of it", async () => {
     const daemon = fakeDaemon(status);
     const response = await handle(post("/api/login", { controlUrl: "ftp://nope" }), deps(daemon.connect));

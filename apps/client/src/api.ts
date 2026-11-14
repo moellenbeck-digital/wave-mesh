@@ -47,7 +47,7 @@ export class ControlClient {
 
     const text = await res.text();
     if (!res.ok)
-      throw new HttpError(res.status, `${method} ${path} failed: ${res.status} ${text.slice(0, 200)}`);
+      throw new HttpError(res.status, `${method} ${path} failed: ${res.status} ${text.slice(0, 200)}`, text);
     return text ? JSON.parse(text) : {};
   }
 

@@ -223,6 +223,41 @@ describe("a control server that cannot be reached", () => {
     }
   });
 
+  test("the free device limit fails the wave with its numbers and next step as a notice", async () => {
+    const { HttpError } = await import("../src/retry.ts");
+    const daemon = await daemonWith("http://full.example");
+    // The body is longer than the 200 characters the message keeps; the daemon must read the whole of it.
+    const body = JSON.stringify({
+      error: `device limit reached: this account holds 100 / 100 devices, counted across all its waves. Next step: remove a device you no longer use (in the web app, or \`wave logout <wave>\` on that device), or subscribe at http://full.example/account#plan.`,
+      code: "device_limit",
+      limit: 100,
+      used: 100,
+      upgradeUrl: "http://full.example/account#plan",
+    });
+    script = async () => {
+      throw new HttpError(403, `POST /v1/machine/register failed: 403 ${body.slice(0, 200)}`, body);
+    };
+    try {
+      await daemon.up();
+      await Bun.sleep(20);
+
+      const failed = (await daemon.status()).profiles[0];
+      expect(failed?.state).toBe("failed");
+      expect(failed?.notice).toEqual({
+        code: "device-limit",
+        params: { limit: "100", used: "100", upgradeUrl: "http://full.example/account#plan" },
+      });
+      // An older client reads only `message`: the same English sentence.
+      expect(failed?.message).toContain("100 / 100 devices");
+      expect(failed?.message).toContain("subscribe at http://full.example/account#plan");
+      const de = noticeText(failed?.notice as never, "de");
+      expect(de).toContain("100 / 100 Geräte");
+      expect(de).toContain("nächster Schritt");
+    } finally {
+      script = null;
+    }
+  });
+
   test("a failure that is not a connection problem after the wait still fails the wave", async () => {
     const daemon = await daemonWith("http://down.example");
     script = async (options) => {

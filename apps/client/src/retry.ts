@@ -23,11 +23,16 @@ export const MAX_BACKOFF_MS = 30_000;
  */
 export const ATTEMPT_TIMEOUT_MS = 15_000;
 
-/** A reply that is not a success; `status` is what the retry rule looks at. */
+/**
+ * A reply that is not a success; `status` is what the retry rule looks at.
+ * `body` is the whole answer: `message` cuts it off at 200 characters, and a
+ * refusal with numbers and a next step is longer than that.
+ */
 export class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly body?: string,
   ) {
     super(message);
     this.name = "HttpError";
@@ -41,10 +46,11 @@ export const isAbort = (error: unknown): boolean => error instanceof Error && er
  * its JSON body (`POST /v1/... failed: 401 {"error":"clock-skew"}`).
  */
 export function serverReason(error: HttpError): string {
-  const start = error.message.indexOf("{");
+  const source = error.body ?? error.message;
+  const start = source.indexOf("{");
   if (start >= 0) {
     try {
-      const body = JSON.parse(error.message.slice(start)) as { error?: unknown };
+      const body = JSON.parse(source.slice(start)) as { error?: unknown };
       if (typeof body.error === "string") return body.error;
     } catch {
       // Cut off at 200 characters: say what there is.
@@ -232,5 +238,36 @@ export async function retrying<T>(
       await sleep(delay, options.signal);
       delay = Math.min(delay * 2, max);
     }
+  }
+}
+
+/**
+ * The free device limit, when that is what a refusal says: the machine API
+ * answers `403 {"code":"device_limit","limit":100,"used":100,"upgradeUrl":...}`
+ * for a device the free account has no room for. `used` and `upgradeUrl` are
+ * missing from an older server, which only knew the limit.
+ */
+export function deviceLimitOf(
+  error: unknown,
+): { limit: number; used: number | null; upgradeUrl: string | null } | null {
+  if (!(error instanceof HttpError) || error.status !== 403) return null;
+  const source = error.body ?? error.message;
+  const start = source.indexOf("{");
+  if (start < 0) return null;
+  try {
+    const body = JSON.parse(source.slice(start)) as {
+      code?: unknown;
+      limit?: unknown;
+      used?: unknown;
+      upgradeUrl?: unknown;
+    };
+    if (body.code !== "device_limit" || typeof body.limit !== "number") return null;
+    return {
+      limit: body.limit,
+      used: typeof body.used === "number" ? body.used : null,
+      upgradeUrl: typeof body.upgradeUrl === "string" ? body.upgradeUrl : null,
+    };
+  } catch {
+    return null;
   }
 }

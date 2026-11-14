@@ -148,6 +148,8 @@ function describePath(peer: ProfileStatus["peers"][number], locale: Locale): str
 export function profileProblem(profile: ProfileStatus, locale: Locale): string | null {
   if (profile.state === "starting" && profile.notice) return readNotice(profile, locale);
   if (profile.state !== "failed") return null;
+  // A refusal with its own words (the free device limit) comes in the reader's language.
+  if (profile.notice) return readNotice(profile, locale);
   const message = profile.message;
   if (message && /certificate|x509|SSL|TLS|ALTNAME/i.test(message)) {
     return uiText(locale).certificateFailure(profile.controlUrl);
