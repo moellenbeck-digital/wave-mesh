@@ -14,6 +14,7 @@ import {
   deleteWave,
   suggestWave,
 } from "../waves/provision.ts";
+import { ensureAccountFor } from "./accounts.ts";
 import { hasAnyIdentity } from "./setup-links.ts";
 
 export type BillingState = "active" | "suspended" | "ended";
@@ -315,6 +316,10 @@ async function createBilledWave(
       // accounts may share one), so the address itself is the lock.
       await lockAddress(t, email);
       const userId = await ownerFor(t, email);
+      // The owner's customer account (made if they have none), in this very
+      // transaction: a billed wave is never visible without one. A self-hosted
+      // wave never comes through here and has none.
+      const accountId = await ensureAccountFor(t, userId);
       // Two customers called "acme" collide on the suffix; a discriminator
       // rather than a refusal, the same as ensureWaveForUser() does.
       const base = suggestWave(input.name ?? email).name;
@@ -326,6 +331,7 @@ async function createBilledWave(
             userId,
             name,
             dnsSuffix: `${name}.${DEFAULT_DNS_BASE}`,
+            accountId,
             ...(container ? { container } : {}),
           });
         } catch (error) {

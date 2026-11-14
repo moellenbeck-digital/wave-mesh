@@ -20,6 +20,7 @@ import { adminMessages } from "./admin-messages.ts";
 import { audit, listAudit, shellActor } from "./audit.ts";
 import { setPassword } from "./auth/password.ts";
 import { disableTwoFactor, hasTwoFactor } from "./auth/two-factor.ts";
+import { MigrationInvariantError, migrateAccounts } from "./billing/migrate-accounts.ts";
 import { ensureSeatFor, SeatLimitError } from "./billing/seats.ts";
 import { billingStateOf } from "./billing/subscriptions.ts";
 import { createDb } from "./db/client.ts";
@@ -155,6 +156,7 @@ const COMMANDS = [
   "devices",
   "remove-device",
   "delete-wave",
+  "migrate-accounts",
   "services",
   "remove-service",
   "auth-key",
@@ -232,6 +234,7 @@ const usage = `${m.usageTitle}
   ${invocation} devices       <wave>
   ${invocation} remove-device <wave> <hostname|node-id>
   ${invocation} delete-wave   <wave>
+  ${invocation} migrate-accounts [--dry-run]
 
   ${invocation} set-dns-provider    <wave> <${PROVIDER_KINDS.join("|")}>
   ${invocation} dns-provider        <wave>
@@ -737,6 +740,38 @@ async function main(): Promise<never> {
     }
     if (rows.length === 0) console.log(m.noCertificates);
     return done(0);
+  }
+
+  if (command === "migrate-accounts") {
+    // Puts every booked wave under a customer account (the billing unit; not a
+    // user, not an OIDC identity). The logic is billing/migrate-accounts.ts: all
+    // or nothing, idempotent, and it stops on any owner it cannot be sure of.
+    const flags = rest.filter((arg) => arg !== "--dry-run");
+    if (flags.length > 0) return done(1, usage);
+    const dryRun = rest.includes("--dry-run");
+    let result: Awaited<ReturnType<typeof migrateAccounts>>;
+    try {
+      result = await migrateAccounts(db, { dryRun });
+    } catch (err) {
+      if (err instanceof MigrationInvariantError) {
+        return done(1, m.migrateInvariant(err.counter, err.before, err.after));
+      }
+      throw err;
+    }
+    if (result.kind === "nothing") return done(0, m.migrateNothing(result.counts));
+    if (result.kind === "blocked") {
+      console.error(m.migrateBlocked(result.problems.length));
+      for (const p of result.problems) {
+        console.error(m.migrateProblem(p.waveId, p.userId, p.reason, p.detail));
+      }
+      return done(1, m.migrateHint);
+    }
+    console.log(m.migrateCounts(m.migrateBefore, result.before));
+    for (const a of result.assignments) {
+      console.log(m.migrateAssign(a.waveId, a.accountId, a.ownerUserId, a.newAccount));
+    }
+    console.log(m.migrateCounts(result.dryRun ? m.migrateAfterDry : m.migrateAfter, result.after));
+    return done(0, m.migrateDone(result.dryRun, result.accountsCreated, result.assignments.length));
   }
 
   if (command === "create-wave") {

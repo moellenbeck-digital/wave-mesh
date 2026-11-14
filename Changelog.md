@@ -6,6 +6,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Gehostetes Kundenkonto als Abrechnungseinheit:** Ein Kundenkonto besitzt mehrere Waves und ist weder der
+  Benutzer noch die Anmeldung über einen Anbieter. Neue Bezahl-Waves landen automatisch im Konto ihres
+  Eigentümers, und das Konto folgt dem Wave bei der Kontoverknüpfung. Selbst betriebene Server brauchen
+  keines. Die Kontingent-Durchsetzung bleibt unverändert.
+- **`wave-admin migrate-accounts [--dry-run]`:** Ordnet bestehende Bezahl-Waves je Eigentümer einem
+  Kundenkonto zu, ohne dass sich ein Gerät neu anmelden muss. Wiederholbar, alles oder nichts; bei unklaren
+  Fällen (doppelte Adresse, abweichender Eigentümer) bricht der Befehl ab und nennt sie.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.3 (12.11.2026)

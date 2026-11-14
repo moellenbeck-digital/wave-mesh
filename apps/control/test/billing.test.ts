@@ -8,6 +8,7 @@ import { SeatLimitError } from "../src/billing/seats.ts";
 import { ownerAccess } from "../src/billing/setup-links.ts";
 import type { Database } from "../src/db/client.ts";
 import {
+  customerAccounts,
   identities,
   nodes,
   passwordSetups,
@@ -691,6 +692,9 @@ describe("the setup link", () => {
     const view = await buy();
     const path = await linkPath("sub_1", "cs_1");
     const placeholder = (await db.select({ id: waves.ownerUserId }).from(waves))[0]?.id ?? "";
+    // The checkout gave the placeholder a customer account (a billing unit, not a user).
+    const account = (await db.select().from(customerAccounts))[0];
+    expect(account?.ownerUserId).toBe(placeholder);
     // The race: a first Google login and the payment, each seeing nobody yet.
     await db.insert(users).values({ id: "u_google", email: "anna@acme.example", emailVerified: true });
     await db.insert(identities).values({
@@ -715,6 +719,11 @@ describe("the setup link", () => {
     ]);
     expect((await db.select().from(nodes))[0]?.userId).toBe("u_google");
     expect(await db.select().from(users).where(eq(users.id, placeholder))).toEqual([]);
+    // The customer account moved with the wave instead of vanishing with the placeholder.
+    expect(await db.select().from(customerAccounts)).toEqual([
+      expect.objectContaining({ id: account?.id, ownerUserId: "u_google" }),
+    ]);
+    expect((await db.select().from(waves))[0]?.accountId).toBe(account?.id ?? "");
     // No password was set on the account that signs in with Google.
     expect((await db.select().from(users).where(eq(users.id, "u_google")))[0]?.passwordHash).toBeNull();
   });

@@ -1241,6 +1241,7 @@ bun apps/control/src/admin.ts devices       <wave>
 bun apps/control/src/admin.ts remove-device <wave> <hostname|node-id>
 bun apps/control/src/admin.ts set-domain    <wave> <domain>
 bun apps/control/src/admin.ts delete-wave   <wave>
+bun apps/control/src/admin.ts migrate-accounts [--dry-run]   # Kundenkonten, siehe „Abrechnung (Stripe)“
 ```
 
 `<wave>` ist Name, Id oder die Adresse des Eigentümers — bei mehreren Treffern
@@ -1539,6 +1540,55 @@ Was daran festliegt:
   Pre-Auth-Key über zwei Test-Routen an, die nur
   `apps/control/test/e2e-server.ts` kennt (`POST /__e2e/billing/sweep?days=…`
   stellt die Uhr des Sweeps vor, `POST /__e2e/auth-key?wave=…`).
+
+### Das Kundenkonto (`customer_accounts`, `billing/accounts.ts`)
+
+**Ein gehostetes Kundenkonto ist die Abrechnungseinheit** und besitzt mehrere
+Waves (`waves.account_id`). Es ist **nicht** der Benutzer (`users`, eine Person,
+die sich anmeldet — das Konto nennt nur einen als Eigentümer,
+`owner_user_id`) und **nicht** die OIDC-Identität (`identities`, ein Anbieter-Login
+eines Benutzers). Die ID ist dauerhaft (`ca_…`). Ein selbst betriebener Server
+(kein `wave_billing`) hat kein Kundenkonto und bleibt unbegrenzt.
+
+- **Das Kontingent ist ein Modell, keine Spalte.** Es ist die Summe der
+  `wave_billing.seats` der Waves des Kontos (`accountQuota()`): keine zweite Zahl, die von
+  dem abweichen könnte, was Stripe sagt. **Durchgesetzt wird es noch nicht** —
+  `ensureSeatFor()` zählt weiter je Wave.
+- **Additiv.** Migration `0022_customer-accounts`: neue Tabelle und eine nullable
+  Spalte `waves.account_id`, nichts an `waves`, `wave_billing`, `nodes`, Schlüsseln oder
+  Prefixen geändert. `owner_user_id` kaskadiert (ein gelöschter Benutzer nimmt seine
+  Kontozeile mit), `waves.account_id` ist `set null`: die Wave-Zeile bleibt, wenn das
+  Konto verschwindet. **Das alte Control-Image läuft gegen dieses Schema weiter**
+  (Rückfallverfahren: Tag zurück, kein `down`-Schritt) — es kennt die Spalte nicht, und sie
+  hat keinen Default, den es brauchen könnte; `test/customer-accounts-rollback.test.ts`
+  belegt es mit den Anweisungen des alten Images. Ein Wave, den das alte Image danach ohne
+  Konto anlegt, holt der nächste Lauf von `migrate-accounts` nach.
+- **`createBilledWave()` ordnet den Wave in derselben Transaktion dem Konto des
+  Eigentümers zu** (`ensureAccountFor()`: legt an, falls nötig, unter `FOR UPDATE` auf der
+  Benutzerzeile; hat der Eigentümer mehrere Konten, gilt das älteste). `createWave()` ohne
+  `accountId` — `wave-admin create-wave`, die Anmeldung ohne Billing — lässt `account_id` leer.
+- **Wer den Wave bekommt, bekommt das Konto.** `moveTo()` (Platzhalter → bestätigtes Konto)
+  und `mergeAccounts()` rufen `moveAccounts()` und setzen `customer_accounts.owner_user_id`
+  auf den Zielbenutzer, *bevor* der Quellbenutzer gelöscht wird; sonst risse die Kaskade das
+  Konto mit. Wave-Löschen und Sweep lassen das Konto stehen.
+- **`wave-admin migrate-accounts [--dry-run]`** (`billing/migrate-accounts.ts`) überführt die
+  vorhandenen Bezahl-Waves — auch `suspended`/`ended`, solange der Wave existiert — in je ein
+  Konto je Eigentümer-Benutzer (`waves.owner_user_id`); `wave_billing` und Abo-IDs werden nur
+  zugeordnet. Ein Lauf ist **eine** Transaktion (`repeatable read`, damit die Zähler eine
+  Momentaufnahme sind) unter einem Advisory-Lock und idempotent: zweiter Lauf = „nichts zu
+  tun“, keine Schreibzugriffe. Er schreibt je zugeordnetem Wave einen Audit-Eintrag
+  `billing.account-assign` und druckt vorher/nachher: Waves, `wave_members`, `nodes`,
+  Auth-Keys, `wave_billing` (unveränderlich — ändert sich einer, bricht der Lauf mit Rollback ab),
+  Kundenkonten, Waves ohne Konto.
+- **Unklare Fälle stoppen den ganzen Lauf, ohne etwas zu schreiben** (Exit ≠ 0, eine Zeile je
+  Fall mit Wave-ID, Benutzer-ID und Grund): (a) `owner_user_id` ist nicht das einzige
+  `wave_members`-Mitglied mit Rolle `owner`; (b) der Eigentümer hat dieselbe Adresse
+  (`lower(email)`) wie ein *anderer* Benutzer, auch unbestätigt oder als Platzhalter;
+  (c) der Eigentümer hat keine Adresse; (d) zwei Bezahl-Waves gehören verschiedenen
+  Benutzern derselben Adresse. **Nie** wird nach Adresse zusammengeführt oder ein Benutzer
+  verschmolzen; die Klärung macht der Operator (z. B. über die Kontoverknüpfung, siehe
+  „Getrennte Konten verknüpfen“), danach läuft der Befehl erneut. Im Deployment: nach dem
+  Rollout `kubectl exec … -- wave-admin migrate-accounts --dry-run`, dann ohne Flag.
 
 Offen und nicht Teil davon: ein **eigener Control-Server je Geschäftskunde**
 (ein Eintrag in einer ArgoCD-ApplicationSet, daraus Namespace, Overlay,

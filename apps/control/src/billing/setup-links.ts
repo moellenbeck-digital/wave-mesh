@@ -13,6 +13,7 @@ import {
   waves,
 } from "../db/schema.ts";
 import { newId } from "../ids.ts";
+import { moveAccounts } from "./accounts.ts";
 
 /** As long as an invitation: long enough for a mailbox, short enough to go stale. */
 export const SETUP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -256,6 +257,9 @@ async function isPlaceholder(db: Database, userId: string): Promise<boolean> {
  */
 async function moveTo(db: Database, fromUserId: string, toUserId: string): Promise<void> {
   await db.update(waves).set({ ownerUserId: toUserId }).where(eq(waves.ownerUserId, fromUserId));
+  // The customer accounts (billing units, not users) go along: the row below
+  // that deletes the placeholder would otherwise cascade into them.
+  await moveAccounts(db, fromUserId, toUserId);
   const moving = await db
     .select({ waveId: waveMembers.waveId, role: waveMembers.role })
     .from(waveMembers)

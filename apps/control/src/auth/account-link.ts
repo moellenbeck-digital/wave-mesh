@@ -1,4 +1,5 @@
 import { and, asc, count, eq, gt, inArray, isNull, lt, ne } from "drizzle-orm";
+import { moveAccounts } from "../billing/accounts.ts";
 import type { Database } from "../db/client.ts";
 import {
   accountLinks,
@@ -559,6 +560,9 @@ export async function mergeAccounts(
         .set({ role: "owner" })
         .where(and(eq(waveMembers.userId, targetId), inArray(waveMembers.waveId, ownedIds)));
     }
+    // B's customer accounts (billing units, not users) go to A as well, or
+    // deleting B below would take them along; their waves stay where they are.
+    await moveAccounts(t, userId, targetId);
     const mine = await t.select().from(waveMembers).where(eq(waveMembers.userId, userId));
     for (const member of mine) {
       waveIds.add(member.waveId);

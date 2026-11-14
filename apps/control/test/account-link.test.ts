@@ -11,6 +11,7 @@ import type { Database } from "../src/db/client.ts";
 import {
   accountLinks,
   auditLog,
+  customerAccounts,
   identities,
   nodes,
   sessions,
@@ -536,6 +537,9 @@ describe("step three: the summary and the POST", () => {
     await db
       .insert(waveBilling)
       .values({ waveId: waveOfB.id, subscriptionId: "sub_b", seats: 3, state: "active" });
+    // B owns a customer account (a billing unit, not a user) with the wave under it.
+    await db.insert(customerAccounts).values({ id: "ca_b", ownerUserId: b });
+    await db.update(waves).set({ accountId: "ca_b" }).where(eq(waves.id, waveOfB.id));
     await db.insert(waveMembers).values({ waveId: waveOfA.id, userId: b, role: "member" });
     await addDevice(waveOfB.id, b, "laptop", 10);
     const oldSession = jarB.get("wave_session");
@@ -561,6 +565,11 @@ describe("step three: the summary and the POST", () => {
     expect((await db.select().from(waveBilling).where(eq(waveBilling.waveId, waveOfB.id)))[0]?.state).toBe(
       "active",
     );
+    // The customer account went to A with the wave; deleting B did not take it along.
+    expect(await db.select().from(customerAccounts)).toEqual([
+      expect.objectContaining({ id: "ca_b", ownerUserId: a }),
+    ]);
+    expect((await db.select().from(waves).where(eq(waves.id, waveOfB.id)))[0]?.accountId).toBe("ca_b");
     // The device is A's, in the same wave, with the same name and address.
     const device = (await db.select().from(nodes))[0];
     expect([device?.userId, device?.waveId, device?.hostname, device?.ipv4]).toEqual([
