@@ -8,6 +8,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.17.0-develop.5 (14.11.2026)
+
+Keine fachlichen Änderungen gegenüber v0.17.0-develop.4. Der Stand enthält nur einen zusätzlichen Oberflächentest zum Kundenkonto (Ticket #114).
+
+---
+
 ## 🔬 Development v0.17.0-develop.4 (14.11.2026)
 
 ### Neue Funktionen
