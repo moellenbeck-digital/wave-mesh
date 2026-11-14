@@ -28,6 +28,7 @@ import { certificateOrders, nodes, users, waveMembers } from "./db/schema.ts";
 import { configureDnsProvider, findDnsCredential, removeDnsCredential } from "./dns/credentials.ts";
 import { type AutomaticKind, isAutomaticKind, isProviderKind, PROVIDER_KINDS } from "./dns/provider.ts";
 import { loadConfig } from "./env.ts";
+import { serverCapacity } from "./net/capacity.ts";
 import { createAuthKey, listAuthKeys, revokeAuthKey } from "./waves/auth-keys.ts";
 import { createInvite, listInvites, looksLikeEmail, normaliseEmail, revokeInvite } from "./waves/invites.ts";
 import { type FoundWave, isAmbiguous, resolveWave } from "./waves/lookup.ts";
@@ -178,6 +179,7 @@ const COMMANDS = [
   "tag",
   "untag",
   "audit",
+  "capacity",
 ] as const;
 
 /**
@@ -235,6 +237,7 @@ const usage = `${m.usageTitle}
   ${invocation} remove-device <wave> <hostname|node-id>
   ${invocation} delete-wave   <wave>
   ${invocation} migrate-accounts [--dry-run]
+  ${invocation} capacity        [--json]
 
   ${invocation} set-dns-provider    <wave> <${PROVIDER_KINDS.join("|")}>
   ${invocation} dns-provider        <wave>
@@ -774,6 +777,16 @@ async function main(): Promise<never> {
     return done(0, m.migrateDone(result.dryRun, result.accountsCreated, result.assignments.length));
   }
 
+  if (command === "capacity") {
+    // Where the address container stands: what is held and free per block size,
+    // the share taken, the reserve held back for billed waves. Read-only.
+    const flags = rest.filter((arg) => arg !== "--json");
+    if (flags.length > 0) return done(1, usage);
+    const capacity = await serverCapacity(db, config);
+    console.log(rest.includes("--json") ? JSON.stringify(capacity, null, 2) : m.capacity(capacity));
+    return done(0);
+  }
+
   if (command === "create-wave") {
     // The deliberate way to a wave, and on a server that sells them the only
     // one besides a subscription: set-password does not make one there, so a
@@ -797,6 +810,7 @@ async function main(): Promise<never> {
       name,
       dnsSuffix,
       container: config.ipv4Container,
+      reserve: { blocks: config.capacityReserve, enforce: false },
     });
     if ("conflict" in created) return done(1, m.suffixTaken(dnsSuffix));
     await wave(created.waveId);

@@ -107,6 +107,19 @@ const sameAddress = (bytes: Uint8Array, address: string | undefined, v6: boolean
  * The reverse zones a wave covers. Each wave gets a /16 of IPv4 and a /48 of
  * IPv6 (see D5), so the zone is the same for every address in it -- which is
  * what makes it derivable from our own without the netmap carrying prefixes.
+ *
+ * **Known limit (ticket #118).** A free wave is a /24, so several waves share
+ * one /16 and with it this zone. It stays the /16 here: the netmap does not
+ * carry the prefix length. What that costs and what it does not:
+ *
+ * - Names do not leak. PTR is answered from this wave's own records only, and
+ *   an address of another wave in the same /16 is NXDOMAIN, never a name from
+ *   somewhere else (test "two waves in the same /16").
+ * - A device in **two** waves of the same /16 gets NXDOMAIN for the addresses
+ *   of the second wave from the first wave's resolver, instead of the query
+ *   being passed on to the second's. Forward lookups are unaffected.
+ *
+ * Exact zones need an optional signed prefix field in the netmap; not done yet.
  */
 export function reverseZonesFor(addresses: string[]): string[] {
   const zones = new Set<string>();

@@ -108,7 +108,7 @@ export async function applySubscription(
   db: Database,
   subscriptionId: string,
   input: SubscriptionInput,
-  options: { retentionDays?: number; container?: string; now?: Date } = {},
+  options: { retentionDays?: number; container?: string; capacityReserve?: number; now?: Date } = {},
 ): Promise<SubscriptionResult> {
   const now = options.now ?? new Date();
   const retentionMs = (options.retentionDays ?? DEFAULT_RETENTION_DAYS) * 24 * 60 * 60 * 1000;
@@ -116,7 +116,7 @@ export async function applySubscription(
   let created = false;
   if (!(await loadBilled(db, subscriptionId))) {
     if (!input.email || !input.name || input.state !== "active") return { kind: "unknown" };
-    created = await createBilledWave(db, subscriptionId, input, options.container);
+    created = await createBilledWave(db, subscriptionId, input, options.container, options.capacityReserve);
   }
 
   const outcome = await db.transaction(async (tx) => {
@@ -303,6 +303,7 @@ async function createBilledWave(
   subscriptionId: string,
   input: SubscriptionInput,
   container: string | undefined,
+  capacityReserve = 0,
 ): Promise<boolean> {
   const email = normaliseEmail(input.email ?? "");
   if (!looksLikeEmail(email)) throw new Error(`not an email address: ${input.email}`);
@@ -333,6 +334,9 @@ async function createBilledWave(
             dnsSuffix: `${name}.${DEFAULT_DNS_BASE}`,
             accountId,
             ...(container ? { container } : {}),
+            // A customer who has paid is never refused for the reserve; the log
+            // is told when it runs low.
+            reserve: { blocks: capacityReserve, enforce: false },
           });
         } catch (error) {
           if (

@@ -324,6 +324,78 @@ describe("names for addresses", () => {
   });
 });
 
+/**
+ * Ticket #118: free waves are a /24 each, so two waves share a /16 -- and with
+ * it the reverse zone `reverseZonesFor()` derives. What the wave says about an
+ * address of the other must still be nothing: PTR is answered from the wave's
+ * own records only, and an address nobody here holds is NXDOMAIN, never a name.
+ */
+describe("two waves in the same /16", () => {
+  const waveA: ResolverConfig = {
+    zone: "a.wave.internal",
+    records: [
+      { name: "laptop.a.wave.internal", ipv4: "10.127.255.1" },
+      { name: "nas.a.wave.internal", ipv4: "10.127.255.2" },
+    ],
+    routes: [],
+    reverse: reverseZonesFor(["10.127.255.1/32"]),
+  };
+  const waveB: ResolverConfig = {
+    zone: "b.wave.internal",
+    records: [
+      { name: "laptop.b.wave.internal", ipv4: "10.127.254.1" },
+      { name: "secret-db.b.wave.internal", ipv4: "10.127.254.2" },
+    ],
+    routes: [],
+    reverse: reverseZonesFor(["10.127.254.1/32"]),
+  };
+  const ptr = (address: string) => `${address.split(".").reverse().join(".")}.in-addr.arpa`;
+
+  test("both derive the same /16 zone", () => {
+    expect(waveA.reverse).toEqual(["127.10.in-addr.arpa"]);
+    expect(waveB.reverse).toEqual(waveA.reverse);
+  });
+
+  test("wave A asked for an address of wave B gives no name -- NXDOMAIN, no record", () => {
+    for (const address of ["10.127.254.1", "10.127.254.2"]) {
+      const packet = answered(resolve(query(ptr(address), RecordType.PTR), waveA));
+      const { code, records } = readAnswers(packet);
+      expect(code).toBe(ResponseCode.NameError);
+      expect(records).toEqual([]);
+      // Nothing of B in the bytes either, however it would have been encoded.
+      expect(new TextDecoder("latin1").decode(packet)).not.toMatch(/secret|laptop|b\.wave/);
+    }
+  });
+
+  test("no address of wave B, held or not, ever yields a record from wave A", () => {
+    for (let host = 0; host < 256; host++) {
+      const resolution = resolve(query(ptr(`10.127.254.${host}`), RecordType.PTR), waveA);
+      const { records } = readAnswers(answered(resolution));
+      expect(records).toEqual([]);
+    }
+  });
+
+  test("each wave still names its own addresses, and only those", () => {
+    expect(readPtrTarget(answered(resolve(query(ptr("10.127.255.1"), RecordType.PTR), waveA)))).toBe(
+      "laptop.a.wave.internal",
+    );
+    expect(readPtrTarget(answered(resolve(query(ptr("10.127.254.2"), RecordType.PTR), waveB)))).toBe(
+      "secret-db.b.wave.internal",
+    );
+    expect(readAnswers(answered(resolve(query(ptr("10.127.255.2"), RecordType.PTR), waveB))).records).toEqual(
+      [],
+    );
+  });
+
+  // The limit: the zone is the /16, so wave A claims the whole of it. A device
+  // that is in both waves and asks A about an address of B gets NXDOMAIN
+  // instead of being passed on to B. Known, not fixed here (needs the prefix in
+  // the netmap).
+  test("known limit: the second wave's addresses are NXDOMAIN, not forwarded", () => {
+    expect(resolve(query(ptr("10.127.254.1"), RecordType.PTR), waveA).kind).toBe("answer");
+  });
+});
+
 describe("which reverse zones a wave covers", () => {
   test("a /16 of IPv4 and a /48 of IPv6, as the address plan hands them out", () => {
     expect(reverseZonesFor(["10.77.0.1/32"])).toEqual(["77.10.in-addr.arpa"]);
