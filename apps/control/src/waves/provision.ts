@@ -207,7 +207,7 @@ export type WaveCreation = { waveId: string } | { conflict: "suffix" };
  */
 export async function createWave(
   db: Database,
-  input: { userId: string; name: string; dnsSuffix: string; container?: string },
+  input: { userId: string; name: string; dnsSuffix: string; container?: string; accountId?: string },
 ): Promise<WaveCreation> {
   const waveId = newId("w");
   const container = input.container ?? IPV4_CONTAINER;
@@ -225,6 +225,8 @@ export async function createWave(
         name: input.name,
         dnsSuffix: input.dnsSuffix,
         ownerUserId: input.userId,
+        // Only a billed wave has a customer account; a self-hosted one never does.
+        ...(input.accountId ? { accountId: input.accountId } : {}),
         ipv4Prefix: await allocateWavePrefix(db, container),
         ipv6Prefix: randomIpv6Prefix(),
       })

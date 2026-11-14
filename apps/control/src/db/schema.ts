@@ -52,6 +52,36 @@ export const identities = pgTable(
   (t) => [uniqueIndex("identities_provider_subject_idx").on(t.provider, t.subject)],
 );
 
+/**
+ * A hosted customer account ("Kundenkonto"): the unit that is billed.
+ *
+ * Not a user (`users`, a person who signs in) and not an OIDC identity
+ * (`identities`, one provider login of a user). It owns several waves
+ * (`waves.account_id`) and, as a model, one shared quota: the quota is not a
+ * column but derived from the subscription rows of its waves (the sum of
+ * `wave_billing.seats`, see `billing/accounts.ts`), so there is no second
+ * number that could drift from what Stripe says. Enforcement is still per wave
+ * (`ensureSeatFor`).
+ *
+ * `owner_user_id` cascades: a deleted user takes the account row with them,
+ * which is why every place that deletes a user after moving their waves
+ * (`moveTo`, `mergeAccounts`) first hands the account to the target user. The
+ * waves stay either way (`waves.account_id` is `set null`).
+ * A self-hosted server (no `wave_billing`) has no customer account.
+ */
+export const customerAccounts = pgTable(
+  "customer_accounts",
+  {
+    /** `ca_…`, permanent. */
+    id: text("id").primaryKey(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("customer_accounts_owner_idx").on(t.ownerUserId)],
+);
+
 export const waves = pgTable(
   "waves",
   {
@@ -72,9 +102,16 @@ export const waves = pgTable(
      * whole zone points at the pier, so a name put out writes nothing to DNS.
      */
     pierLabel: text("pier_label").notNull().default("pier"),
+    /**
+     * The customer account a billed wave belongs to; null for every self-hosted
+     * wave and for a billed one the migration has not reached yet. Never a
+     * cascade: the wave row stays when the account row goes.
+     */
+    accountId: text("account_id").references(() => customerAccounts.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    index("waves_account_idx").on(t.accountId),
     uniqueIndex("waves_dns_suffix_idx").on(t.dnsSuffix),
     // Two waves sharing a block would hand the same address to two nodes, and a
     // client in both would have two host routes for it. The allocator picks the
@@ -705,6 +742,7 @@ export const accountLinks = pgTable(
 
 export const schema = {
   users,
+  customerAccounts,
   waveAuthKeys,
   waveServices,
   wavePiers,

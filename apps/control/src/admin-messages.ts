@@ -1,4 +1,5 @@
 import type { Locale, Messages } from "@wave/i18n";
+import type { Counts, ProblemReason } from "./billing/migrate-accounts.ts";
 
 /**
  * What `wave-admin` says, in the language of the machine it runs on.
@@ -185,6 +186,45 @@ a device put names through it, deny-pier takes its names back.`,
   billedNotDeletable: (wave: string, state: string) =>
     `${wave} is a booked wave (subscription ${state}). Cancel the subscription; the wave is deleted after the retention.`,
 
+  // --- migrate-accounts (customer accounts, not users, not identities) -------
+  migrateNothing: (counts: Counts) =>
+    `nothing to do: every booked wave already belongs to a customer account (${counts.customerAccounts} accounts).`,
+  migrateCounts: (title: string, c: Counts) =>
+    [
+      `${title}:`,
+      `  waves                         ${c.waves}`,
+      `  wave_members                  ${c.waveMembers}`,
+      `  nodes (devices)               ${c.nodes}`,
+      `  auth keys                     ${c.authKeys}`,
+      `  wave_billing                  ${c.waveBilling}`,
+      `  customer accounts             ${c.customerAccounts}`,
+      `  waves without account         ${c.wavesWithoutAccount} (booked ones: ${c.billedWavesWithoutAccount})`,
+    ].join("\n"),
+  migrateBefore: "before",
+  migrateAfter: "after",
+  migrateAfterDry: "after (projected, nothing written)",
+  migrateAssign: (wave: string, account: string | null, owner: string, created: boolean) =>
+    `  wave ${wave} -> ${account ?? "(new account)"}${created ? " (new)" : ""}, owner user ${owner}`,
+  migrateDone: (dryRun: boolean, accounts: number, waves: number) =>
+    dryRun
+      ? `dry run: ${accounts} customer accounts would be made, ${waves} waves assigned. Nothing was written.`
+      : `${accounts} customer accounts made, ${waves} waves assigned; devices, keys and subscriptions untouched.`,
+  migrateBlocked: (cases: number) =>
+    `stopped, nothing written: ${cases} case(s) need a decision from the operator. Nothing is merged or guessed by address.`,
+  migrateProblem: (wave: string, user: string, reason: ProblemReason, detail: string) =>
+    `  wave ${wave}, user ${user}: ${
+      {
+        "owner-mismatch": "the owner is not the one wave member with the role owner",
+        "duplicate-address": "the owner shares an address with another user (duplicate identity)",
+        "no-address": "the owner has no address",
+        "split-owners": "booked waves are owned by different users of the same address",
+      }[reason]
+    } [${detail}]`,
+  migrateHint:
+    "Sort the cases out (for instance with the account linking in the web interface), then run the command again.",
+  migrateInvariant: (counter: string, before: number, after: number) =>
+    `rolled back, nothing written: the count ${counter} changed during the run (${before} -> ${after}).`,
+
   // --- set-password ---------------------------------------------------------
   passwordFor: (email: string) => `Password for ${email}: `,
   repeat: "Repeat: ",
@@ -364,6 +404,45 @@ allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie
   noInvite: (email, wave) => `keine offene Einladung für ${email} in ${wave}`,
   billedNotDeletable: (wave, state) =>
     `${wave} ist ein gebuchter Wave (Abo ${state}). Kündige das Abo; der Wave wird nach der Aufbewahrungsfrist gelöscht.`,
+
+  migrateNothing: (counts) =>
+    `nichts zu tun: jeder gebuchte Wave gehört schon zu einem Kundenkonto (${counts.customerAccounts} Konten).`,
+  migrateCounts: (title, c) =>
+    [
+      `${title}:`,
+      `  Waves                         ${c.waves}`,
+      `  wave_members                  ${c.waveMembers}`,
+      `  nodes (Geräte)                ${c.nodes}`,
+      `  Auth-Keys                     ${c.authKeys}`,
+      `  wave_billing                  ${c.waveBilling}`,
+      `  Kundenkonten                  ${c.customerAccounts}`,
+      `  Waves ohne Konto              ${c.wavesWithoutAccount} (davon gebucht: ${c.billedWavesWithoutAccount})`,
+    ].join("\n"),
+  migrateBefore: "vorher",
+  migrateAfter: "nachher",
+  migrateAfterDry: "nachher (Vorschau, nichts geschrieben)",
+  migrateAssign: (wave, account, owner, created) =>
+    `  Wave ${wave} -> ${account ?? "(neues Konto)"}${created ? " (neu)" : ""}, Eigentümer-Benutzer ${owner}`,
+  migrateDone: (dryRun, accounts, waves) =>
+    dryRun
+      ? `Probelauf: ${accounts} Kundenkonten würden angelegt, ${waves} Waves zugeordnet. Es wurde nichts geschrieben.`
+      : `${accounts} Kundenkonten angelegt, ${waves} Waves zugeordnet; Geräte, Schlüssel und Abos unberührt.`,
+  migrateBlocked: (cases) =>
+    `Abbruch, nichts geschrieben: ${cases} Fall/Fälle brauchen eine Entscheidung des Operators. Es wird nichts nach Adresse zusammengeführt oder geraten.`,
+  migrateProblem: (wave, user, reason, detail) =>
+    `  Wave ${wave}, Benutzer ${user}: ${
+      {
+        "owner-mismatch": "der Eigentümer ist nicht das einzige Wave-Mitglied mit der Rolle owner",
+        "duplicate-address":
+          "der Eigentümer hat dieselbe Adresse wie ein anderer Benutzer (doppelte Identität)",
+        "no-address": "der Eigentümer hat keine Adresse",
+        "split-owners": "gebuchte Waves gehören verschiedenen Benutzern derselben Adresse",
+      }[reason]
+    } [${detail}]`,
+  migrateHint:
+    "Fälle klären (z. B. mit der Kontoverknüpfung in der Weboberfläche), dann den Befehl erneut ausführen.",
+  migrateInvariant: (counter, before, after) =>
+    `Zurückgerollt, nichts geschrieben: der Zähler ${counter} hat sich während des Laufs geändert (${before} -> ${after}).`,
 
   passwordFor: (email) => `Passwort für ${email}: `,
   repeat: "Wiederholen: ",
