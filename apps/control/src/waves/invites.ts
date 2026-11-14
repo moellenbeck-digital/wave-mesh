@@ -1,7 +1,8 @@
 import { and, asc, eq, gt, isNull } from "drizzle-orm";
-import { ensureSeatFor } from "../billing/seats.ts";
+import { ensureSeatFor, lockWaveAccount } from "../billing/seats.ts";
 import type { Database } from "../db/client.ts";
 import { users, waveBilling, waveInvites, waves } from "../db/schema.ts";
+import { normaliseEmail } from "../email.ts";
 import { newId } from "../ids.ts";
 import { addMember } from "./members.ts";
 
@@ -10,7 +11,7 @@ export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const hashToken = (token: string): string => new Bun.CryptoHasher("sha256").update(token).digest("hex");
 
-export const normaliseEmail = (email: string): string => email.trim().toLowerCase();
+export { normaliseEmail };
 
 /** Deliberately loose: the provider decides what a real address is, not us. */
 export const looksLikeEmail = (email: string): boolean => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -184,6 +185,11 @@ export type AcceptRefusal = "gone" | "wrong-address" | "unverified-address";
  *
  * The write is conditional on the invitation still being open, so two clicks on
  * the same link cannot both succeed.
+ *
+ * Accepting costs no seat of its own: the invitation has counted as a person
+ * since it was written, and the person who takes it is that person (same
+ * verified address). That holds only if nobody *counts* in the middle of the
+ * swap, so the account is locked like every other change of its people.
  */
 export async function acceptInvite(
   db: Database,
@@ -198,8 +204,13 @@ export async function acceptInvite(
   // One step, under the same lock an invitation takes for its seat count
   // (billing/seats.ts): spent and joined at once. Two statements on their
   // own left a moment in which the invitation no longer counted as an open
-  // seat and the person did not yet count as a member -- room for one more
-  // invitation than was booked. A wave without billing locks nothing.
+  // invitation than was booked. A wave without billing has no row to lock.
+  //
+  // The account is locked too (ticket #115), in the order of `ensureSeatFor`:
+  // billing row, wave, account. Counting the account's people reads members
+  // and invitations in two statements; without this lock a count that falls
+  // between the two commits of this swap sees the person in neither list and
+  // hands the same seat out again.
   const joined = await db.transaction(async (tx) => {
     const t = tx as unknown as Database;
     await t
@@ -207,6 +218,7 @@ export async function acceptInvite(
       .from(waveBilling)
       .where(eq(waveBilling.waveId, invite.waveId))
       .for("update");
+    await lockWaveAccount(t, invite.waveId);
     const claimed = await t
       .update(waveInvites)
       .set({ acceptedAt: new Date(), acceptedByUserId: user.id })
@@ -215,7 +227,7 @@ export async function acceptInvite(
       )
       .returning({ id: waveInvites.id });
     if (!claimed[0]) return false;
-    await addMember(t, invite.waveId, user.id, invite.role);
+    await addMember(t, invite.waveId, user.id, invite.role, { reserved: true });
     return true;
   });
   if (!joined) return "gone";

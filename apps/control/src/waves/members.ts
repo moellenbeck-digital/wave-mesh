@@ -1,4 +1,5 @@
 import { and, asc, eq, sql } from "drizzle-orm";
+import { ensureSeatFor } from "../billing/seats.ts";
 import type { Database } from "../db/client.ts";
 import { nodes, users, waveBilling, waveMembers, waves } from "../db/schema.ts";
 
@@ -91,12 +92,23 @@ export async function listMembers(db: Database, waveId: string): Promise<Member[
  * Puts a user in a wave. Re-adding someone only changes their role, so this is
  * safe to run twice; the owner's row is never touched, because ownership is not
  * a role that gets handed around by this path.
+ *
+ * A *new* membership is held to the wave's seats and to the account's people
+ * limit (`ensureSeatFor`, ticket #115), here and not in each caller: the next
+ * code to add a member would otherwise be the one that forgets. The check and
+ * the insert are one transaction (a savepoint when the caller has one), so the
+ * lock of the check is held until the person is in. Throws `SeatLimitError`.
+ *
+ * `reserved` is for the one caller whose person already holds a seat: accepting
+ * an invitation, which was counted from the day it was written and is spent in
+ * the same transaction. Counting it again would refuse a promise already made.
  */
 export async function addMember(
   db: Database,
   waveId: string,
   userId: string,
   role: "admin" | "member",
+  options: { reserved?: boolean } = {},
 ): Promise<{ added: boolean; role: Role }> {
   const current = await roleOf(db, waveId, userId);
   if (current === "owner") return { added: false, role: "owner" };
@@ -108,7 +120,16 @@ export async function addMember(
       .where(and(eq(waveMembers.waveId, waveId), eq(waveMembers.userId, userId)));
     return { added: false, role };
   }
-  await db.insert(waveMembers).values({ waveId, userId, role });
+  if (options.reserved) {
+    await db.insert(waveMembers).values({ waveId, userId, role });
+    return { added: true, role };
+  }
+  await db.transaction(async (tx) => {
+    const t = tx as unknown as Database;
+    const [user] = await t.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+    await ensureSeatFor(t, waveId, user?.email ?? "", { userId });
+    await t.insert(waveMembers).values({ waveId, userId, role });
+  });
   return { added: true, role };
 }
 

@@ -11,7 +11,7 @@
  */
 import { basename } from "node:path";
 import { systemLocale } from "@wave/i18n/system";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { describeEnforcement, describeReach, enforcementText } from "./acl/describe.ts";
 import { compilePolicy } from "./acl/evaluate.ts";
 import { aclSubjects, getPolicy, invalidTags, removePolicy, setPolicy, setTags } from "./acl/store.ts";
@@ -21,10 +21,10 @@ import { audit, listAudit, shellActor } from "./audit.ts";
 import { setPassword } from "./auth/password.ts";
 import { disableTwoFactor, hasTwoFactor } from "./auth/two-factor.ts";
 import { MigrationInvariantError, migrateAccounts } from "./billing/migrate-accounts.ts";
-import { AccountSeatLimitError, ensureSeatFor, SeatLimitError } from "./billing/seats.ts";
+import { AccountSeatLimitError, SeatLimitError } from "./billing/seats.ts";
 import { billingStateOf } from "./billing/subscriptions.ts";
 import { createDb } from "./db/client.ts";
-import { certificateOrders, nodes, users, waveMembers } from "./db/schema.ts";
+import { certificateOrders, nodes, users } from "./db/schema.ts";
 import { configureDnsProvider, findDnsCredential, removeDnsCredential } from "./dns/credentials.ts";
 import { type AutomaticKind, isAutomaticKind, isProviderKind, PROVIDER_KINDS } from "./dns/provider.ts";
 import { loadConfig } from "./env.ts";
@@ -933,19 +933,11 @@ async function main(): Promise<never> {
       return done(1, m.noAccountHint(email));
     }
     // Held to the booking like an invitation: more seats are bought on the
-    // site, not granted on the shell. Someone already in takes no new seat.
+    // site, not granted on the shell. `addMember` does the counting (and takes
+    // the locks) for a new membership; someone already in takes no new seat.
     let result: Awaited<ReturnType<typeof addMember>>;
     try {
-      result = await db.transaction(async (tx) => {
-        const t = tx as unknown as typeof db;
-        const already = await t
-          .select({ userId: waveMembers.userId })
-          .from(waveMembers)
-          .where(and(eq(waveMembers.waveId, target.id), eq(waveMembers.userId, found.id)))
-          .limit(1);
-        if (already.length === 0) await ensureSeatFor(t, target.id, email);
-        return addMember(t, target.id, found.id, asRole(role));
-      });
+      result = await addMember(db, target.id, found.id, asRole(role));
     } catch (error) {
       if (error instanceof AccountSeatLimitError) {
         return done(1, m.accountNoSeatLeft(target.name, error.limit, error.used, error.plan === "free"));
