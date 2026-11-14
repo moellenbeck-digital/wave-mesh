@@ -80,6 +80,13 @@ A self-run control server (without `WAVE_BILLING_TOKEN`) knows no plan:
 
 What limits it there is hardware and address space only. Operation: [`deployment/README.md`](../deployment/README.md).
 
+**License.** Self-hosting is free, and the code is source-available. It is licensed under the
+[Elastic License 2.0](../LICENSE) (ELv2, <https://www.elastic.co/licensing/elastic-license>): using,
+modifying and redistributing it is allowed, including inside your own company. **Not allowed** is offering
+wave-mesh to third parties as a hosted or managed service. Because of this restriction, ELv2 is **not an
+OSI-approved open-source license**; "unlimited" means the absence of the free limits, not permission to run
+a hosting offer of your own.
+
 ## For operators of hosted servers
 
 | Setting | Default | Meaning |
