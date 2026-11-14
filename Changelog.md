@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.6 (14.11.2026)
+
 ### Neue Funktionen
 
 - **Gerätegrenze für kostenlose Konten (#116):** Ein gehostetes Gratis-Konto kann höchstens 100
