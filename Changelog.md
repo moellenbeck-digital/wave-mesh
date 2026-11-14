@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.4 (14.11.2026)
+
 ### Neue Funktionen
 
 - **Gehostetes Kundenkonto als Abrechnungseinheit:** Ein Kundenkonto besitzt mehrere Waves und ist weder der
