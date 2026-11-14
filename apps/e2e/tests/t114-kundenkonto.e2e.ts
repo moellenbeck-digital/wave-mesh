@@ -228,7 +228,11 @@ test.describe("Kundenkonto: Selfhosting bleibt unbegrenzt, Waves und Mitglieder 
     test.setTimeout(180_000);
     const first = await ownerState(owner.page);
     expect(first.waveOneId).toBe(waveOneId);
-    expect(first.waves.map((w) => w.id).sort()).toEqual([waveOneId, waveTwoId].sort());
+    // Der Eigentümer hat auf dem geteilten Testsystem weitere, fremde Waves: nur die eigenen müssen darin stehen.
+    // Dass sich die ganze Liste (auch die fremden) nicht ändert, belegt `toEqual(first)` weiter unten.
+    const ids = first.waves.map((w) => w.id);
+    expect(ids).toEqual(expect.arrayContaining([waveOneId, waveTwoId]));
+    expect(ids.filter((id) => id === waveOneId || id === waveTwoId)).toHaveLength(2);
     expect(Object.keys(first.members)).toHaveLength(2);
 
     // Neuladen derselben Sitzung.
