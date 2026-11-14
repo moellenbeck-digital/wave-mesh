@@ -44,7 +44,7 @@ async function session(browser: Parameters<typeof newSession>[0]): Promise<Sess>
 
 interface Me {
   canCreateWave: boolean;
-  waves: { id: string; name: string }[];
+  waves: { id: string; name: string; role?: string }[];
   account?: { plan?: "free" | "paid" };
 }
 
@@ -108,7 +108,7 @@ test.describe("Adresskapazität: Gratis-Waves entstehen", () => {
     }
     const state = await me(page);
     expect(state.account?.plan).toBe("free");
-    expect(state.waves.filter((w) => w.name.startsWith("t118-"))).toHaveLength(2);
+    expect(state.waves.filter((w) => w.role === "owner" && names.includes(w.name))).toHaveLength(2);
     expect(state.canCreateWave).toBe(true);
   });
 });
