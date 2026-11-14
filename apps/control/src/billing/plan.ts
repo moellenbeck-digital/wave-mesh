@@ -9,6 +9,7 @@ import {
   waveMembers,
   waves,
 } from "../db/schema.ts";
+import { normaliseEmail } from "../email.ts";
 
 /**
  * What a hosted customer account is allowed to hold (ticket #117).
@@ -165,7 +166,17 @@ export async function accountWaveCount(db: Database, accountId: string): Promise
   return row?.count ?? 0;
 }
 
-/** Who is in an account's waves and who has been asked to join. */
+/**
+ * Who is in an account's waves and who has been asked to join.
+ *
+ * A person is a user id. An address only stands for a person when the user
+ * behind it has *confirmed* it: `memberEmails` holds the addresses of verified
+ * members and nothing else. `users.email` is not unique, so an unverified member
+ * can carry the address of someone else -- if that counted as "already in", an
+ * invitation for the real owner of the address would be free, and accepting it
+ * would add a person nobody counted. An unverified member is still counted, by
+ * id; only their address does not make another invitation free.
+ */
 export interface Roster {
   userIds: Set<string>;
   memberEmails: Set<string>;
@@ -173,11 +184,11 @@ export interface Roster {
   invites: Array<{ waveId: string; email: string }>;
 }
 
-const lower = (value: string | null): string | null => value?.trim().toLowerCase() || null;
+const lower = (value: string | null): string | null => (value ? normaliseEmail(value) || null : null);
 
 export async function accountRoster(db: Database, accountId: string): Promise<Roster> {
   const members = await db
-    .select({ userId: waveMembers.userId, email: users.email })
+    .select({ userId: waveMembers.userId, email: users.email, verified: users.emailVerified })
     .from(waveMembers)
     .innerJoin(waves, eq(waves.id, waveMembers.waveId))
     .innerJoin(users, eq(users.id, waveMembers.userId))
@@ -196,14 +207,15 @@ export async function accountRoster(db: Database, accountId: string): Promise<Ro
     );
   const memberEmails = new Set<string>();
   for (const member of members) {
-    const email = lower(member.email);
+    const email = member.verified ? lower(member.email) : null;
     if (email) memberEmails.add(email);
   }
   return {
     userIds: new Set(members.map((member) => member.userId)),
     memberEmails,
     memberships: members.length,
-    invites: invites.map((invite) => ({ waveId: invite.waveId, email: invite.email })),
+    // Stored normalised already; again here so the comparison never depends on that.
+    invites: invites.map((invite) => ({ waveId: invite.waveId, email: normaliseEmail(invite.email) })),
   };
 }
 
@@ -213,10 +225,12 @@ export interface Replaced {
   email: string;
 }
 
-const keep = (roster: Roster, replaced?: Replaced) =>
-  roster.invites.filter(
-    (invite) => !(replaced && invite.waveId === replaced.waveId && invite.email === replaced.email),
+const keep = (roster: Roster, replaced?: Replaced) => {
+  const gone = replaced ? normaliseEmail(replaced.email) : null;
+  return roster.invites.filter(
+    (invite) => !(replaced && invite.waveId === replaced.waveId && invite.email === gone),
   );
+};
 
 /** People held now: see `seatRule()` for what is counted. */
 export function countPeople(roster: Roster, mode: "distinct" | "memberships", replaced?: Replaced): number {
@@ -230,14 +244,21 @@ export function countPeople(roster: Roster, mode: "distinct" | "memberships", re
   return roster.userIds.size + extra;
 }
 
-/** What one more invitation or member for this address costs: 0 if the person is already counted. */
+/**
+ * What one more invitation or member costs: 0 if the person is already counted.
+ *
+ * `userId` is for a person known by id (adding a member): being in the roster
+ * by id is the surest sign, whatever the address says.
+ */
 export function seatCost(
   roster: Roster,
   mode: "distinct" | "memberships",
   email: string,
   replaced?: Replaced,
+  userId?: string,
 ): 0 | 1 {
   if (mode === "memberships") return 1;
+  if (userId && roster.userIds.has(userId)) return 0;
   const address = lower(email);
   if (!address) return 1;
   if (roster.memberEmails.has(address)) return 0;

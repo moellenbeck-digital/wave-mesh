@@ -24,6 +24,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.14",
     "@types/pg": "^8.15.6",
-    "drizzle-kit": "^0.31.6"
+    "drizzle-kit": "^0.31.6",
+    "embedded-postgres": "17.11.0-beta.19"
   }
 }

@@ -1,6 +1,7 @@
 import { and, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { waveBilling, waveInvites, waveMembers, waves } from "../db/schema.ts";
+import { normaliseEmail } from "../email.ts";
 import { logFreeDecision } from "./free-log.ts";
 import {
   accountPlan,
@@ -62,7 +63,14 @@ export class AccountSeatLimitError extends SeatLimitError {
  * the worse place to find out. A wave without a billing row -- every
  * self-hosted one -- has no limit and costs one lookup.
  */
-export async function ensureSeatFor(db: Database, waveId: string, email: string): Promise<void> {
+export async function ensureSeatFor(
+  db: Database,
+  waveId: string,
+  rawEmail: string,
+  /** Who is added, when that is a known user (a member, not an invitation). */
+  person?: { userId: string },
+): Promise<void> {
+  const email = normaliseEmail(rawEmail);
   // FOR UPDATE: called inside the transaction that then adds the person, and
   // the lock is what makes "count, then add" one step for two callers at once.
   const billed = await db
@@ -74,7 +82,7 @@ export async function ensureSeatFor(db: Database, waveId: string, email: string)
   const seats = billed[0]?.seats;
   // A wave without a billing row of its own: the account's limit applies, if
   // it has one (ticket #117). Self-hosted waves have no account and no limit.
-  if (seats === undefined) return ensureAccountSeat(db, waveId, email);
+  if (seats === undefined) return ensureAccountSeat(db, waveId, email, person?.userId);
 
   const [members] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -96,6 +104,31 @@ export async function ensureSeatFor(db: Database, waveId: string, email: string)
 }
 
 /**
+ * Takes the locks that make a decision about an account's people one at a time:
+ * the wave's row, then the account's -- the order `createNode` takes them in, so
+ * the two never wait for each other. Returns the account, or null for a wave
+ * that has none (every self-hosted one), which locks nothing more.
+ *
+ * Everything that changes who is in an account has to hold this while it does:
+ * `accountRoster()` reads members and invitations in two statements, and a
+ * person who is accepted between them is in neither (the invitation is spent,
+ * the membership not yet visible) -- room for a fourth person at a limit of
+ * three. Callers that already hold the wave's `wave_billing` row take it first
+ * (billing row, wave, account), the same everywhere.
+ */
+export async function lockWaveAccount(db: Database, waveId: string): Promise<string | null> {
+  const [wave] = await db
+    .select({ accountId: waves.accountId })
+    .from(waves)
+    .where(eq(waves.id, waveId))
+    .limit(1)
+    .for("no key update");
+  const accountId = wave?.accountId ?? null;
+  if (accountId) await lockAccount(db, accountId);
+  return accountId;
+}
+
+/**
  * The account-wide limit for a wave that has no `wave_billing` row (ticket #117).
  *
  * What the limit is and how people are counted depends on the derived plan
@@ -109,23 +142,21 @@ export async function ensureSeatFor(db: Database, waveId: string, email: string)
  * Locks, in the order `createNode` takes them: the wave, then the account. The
  * account row makes "count, then add" one step for two callers at once.
  */
-async function ensureAccountSeat(db: Database, waveId: string, email: string): Promise<void> {
-  const [wave] = await db
-    .select({ accountId: waves.accountId })
-    .from(waves)
-    .where(eq(waves.id, waveId))
-    .limit(1)
-    .for("no key update");
-  const accountId = wave?.accountId;
+async function ensureAccountSeat(
+  db: Database,
+  waveId: string,
+  email: string,
+  userId?: string,
+): Promise<void> {
+  const accountId = await lockWaveAccount(db, waveId);
   if (!accountId) return;
 
-  await lockAccount(db, accountId);
   const plan = await accountPlan(db, accountId);
   const rule = seatRule(plan, DEFAULT_FREE_LIMITS);
   const roster = await accountRoster(db, accountId);
   const replaced = { waveId, email };
   const have = countPeople(roster, rule.mode, replaced);
-  if (have + seatCost(roster, rule.mode, email, replaced) > rule.limit) {
+  if (have + seatCost(roster, rule.mode, email, replaced, userId) > rule.limit) {
     if (plan.kind === "free") {
       logFreeDecision("denied", {
         reason: "people-limit",

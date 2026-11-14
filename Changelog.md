@@ -6,6 +6,14 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Fehlerbehebungen
+
+- **Personengrenze im Gratis-Konto lückenlos (#115):** Die Grenze von drei Personen gilt jetzt zentral für jedes
+  neue Mitglied (auch `wave-admin add-member`), nicht mehr nur an einzelnen Aufrufstellen. Zwei gleichzeitige
+  Einladungen, Annahmen oder Hinzufügungen um den letzten Platz vergeben ihn nur einmal. Die Adresse eines
+  Mitglieds mit unbestätigter E-Mail macht eine Einladung nicht mehr kostenlos. Bestehende Mitglieder, Geräte
+  und Einladungen bleiben auch über dem Limit unangetastet; abgewiesen wird nur Neues.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.11 (14.11.2026)
