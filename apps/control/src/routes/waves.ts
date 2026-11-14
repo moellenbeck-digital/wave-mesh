@@ -12,6 +12,7 @@ import { LoginThrottle, setPassword } from "../auth/password.ts";
 import type { OAuthProvider } from "../auth/providers.ts";
 import type { SessionUser } from "../auth/session.ts";
 import { createSession, setSessionCookie } from "../auth/session.ts";
+import { oldestAccountOf } from "../billing/accounts.ts";
 import {
   type CreationDenial,
   createWaveForUser,
@@ -20,8 +21,10 @@ import {
   waveCreationDenial,
 } from "../billing/free-account.ts";
 import { logFreeDecision } from "../billing/free-log.ts";
+import { accountWaveCount, upgradeUrl } from "../billing/plan.ts";
 import { AccountSeatLimitError, SeatLimitError } from "../billing/seats.ts";
 import { billingStateOf } from "../billing/subscriptions.ts";
+import { waveAccountOverview } from "../billing/usage.ts";
 import type { Database } from "../db/client.ts";
 import { users, waves } from "../db/schema.ts";
 import { configureDnsProvider, findDnsCredential, removeDnsCredential } from "../dns/credentials.ts";
@@ -54,7 +57,7 @@ import {
 } from "../waves/provision.ts";
 import { plainLinkNotice } from "./account-link.ts";
 import type { NetmapHub } from "./control-ws.ts";
-import { type PageMessages, pageMessages } from "./messages.ts";
+import { linkUpgrade, type PageMessages, pageMessages } from "./messages.ts";
 import { safeNext } from "./next.ts";
 
 /** Same floor as `admin.ts set-password`; an invite is not a weaker door. */
@@ -107,6 +110,11 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
   const throttles = creationThrottles ?? newCreationThrottles();
   /** Decided per user, in one place (billing/free-account.ts): the same answer as /api/me and the login. */
   const denialOf = (userId: string) => waveCreationDenial(db, policy, userId);
+  /** Waves the account new waves go to holds now: the `used` of `used / limit` in the wave-limit refusal. */
+  const wavesHeld = async (userId: string): Promise<number> => {
+    const accountId = await oldestAccountOf(db, userId);
+    return accountId ? accountWaveCount(db, accountId) : 0;
+  };
 
   /**
    * A refusal to create a wave, with its stable code: JSON for a client that
@@ -115,27 +123,36 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
   const creationRefusal = (
     c: Context,
     code: CreationDenial | "rate-limited" | "no-capacity",
-    extra: { wait?: number } = {},
+    extra: { wait?: number; used?: number } = {},
   ) => {
     const status = code === "rate-limited" ? 429 : code === "no-capacity" ? 507 : 403;
     const headers: Record<string, string> = extra.wait ? { "retry-after": String(extra.wait) } : {};
+    const m = pageMessages(localeOf(c));
+    const body = m.waveDeniedBody(code, policy.limits.waves, extra.wait ?? 60, extra.used);
     if ((c.req.header("accept") ?? "").includes("application/json")) {
       return c.json(
         {
           error: code,
           ...(extra.wait ? { retryAfter: extra.wait } : {}),
-          ...(code === "wave-limit" ? { limit: policy.limits.waves } : {}),
+          // The same numbers and the same next step as the page: `used / limit`
+          // and where to subscribe, so a client need not word them itself.
+          ...(code === "wave-limit"
+            ? {
+                limit: policy.limits.waves,
+                used: extra.used ?? policy.limits.waves,
+                message: body,
+                upgradeUrl: upgradeUrl(config.baseUrl),
+              }
+            : {}),
         },
         status,
         headers,
       );
     }
     const locale = localeOf(c);
-    const m = pageMessages(locale);
     const title = m.waveDeniedTitle(code);
-    const body = m.waveDeniedBody(code, policy.limits.waves, extra.wait ?? 60);
     return new Response(
-      `<!doctype html><html lang="${locale}" data-error="${code}"><h1>${Bun.escapeHTML(title)}</h1><p>${Bun.escapeHTML(body)}</p>`,
+      `<!doctype html><html lang="${locale}" data-error="${code}"><h1>${Bun.escapeHTML(title)}</h1><p>${linkUpgrade(Bun.escapeHTML(body))}</p>`,
       { status, headers: { "content-type": "text/html; charset=utf-8", ...headers } },
     );
   };
@@ -155,7 +172,7 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
     const locale = localeOf(c);
     const [title, body] = words(pageMessages(locale));
     return new Response(
-      `<!doctype html><html lang="${locale}"><h1>${Bun.escapeHTML(title)}</h1><p>${Bun.escapeHTML(body)}</p>`,
+      `<!doctype html><html lang="${locale}"><h1>${Bun.escapeHTML(title)}</h1><p>${linkUpgrade(Bun.escapeHTML(body))}</p>`,
       { status, headers: { "content-type": "text/html; charset=utf-8" } },
     );
   };
@@ -269,11 +286,16 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
         const waiting =
           setup.state === "invited" ? html`<p>${raw(m.invitationOnlyHtml(setup.wave))}</p>` : "";
         const title = m.waveDeniedTitle(denial);
-        const body = m.waveDeniedBody(denial, policy.limits.waves, 60);
+        const body = m.waveDeniedBody(
+          denial,
+          policy.limits.waves,
+          60,
+          denial === "wave-limit" ? await wavesHeld(user.id) : undefined,
+        );
         return c.html(html`<h1 data-error="${denial}">${title}</h1>
           ${await plainLinkNotice(db, user, providers, m)}
           ${waiting}
-          <p>${body}</p>`);
+          <p>${raw(linkUpgrade(Bun.escapeHTML(body)))}</p>`);
       }
       const suggestion = suggestWave(user.email ?? user.name);
       return createForm(c, user, {
@@ -354,7 +376,9 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
         ip: source,
         ...(created.denial === "wave-limit" ? { limit: policy.limits.waves } : {}),
       });
-      return creationRefusal(c, created.denial);
+      return creationRefusal(c, created.denial, {
+        ...(created.denial === "wave-limit" ? { used: await wavesHeld(user.id) } : {}),
+      });
     }
     // Two waves under one zone would answer for the same names, and a device in
     // both could not tell whose `laptop` it reached.
@@ -454,6 +478,11 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
       role: auth.role,
       // Whose row is the viewer's own: nobody changes their own role.
       userId: auth.user.id,
+      // What the account this wave belongs to holds against its plan, so the
+      // invitation form can say how many places are left. Only on a hosted
+      // server, and only for a wave that has an account: a self-hosted wave has
+      // no plan, and the key is simply missing.
+      ...(policy.hosted ? await waveAccountOverview(db, waveId, policy.limits) : {}),
       members: await listMembers(db, waveId),
       // Who has been asked and not answered is a manager's business.
       invites: canManage(auth.role ?? "member") ? await listInvites(db, waveId) : [],
@@ -486,9 +515,28 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
       });
     } catch (error) {
       if (error instanceof AccountSeatLimitError) {
+        // JSON for a client that asks for it, the page for a browser: the same
+        // `used / limit`, the same counting rule and the same next steps.
+        if ((c.req.header("accept") ?? "").includes("application/json")) {
+          const m = say(c);
+          return c.json(
+            {
+              error: "people-limit",
+              limit: error.limit,
+              used: error.used,
+              plan: error.plan,
+              message: `${m.accountNoSeatLeft}: ${m.accountNoSeatLeftBody(error.limit, error.used, error.plan === "free")}`,
+              upgradeUrl: upgradeUrl(config.baseUrl),
+            },
+            409,
+          );
+        }
         return page(
           c,
-          (m) => [m.accountNoSeatLeft, m.accountNoSeatLeftBody(error.limit, error.plan === "free")],
+          (m) => [
+            m.accountNoSeatLeft,
+            m.accountNoSeatLeftBody(error.limit, error.used, error.plan === "free"),
+          ],
           409,
         );
       }

@@ -9,6 +9,7 @@ import { audit, userActor } from "../audit.ts";
 import type { OAuthProvider } from "../auth/providers.ts";
 import type { SessionUser } from "../auth/session.ts";
 import { DeviceLimitError, deviceLimitReached, ensureDeviceSlot } from "../billing/device-limit.ts";
+import { upgradeUrl } from "../billing/plan.ts";
 import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { authRequests, nodes, waveMembers, waveServices, waves } from "../db/schema.ts";
@@ -22,7 +23,7 @@ import { pierLeaving, unpublishLeavingPier } from "../waves/pier-dns.ts";
 import { plainLinkNotice } from "./account-link.ts";
 import { type NetmapHub, publishEndpoints } from "./control-ws.ts";
 import { authenticateMachine, nodeByMachineKey, nodeForRequest, WAVE_HEADER } from "./machine-auth.ts";
-import { pageMessages } from "./messages.ts";
+import { linkUpgrade, pageMessages } from "./messages.ts";
 
 const AUTH_REQUEST_TTL_MS = 15 * 60 * 1000;
 const NODE_KEY_TTL_MS = 180 * 24 * 60 * 60 * 1000;
@@ -34,12 +35,16 @@ const hash = (value: string): string => createHash("sha256").update(value).diges
  * code a program can match, and the limit. 403 like the paused wave -- the
  * request is understood and not allowed, and retrying does not change it.
  */
-const deviceLimitJson = (c: Context, error: DeviceLimitError) =>
+const deviceLimitJson = (c: Context, error: DeviceLimitError, baseUrl?: string) =>
   c.json(
     {
-      error: `device limit reached: this account can register at most ${error.limit} devices. Remove a device you no longer use, or subscribe to add more.`,
+      // `used / limit` and the next steps in one sentence: the client shows it
+      // as it is when it does not know the code, and words it itself when it does.
+      error: `device limit reached: this account holds ${error.used} / ${error.limit} devices, counted across all its waves. Next step: remove a device you no longer use (in the web app, or \`wave logout <wave>\` on that device), or subscribe at ${upgradeUrl(baseUrl)}.`,
       code: "device_limit",
       limit: error.limit,
+      used: error.used,
+      upgradeUrl: upgradeUrl(baseUrl),
     },
     403,
   );
@@ -145,7 +150,7 @@ export function machineRoutes({
           machineKey: request.machineKey,
           limit: config.freeDeviceLimit,
         });
-        if (full) return deviceLimitJson(c, full);
+        if (full) return deviceLimitJson(c, full, config.baseUrl);
       }
       const claimed = await claimAuthKey(db, request.authKey);
       if (!claimed) return c.json({ error: "this pre-auth key cannot be used" }, 403);
@@ -169,7 +174,7 @@ export function machineRoutes({
         // The key was claimed before the node; nothing came of it, so give the
         // use back. A race for the last place lands here.
         await releaseAuthKey(db, claimed.id);
-        if (error instanceof DeviceLimitError) return deviceLimitJson(c, error);
+        if (error instanceof DeviceLimitError) return deviceLimitJson(c, error, config.baseUrl);
         throw error;
       }
       // Nobody clicked anything, so the key is the actor's stand-in: whoever
@@ -359,7 +364,7 @@ export function machineRoutes({
     if (approved.kind === "limit") {
       const m = pageMessages(localeOf(c));
       return c.html(
-        html`<h1>${m.deviceLimit}</h1><p>${m.deviceLimitBody(approved.waveName, approved.limit)}</p>`,
+        html`<h1>${m.deviceLimit}</h1><p>${raw(linkUpgrade(Bun.escapeHTML(m.deviceLimitBody(approved.waveName, approved.limit, approved.used))))}</p>`,
         403,
       );
     }
@@ -478,7 +483,7 @@ export type Approval =
   /** The wave is paused for billing; nobody new comes in until it is live again. */
   | { kind: "suspended"; waveName: string }
   /** The wave's free account holds as many devices as it may, and this one is new to it. */
-  | { kind: "limit"; waveName: string; limit: number };
+  | { kind: "limit"; waveName: string; limit: number; used: number };
 
 /**
  * Creates the node in the wave the user picked and marks the request authorized.
@@ -549,7 +554,7 @@ async function approveRequest(
       // The request stays pending: nothing was decided, and a place freed
       // later lets the same link finish.
       if (error instanceof DeviceLimitError)
-        return { kind: "limit", waveName: wave.name, limit: error.limit };
+        return { kind: "limit", waveName: wave.name, limit: error.limit, used: error.used };
       throw error;
     }
   }

@@ -22,8 +22,27 @@ import {
  * to what is *new*; what is there stays.
  */
 
-/** People in a free account, across all its waves: members plus open invitations. */
+/**
+ * People in a free account, across all its waves: members plus open invitations.
+ * Fixed: unlike waves and devices, the server has no environment variable for it.
+ */
 export const FREE_PEOPLE_LIMIT = 3;
+
+/**
+ * Where a customer sees plan and usage and can subscribe (the web app, `#plan`
+ * of the account page). Every refusal at a free limit names it as the way up.
+ */
+export const UPGRADE_PATH = "/account#plan";
+
+/** `UPGRADE_PATH` as an absolute address for a JSON error, where a program reads it. */
+export function upgradeUrl(baseUrl: string | undefined): string {
+  if (!baseUrl) return UPGRADE_PATH;
+  try {
+    return new URL(UPGRADE_PATH, baseUrl).href;
+  } catch {
+    return UPGRADE_PATH;
+  }
+}
 /** Waves a free account may hold. The server can change it with `WAVE_FREE_MAX_WAVES`. */
 export const DEFAULT_FREE_MAX_WAVES = 3;
 

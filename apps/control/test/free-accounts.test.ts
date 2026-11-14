@@ -156,14 +156,31 @@ describe("the free start", () => {
 
     const refused = await create(jar, "delta", true);
     expect(refused.status).toBe(403);
-    expect(await refused.json()).toEqual({ error: "wave-limit", limit: 3 });
+    // Code and limit as before; `used / limit` and the way up are new (ticket #119).
+    const body = (await refused.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ error: "wave-limit", limit: 3, used: 3 });
+    expect(String(body.message)).toContain("3 / 3");
+    expect(String(body.message)).toContain("delete a wave");
+    expect(String(body.upgradeUrl)).toEndWith("/account#plan");
     expect(await waveRows()).toHaveLength(3);
     expect(logged().some((line) => line.startsWith("free-account.denied reason=wave-limit"))).toBe(true);
 
     // A browser gets a page that carries the same code.
     const page = await create(jar, "delta");
     expect(page.status).toBe(403);
-    expect(await page.text()).toContain('data-error="wave-limit"');
+    const html = await page.text();
+    expect(html).toContain('data-error="wave-limit"');
+    expect(html).toContain("3 / 3");
+    expect(html).toContain('<a href="/account#plan">');
+    const de = await app.request("/waves", {
+      method: "POST",
+      body: new URLSearchParams({ name: "delta", suffix: "delta.wave.internal" }),
+      headers: { cookie: jar.header(), "accept-language": "de" },
+    });
+    const deHtml = await de.text();
+    expect(deHtml).toContain("3 / 3");
+    expect(deHtml).toContain("Nächster Schritt");
+    expect(deHtml).toContain("Lösche einen Wave");
   });
 
   test("the limit is a setting", async () => {
@@ -441,13 +458,46 @@ describe("people in a free account: three, across all its waves", () => {
       headers: { cookie: jar.header() },
     });
     expect(full.status).toBe(409);
-    expect(await full.text()).toContain("up to 3 people across all its waves");
+    const html = await full.text();
+    expect(html).toContain("up to 3 people across all its waves");
+    // The numbers, the counting rule and the next steps (ticket #119).
+    expect(html).toContain("3 / 3");
+    expect(html).toContain("counts once");
+    expect(html).toContain("withdraw an invitation");
+    expect(html).toContain('<a href="/account#plan">/account#plan</a>');
     const de = await app.request(`/waves/${wave?.id}/invites`, {
       method: "POST",
       body: new URLSearchParams({ email: "d@x.example" }),
       headers: { cookie: jar.header(), "accept-language": "de" },
     });
-    expect(await de.text()).toContain("höchstens 3 Personen");
+    const deHtml = await de.text();
+    expect(deHtml).toContain("höchstens 3 Personen");
+    expect(deHtml).toContain("3 / 3");
+    expect(deHtml).toContain("zählt einmal");
+    expect(deHtml).toContain("Zieh eine Einladung zurück");
+  });
+
+  test("the same refusal as JSON: code, used / limit, the next step and where to subscribe", async () => {
+    const jar = await dev("anna@acme.example");
+    await create(jar, "alpha");
+    const [wave] = await waveRows();
+    const post = (email: string, language = "en") =>
+      app.request(`/waves/${wave?.id}/invites`, {
+        method: "POST",
+        body: new URLSearchParams({ email }),
+        headers: { cookie: jar.header(), accept: "application/json", "accept-language": language },
+      });
+    for (const email of ["b@x.example", "c@x.example"])
+      expect([200, 303]).toContain((await post(email)).status);
+    const full = await post("d@x.example");
+    expect(full.status).toBe(409);
+    const body = (await full.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ error: "people-limit", limit: 3, used: 3, plan: "free" });
+    expect(String(body.message)).toContain("3 / 3");
+    expect(String(body.message)).toContain("withdraw an invitation");
+    expect(String(body.upgradeUrl)).toEndWith("/account#plan");
+    const de = (await (await post("d@x.example", "de")).json()) as { message: string };
+    expect(de.message).toContain("Zieh eine Einladung zurück");
   });
 
   test("a self-hosted wave has no limit", async () => {
