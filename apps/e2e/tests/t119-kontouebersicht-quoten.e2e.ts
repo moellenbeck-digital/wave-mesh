@@ -246,10 +246,10 @@ test.describe("Gehostet: Kontoübersicht, Personen-Hinweis, Quotenfehler", () =>
     const jsonHeaders = (lang: string) => ({ accept: "application/json", "accept-language": lang });
     const withLang = (lang: string) => ({ "accept-language": lang });
 
-    // Seite /waves/new
+    // Seite /waves/new (Web-Text „belegt von erlaubt“: „3 of 3“ / „3 von 3“; JSON und Control-Seiten unten: „3 / 3“)
     for (const [p, title, used, step] of [
-      [page, "Free limit reached", "3 / 3", "Next step"],
-      [german.page, "Kostenlose Grenze erreicht", "3 / 3", "Nächster Schritt"],
+      [page, "Free limit reached", "3 of 3", "Next step"],
+      [german.page, "Kostenlose Grenze erreicht", "3 von 3", "Nächster Schritt"],
     ] as const) {
       await p.goto("/waves/new");
       await expect(p.getByRole("heading", { name: title })).toBeVisible();
