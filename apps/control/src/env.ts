@@ -1,6 +1,7 @@
 import { Relay, UpdateChannel } from "@wave/proto";
 import { z } from "zod";
 import { LETSENCRYPT_STAGING } from "./acme/client.ts";
+import { DEFAULT_FREE_DEVICE_LIMIT } from "./billing/device-limit.ts";
 
 const EnvSchema = z.object({
   WAVE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -93,6 +94,15 @@ const EnvSchema = z.object({
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.coerce.number().int().min(1).default(30),
   ),
+  /**
+   * How many distinct devices a hosted account without a subscription may
+   * register across all its waves (see billing/device-limit.ts). An empty
+   * value is the default, not zero, for the same reason as above.
+   */
+  WAVE_FREE_DEVICE_LIMIT: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(1).default(DEFAULT_FREE_DEVICE_LIMIT),
+  ),
   /** Password-free login for local development. Refused in production. */
   WAVE_DEV_AUTH: z
     .string()
@@ -160,6 +170,8 @@ export type Config = {
   secureCookies: boolean;
   /** Absent when WAVE_BILLING_TOKEN is unset: no billing routes at all. */
   billing?: { token: string; retentionDays: number };
+  /** Distinct devices a free hosted account may register; see billing/device-limit.ts. */
+  freeDeviceLimit: number;
   updates: {
     /** At least one; the first is the default. */
     channels: UpdateChannel[];
@@ -237,6 +249,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     dnsSecret,
     secureCookies: raw.WAVE_BASE_URL.startsWith("https://"),
     billing: billingConfig(raw.WAVE_BILLING_TOKEN, raw.WAVE_BILLING_RETENTION_DAYS),
+    freeDeviceLimit: raw.WAVE_FREE_DEVICE_LIMIT,
     updates: {
       channels: parseUpdateChannels(raw.WAVE_UPDATE_CHANNELS),
       repo: raw.WAVE_UPDATE_REPO,

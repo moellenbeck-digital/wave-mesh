@@ -110,6 +110,9 @@ const en = {
   waveSuspended: "This wave is paused",
   waveSuspendedBody: (wave: string) =>
     `${wave} is paused because its subscription is not active. No device can be added until it is again.`,
+  deviceLimit: "Device limit reached",
+  deviceLimitBody: (wave: string, limit: number) =>
+    `${wave} belongs to a free account that already has ${limit} devices. Remove one you no longer use, or subscribe to add more. This device was not added.`,
   noSeatLeft: "No seat left",
   noSeatLeftBody: (seats: number) =>
     `This wave is booked for ${seats} people, open invitations included. Book more, or withdraw an invitation.`,
@@ -321,6 +324,9 @@ const de: typeof en = {
   waveSuspended: "Dieser Wave ist pausiert",
   waveSuspendedBody: (wave) =>
     `${wave} ist pausiert, weil sein Abo nicht aktiv ist. Bis es das wieder ist, kommt kein Gerät hinzu.`,
+  deviceLimit: "Gerätegrenze erreicht",
+  deviceLimitBody: (wave, limit) =>
+    `${wave} gehört zu einem kostenlosen Konto, das schon ${limit} Geräte hat. Entferne ein Gerät, das du nicht mehr brauchst, oder schließe ein Abo ab. Dieses Gerät wurde nicht hinzugefügt.`,
   noSeatLeft: "Kein Platz mehr frei",
   noSeatLeftBody: (seats) =>
     `Dieser Wave ist für ${seats} Personen gebucht, offene Einladungen mitgezählt. Buch mehr dazu oder zieh eine Einladung zurück.`,

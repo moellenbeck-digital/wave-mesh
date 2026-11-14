@@ -1590,6 +1590,14 @@ eines Benutzers). Die ID ist dauerhaft (`ca_…`). Ein selbst betriebener Server
   „Getrennte Konten verknüpfen“), danach läuft der Befehl erneut. Im Deployment: nach dem
   Rollout `kubectl exec … -- wave-admin migrate-accounts --dry-run`, dann ohne Flag.
 
+- **Gerätekontingent (Ticket #116, `billing/device-limit.ts`).** Ein Gratis-Konto (Wave mit
+  `account_id`, keine `wave_billing`-Zeile in einer Wave des Kontos) darf höchstens
+  `WAVE_FREE_DEVICE_LIMIT` (Standard 100) verschiedene Geräte (`distinct machine_key` über alle
+  Knoten seiner Waves) registrieren; Gerät 101 bekommt `DeviceLimitError`. Geprüft wird in
+  `createNode()` — dem einen Weg für Pre-Auth-Key, Connector und Browser-Freigabe. Was ein Gerät
+  ist, wie Anfragen die Wave wählen (`X-Wave-Id`) und warum `nodes` je Wave statt global
+  eindeutig ist (Migration `0023`): [`docs/DEVICE-IDENTITY.md`](docs/DEVICE-IDENTITY.md).
+
 Offen und nicht Teil davon: ein **eigener Control-Server je Geschäftskunde**
 (ein Eintrag in einer ArgoCD-ApplicationSet, daraus Namespace, Overlay,
 Datenbank, Signaturschlüssel und ein eigener `WAVE_IPV4_CONTAINER`). Heute

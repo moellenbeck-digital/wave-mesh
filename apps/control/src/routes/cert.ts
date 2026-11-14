@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { isSuspended } from "../billing/subscriptions.ts";
 import type { CertificateService } from "../certs/issue.ts";
 import type { Database } from "../db/client.ts";
-import { authenticateMachine, nodeByMachineKey } from "./machine-auth.ts";
+import { authenticateMachine, nodeForRequest } from "./machine-auth.ts";
 
 /**
  * The two routes a node needs for a certificate (D7).
@@ -28,8 +28,9 @@ export function certRoutes({ db, certs, nonces }: CertRouteDeps) {
     const { result, body } = await authenticateMachine(c, nonceStore);
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const node = await nodeByMachineKey(db, result.machineKey);
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
     // A paused wave keeps its devices but gets nothing new from the server,
     // and a certificate is something new: issued now, valid for months.
     if (await isSuspended(db, node.waveId)) {
@@ -60,8 +61,9 @@ export function certRoutes({ db, certs, nonces }: CertRouteDeps) {
     const { result } = await authenticateMachine(c, nonceStore);
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const node = await nodeByMachineKey(db, result.machineKey);
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
     // Paused here too, not only at the order: one placed just before the
     // pause would otherwise be pushed on by the node's polling and handed
     // out during it. The order stays as it is and goes on once the wave is

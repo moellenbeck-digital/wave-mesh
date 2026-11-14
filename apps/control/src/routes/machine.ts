@@ -8,6 +8,7 @@ import { z } from "zod";
 import { audit, userActor } from "../audit.ts";
 import type { OAuthProvider } from "../auth/providers.ts";
 import type { SessionUser } from "../auth/session.ts";
+import { DeviceLimitError, deviceLimitReached, ensureDeviceSlot } from "../billing/device-limit.ts";
 import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { authRequests, nodes, waveMembers, waveServices, waves } from "../db/schema.ts";
@@ -16,17 +17,32 @@ import { localeOf } from "../i18n.ts";
 import { newId } from "../ids.ts";
 import { allocateIpv4, ipv6ForIpv4, uniqueHostname } from "../net/addressing.ts";
 import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
-import { authKeyWave, claimAuthKey } from "../waves/auth-keys.ts";
+import { authKeyWave, claimAuthKey, releaseAuthKey } from "../waves/auth-keys.ts";
 import { pierLeaving, unpublishLeavingPier } from "../waves/pier-dns.ts";
 import { plainLinkNotice } from "./account-link.ts";
 import { type NetmapHub, publishEndpoints } from "./control-ws.ts";
-import { authenticateMachine } from "./machine-auth.ts";
+import { authenticateMachine, nodeByMachineKey, nodeForRequest, WAVE_HEADER } from "./machine-auth.ts";
 import { pageMessages } from "./messages.ts";
 
 const AUTH_REQUEST_TTL_MS = 15 * 60 * 1000;
 const NODE_KEY_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
+
+/**
+ * The refusal for a device that does not fit: a reason a person can read, a
+ * code a program can match, and the limit. 403 like the paused wave -- the
+ * request is understood and not allowed, and retrying does not change it.
+ */
+const deviceLimitJson = (c: Context, error: DeviceLimitError) =>
+  c.json(
+    {
+      error: `device limit reached: this account can register at most ${error.limit} devices. Remove a device you no longer use, or subscribe to add more.`,
+      code: "device_limit",
+      limit: error.limit,
+    },
+    403,
+  );
 
 const EndpointsBody = z.object({ candidates: z.array(Candidate) });
 
@@ -83,9 +99,15 @@ export function machineRoutes({
     // claim a different one.
     if (request.machineKey !== result.machineKey) return c.json({ error: "machine key mismatch" }, 400);
 
-    const existing = await db.select().from(nodes).where(eq(nodes.machineKey, request.machineKey)).limit(1);
-    const node = existing[0];
-    if (node) {
+    // The wave this registration is about: the one the device names, else the
+    // one a pre-auth key would put it into. Without either, the device's only
+    // node -- a device registering again to refresh its keys.
+    const targetWave =
+      c.req.header(WAVE_HEADER) ?? (request.authKey ? await authKeyWave(db, request.authKey) : null);
+    const existing = await nodeByMachineKey(db, request.machineKey, targetWave);
+    if (!existing.ok && existing.status === 409) return c.json({ error: existing.error }, 409);
+    if (existing.ok) {
+      const node = existing.node;
       await db
         .update(nodes)
         .set({
@@ -113,14 +135,43 @@ export function machineRoutes({
       if (target && (await isSuspended(db, target))) {
         return c.json({ error: "this wave is paused: its subscription is not active" }, 403);
       }
+      // Before the key is spent, like the pause above: a device turned away at
+      // the limit must leave the key as it was, or the operator has used up a
+      // key on nothing. The check under the lock in createNode is the binding
+      // one; this one is what keeps the ordinary refusal from touching the key.
+      if (target) {
+        const full = await deviceLimitReached(db, {
+          waveId: target,
+          machineKey: request.machineKey,
+          limit: config.freeDeviceLimit,
+        });
+        if (full) return deviceLimitJson(c, full);
+      }
       const claimed = await claimAuthKey(db, request.authKey);
       if (!claimed) return c.json({ error: "this pre-auth key cannot be used" }, 403);
 
       const waveRows = await db.select().from(waves).where(eq(waves.id, claimed.waveId)).limit(1);
       const wave = waveRows[0];
-      if (!wave) return c.json({ error: "this pre-auth key cannot be used" }, 403);
+      if (!wave) {
+        await releaseAuthKey(db, claimed.id);
+        return c.json({ error: "this pre-auth key cannot be used" }, 403);
+      }
 
-      const nodeId = await createNode(db, { wave, userId: claimed.userId, device: request });
+      let nodeId: string;
+      try {
+        nodeId = await createNode(db, {
+          wave,
+          userId: claimed.userId,
+          device: request,
+          deviceLimit: config.freeDeviceLimit,
+        });
+      } catch (error) {
+        // The key was claimed before the node; nothing came of it, so give the
+        // use back. A race for the last place lands here.
+        await releaseAuthKey(db, claimed.id);
+        if (error instanceof DeviceLimitError) return deviceLimitJson(c, error);
+        throw error;
+      }
       // Nobody clicked anything, so the key is the actor's stand-in: whoever
       // made it made this decision in advance.
       await audit(
@@ -196,9 +247,9 @@ export function machineRoutes({
     });
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const rows = await db.select().from(nodes).where(eq(nodes.machineKey, result.machineKey)).limit(1);
-    const node = rows[0];
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
 
     await db.update(nodes).set({ lastSeenAt: new Date() }).where(eq(nodes.id, node.id));
     return c.json(await withNetmap(node.id));
@@ -211,9 +262,9 @@ export function machineRoutes({
     const parsed = EndpointsBody.safeParse(JSON.parse(body || "{}"));
     if (!parsed.success) return c.json({ error: "invalid request" }, 400);
 
-    const rows = await db.select().from(nodes).where(eq(nodes.machineKey, result.machineKey)).limit(1);
-    const node = rows[0];
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
 
     await publishEndpoints(db, hub, node, parsed.data.candidates);
     return c.json({ ok: true });
@@ -223,10 +274,11 @@ export function machineRoutes({
     const { result } = await authenticate(c);
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const rows = await db.select().from(nodes).where(eq(nodes.machineKey, result.machineKey)).limit(1);
-    const node = rows[0];
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok && found.status === 409) return c.json({ error: found.error }, 409);
     // Already gone is a success: logging out twice is not an error.
-    if (!node) return c.json({ ok: true });
+    if (!found.ok) return c.json({ ok: true });
+    const node = found.node;
 
     // The pier logging itself out takes its wildcard with it, like any other
     // way a pier node goes (waves/pier-dns.ts).
@@ -295,7 +347,7 @@ export function machineRoutes({
     if (!request) return c.json({ error: "request expired" }, 410);
 
     const picked = String(form.get("wave") ?? "") || undefined;
-    const approved = await approveRequest(db, user.id, request, picked);
+    const approved = await approveRequest(db, user.id, request, picked, config.freeDeviceLimit);
     if (approved.kind === "none") return c.redirect(toWaveForm(request.id), 303);
     if (approved.kind === "choose") return askForWave(c, user, request, approved.waves);
     if (approved.kind === "suspended") {
@@ -303,6 +355,13 @@ export function machineRoutes({
       // where the browser lands, and the request stays pending for later.
       const m = pageMessages(localeOf(c));
       return c.html(html`<h1>${m.waveSuspended}</h1><p>${m.waveSuspendedBody(approved.waveName)}</p>`, 403);
+    }
+    if (approved.kind === "limit") {
+      const m = pageMessages(localeOf(c));
+      return c.html(
+        html`<h1>${m.deviceLimit}</h1><p>${m.deviceLimitBody(approved.waveName, approved.limit)}</p>`,
+        403,
+      );
     }
     await audit(db, approved.waveId, userActor(user), {
       action: "device.approve",
@@ -417,7 +476,9 @@ export type Approval =
   | { kind: "choose"; waves: { id: string; name: string }[] }
   | { kind: "none" }
   /** The wave is paused for billing; nobody new comes in until it is live again. */
-  | { kind: "suspended"; waveName: string };
+  | { kind: "suspended"; waveName: string }
+  /** The wave's free account holds as many devices as it may, and this one is new to it. */
+  | { kind: "limit"; waveName: string; limit: number };
 
 /**
  * Creates the node in the wave the user picked and marks the request authorized.
@@ -448,7 +509,8 @@ async function approveRequest(
   db: Database,
   userId: string,
   request: typeof authRequests.$inferSelect,
-  waveId?: string,
+  waveId: string | undefined,
+  deviceLimit: number,
 ): Promise<Approval> {
   const candidates = await waveCandidates(db, userId);
   if (candidates.length === 0) return { kind: "none" };
@@ -466,7 +528,31 @@ async function approveRequest(
   // subscription does -- an approval nobody gave for that day.
   if (await isSuspended(db, wave.id)) return { kind: "suspended", waveName: wave.name };
 
-  const nodeId = await createNode(db, { wave, userId, device: request });
+  // A device that is already in this wave (a request for it can be pending
+  // while the device joins by other means) gets its node back, not a second.
+  const [already] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.waveId, wave.id), eq(nodes.machineKey, request.machineKey)))
+    .limit(1);
+  let nodeId: string;
+  if (already) {
+    nodeId = already.id;
+    await db
+      .update(nodes)
+      .set({ nodeKey: request.nodeKey, discoKey: request.discoKey, lastSeenAt: new Date() })
+      .where(eq(nodes.id, nodeId));
+  } else {
+    try {
+      nodeId = await createNode(db, { wave, userId, device: request, deviceLimit });
+    } catch (error) {
+      // The request stays pending: nothing was decided, and a place freed
+      // later lets the same link finish.
+      if (error instanceof DeviceLimitError)
+        return { kind: "limit", waveName: wave.name, limit: error.limit };
+      throw error;
+    }
+  }
   await db.update(authRequests).set({ status: "authorized", nodeId }).where(eq(authRequests.id, request.id));
 
   const rows = await db.select({ ipv4: nodes.ipv4 }).from(nodes).where(eq(nodes.id, nodeId)).limit(1);
@@ -503,10 +589,21 @@ async function createNode(
     wave: typeof waves.$inferSelect;
     userId: string;
     device: DeviceFacts;
+    /** Distinct devices a free hosted account may hold. */
+    deviceLimit: number;
   },
 ): Promise<string> {
   return db.transaction(async (tx) => {
     await tx.select().from(waves).where(eq(waves.id, input.wave.id)).limit(1).for("update");
+
+    // The one place every way of getting a node goes through (pre-auth key,
+    // browser approval; the connector enrols with a key). Throws
+    // DeviceLimitError, which rolls this transaction back with nothing in it.
+    await ensureDeviceSlot(tx, {
+      waveId: input.wave.id,
+      machineKey: input.device.machineKey,
+      limit: input.deviceLimit,
+    });
 
     const siblings = await tx
       .select({ ipv4: nodes.ipv4, hostname: nodes.hostname })

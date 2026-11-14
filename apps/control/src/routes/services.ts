@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { Database } from "../db/client.ts";
 import { listServices, syncServices } from "../waves/services.ts";
 import type { NetmapHub } from "./control-ws.ts";
-import { authenticateMachine, nodeByMachineKey } from "./machine-auth.ts";
+import { authenticateMachine, nodeForRequest } from "./machine-auth.ts";
 
 /**
  * Where a cluster says which names it answers for (D11).
@@ -33,8 +33,9 @@ export function serviceRoutes({ db, hub, nonces }: ServiceRouteDeps) {
     const { result, body } = await authenticateMachine(c, nonceStore);
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const node = await nodeByMachineKey(db, result.machineKey);
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
 
     const parsed = ServiceSyncRequest.safeParse(JSON.parse(body || "{}"));
     if (!parsed.success) return c.json({ error: "invalid request", detail: parsed.error.issues }, 400);
@@ -67,8 +68,9 @@ export function serviceRoutes({ db, hub, nonces }: ServiceRouteDeps) {
     const { result } = await authenticateMachine(c, nonceStore);
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const node = await nodeByMachineKey(db, result.machineKey);
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
 
     const services = await listServices(db, node.waveId);
     return c.json({

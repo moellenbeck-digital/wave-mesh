@@ -7,7 +7,7 @@ import type { Database } from "../db/client.ts";
 import { waves } from "../db/schema.ts";
 import { findPierHost, listPiers, pierLabel, pierZone, removePier, setPier } from "../waves/piers.ts";
 import type { NetmapHub } from "./control-ws.ts";
-import { authenticateMachine, nodeByMachineKey } from "./machine-auth.ts";
+import { authenticateMachine, nodeForRequest } from "./machine-auth.ts";
 
 /**
  * Where a device puts one of its names into the open network (D12).
@@ -34,8 +34,9 @@ export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
     const { result, body } = await authenticateMachine(c, nonceStore);
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const node = await nodeByMachineKey(db, result.machineKey);
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
 
     let json: unknown;
     try {
@@ -77,8 +78,9 @@ export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
     const { result } = await authenticateMachine(c, nonceStore);
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const node = await nodeByMachineKey(db, result.machineKey);
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
 
     const waveRows = await db.select().from(waves).where(eq(waves.id, node.waveId)).limit(1);
     const wave = waveRows[0];
@@ -98,8 +100,9 @@ export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
     const { result } = await authenticateMachine(c, nonceStore);
     if (!result.ok) return c.json({ error: result.reason }, 401);
 
-    const node = await nodeByMachineKey(db, result.machineKey);
-    if (!node) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
+    const node = found.node;
 
     const waveRows = await db.select().from(waves).where(eq(waves.id, node.waveId)).limit(1);
     const wave = waveRows[0];
