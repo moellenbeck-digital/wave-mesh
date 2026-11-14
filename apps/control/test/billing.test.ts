@@ -879,10 +879,10 @@ describe("waves where they are sold", () => {
 
     const me = (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
       canCreateWave: boolean;
-      waveCreation: { allowed: boolean; reason: string | null };
+      waveCreation: { allowed: boolean; reason: string | null; limit: number };
     };
     expect(me.canCreateWave).toBe(true);
-    expect(me.waveCreation).toEqual({ allowed: true, reason: null });
+    expect(me.waveCreation).toEqual({ allowed: true, reason: null, limit: 3 });
   });
 
   test("on a server without billing nothing changes", async () => {

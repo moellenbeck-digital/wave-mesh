@@ -189,10 +189,10 @@ describe("the free start", () => {
     // /api/me and the form say the same, before anyone posts.
     const me = (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
       canCreateWave: boolean;
-      waveCreation: { allowed: boolean; reason: string | null };
+      waveCreation: { allowed: boolean; reason: string | null; limit: number };
     };
     expect(me.canCreateWave).toBe(false);
-    expect(me.waveCreation).toEqual({ allowed: false, reason: "unverified-email" });
+    expect(me.waveCreation).toEqual({ allowed: false, reason: "unverified-email", limit: 3 });
     const form = await (await app.request("/waves/new", { headers: { cookie: jar.header() } })).text();
     expect(form).toContain('data-error="unverified-email"');
     expect(form).not.toContain('action="/waves"');
