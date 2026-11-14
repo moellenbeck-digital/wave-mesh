@@ -183,6 +183,9 @@ async function createFor(
     return await db.transaction(async (tx): Promise<Made> => {
       const t = tx as unknown as Database;
       await lockAddress(t, email);
+      // A delivery of the same subscription that was ahead of this one under the
+      // lock: its row is there now, and it is not a conflict with itself.
+      if (await load(t, subscriptionId)) return { kind: "exists" };
       const [owner] = await t
         .select({ id: users.id })
         .from(users)

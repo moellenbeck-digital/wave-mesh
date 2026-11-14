@@ -825,6 +825,9 @@ describe("a booked wave", () => {
 });
 
 describe("waves where they are sold", () => {
+  // Ticket #117: where waves are sold, a *confirmed* user creates waves for a
+  // customer account of their own, without paying, up to the free limits. What
+  // used to be "billing configured = nobody creates one" is decided per user.
   const createWave = (jar: CookieJar) =>
     app.request("/waves", {
       method: "POST",
@@ -834,7 +837,7 @@ describe("waves where they are sold", () => {
 
   const waveCount = async (): Promise<number> => (await db.select({ id: waves.id }).from(waves)).length;
 
-  test("someone removed from a booked seat does not get one of their own", async () => {
+  test("someone removed from a booked seat gets a free account of their own, and the paid one is untouched", async () => {
     const { waveId } = await buy();
     const jar = await signInWithProvider("ben@acme.example");
     const ben = (await db.select({ id: users.id }).from(users).where(eq(users.email, "ben@acme.example")))[0];
@@ -842,27 +845,39 @@ describe("waves where they are sold", () => {
     await removeMember(db, waveId, "owner", ben?.id ?? "");
 
     const res = await createWave(jar);
-    expect(res.status).toBe(403);
-    expect(await waveCount()).toBe(1);
+    expect(res.status).toBe(303);
+    expect(await waveCount()).toBe(2);
+
+    const billed = (await db.select().from(waves).where(eq(waves.id, waveId)))[0];
+    const own = (await db.select().from(waves).where(eq(waves.ownerUserId, ben?.id ?? "")))[0];
+    expect(own?.accountId).toBeTruthy();
+    expect(own?.accountId).not.toBe(billed?.accountId ?? "");
+    // The free wave has no billing row and the booked one keeps its row as it was.
+    expect(await db.select().from(waveBilling)).toHaveLength(1);
   });
 
-  test("nor does anyone still on one", async () => {
-    await buy();
+  test("the owner of a booked wave creates the next one in the same, paid account", async () => {
+    const { waveId } = await buy();
     const jar = await signInWithProvider("anna@acme.example");
-    expect((await createWave(jar)).status).toBe(403);
-    expect(await waveCount()).toBe(1);
+    expect((await createWave(jar)).status).toBe(303);
+    expect(await waveCount()).toBe(2);
+    const rows = await db.select().from(waves);
+    expect(new Set(rows.map((w) => w.accountId)).size).toBe(1);
+    expect(rows.find((w) => w.id === waveId)?.accountId).toBeTruthy();
   });
 
-  test("the form and /api/me say why instead of offering one", async () => {
+  test("the form and /api/me offer one to a confirmed user, with no reason", async () => {
     const jar = await signInWithProvider("ben@acme.example");
     const form = await app.request("/waves/new", { headers: { cookie: jar.header() } });
     expect(form.status).toBe(200);
-    expect(await form.text()).not.toContain('action="/waves"');
+    expect(await form.text()).toContain('action="/waves"');
 
     const me = (await (await app.request("/api/me", { headers: { cookie: jar.header() } })).json()) as {
       canCreateWave: boolean;
+      waveCreation: { allowed: boolean; reason: string | null };
     };
-    expect(me.canCreateWave).toBe(false);
+    expect(me.canCreateWave).toBe(true);
+    expect(me.waveCreation).toEqual({ allowed: true, reason: null });
   });
 
   test("on a server without billing nothing changes", async () => {
@@ -873,5 +888,7 @@ describe("waves where they are sold", () => {
       canCreateWave: boolean;
     };
     expect(me.canCreateWave).toBe(true);
+    // No account on a self-hosted server.
+    expect((await db.select().from(waves))[0]?.accountId).toBeNull();
   });
 });
