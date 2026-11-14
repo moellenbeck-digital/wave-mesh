@@ -796,8 +796,8 @@ describe("two free customer accounts (ticket #117)", () => {
     expect(accounts[0]?.ownerUserId).toBe(a);
     const rows = await db.select().from(waves);
     expect(rows).toHaveLength(3);
-    expect(new Set(rows.map((w) => w.accountId))).toEqual(new Set([accounts[0]?.id]));
-    expect(new Set(rows.map((w) => w.ownerUserId))).toEqual(new Set([a]));
+    expect(rows.every((w) => w.accountId === accounts[0]?.id)).toBe(true);
+    expect(rows.every((w) => w.ownerUserId === a)).toBe(true);
     expect((await db.select().from(users).where(eq(users.id, b))).length).toBe(0);
   });
 });
