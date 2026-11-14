@@ -8,6 +8,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.17.0-develop.7 (14.11.2026)
+
+Keine Änderung für Anwender: Der Oberflächentest `@t116` zum Gerätekontingent liegt jetzt in `apps/e2e`.
+
+---
+
 ## 🔬 Development v0.17.0-develop.6 (14.11.2026)
 
 ### Neue Funktionen
