@@ -241,7 +241,12 @@ export const nodes = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    /** Long-lived device identity; authenticates every request this node makes. */
+    /**
+     * Long-lived device identity; authenticates every request this node makes.
+     * Unique per wave, not globally: the same device may have a node in several
+     * waves (docs/DEVICE-IDENTITY.md), and the free-account limit counts the
+     * distinct keys.
+     */
     machineKey: text("machine_key").notNull(),
     /** WireGuard public key. Replaced on re-registration. */
     nodeKey: text("node_key").notNull(),
@@ -312,7 +317,8 @@ export const nodes = pgTable(
     keyExpiresAt: timestamp("key_expires_at", { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex("nodes_machine_key_idx").on(t.machineKey),
+    uniqueIndex("nodes_wave_machine_key_idx").on(t.waveId, t.machineKey),
+    index("nodes_machine_key_idx").on(t.machineKey),
     uniqueIndex("nodes_wave_ipv4_idx").on(t.waveId, t.ipv4),
     uniqueIndex("nodes_wave_hostname_idx").on(t.waveId, t.hostname),
     index("nodes_wave_idx").on(t.waveId),

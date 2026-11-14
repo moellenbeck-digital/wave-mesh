@@ -11,6 +11,7 @@ import { nodes, waves } from "../db/schema.ts";
 import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
 import { boundCandidates } from "../netmap/candidates.ts";
 import type { ReleaseFeed } from "../updates/releases.ts";
+import { nodeForRequest, WAVE_HEADER } from "./machine-auth.ts";
 import { upgradeWebSocket } from "./ws.ts";
 
 interface Connection {
@@ -245,16 +246,17 @@ export function controlWebsocket({ db, hub, nonces, releases }: ControlWsDeps) {
         nonces: nonceStore,
       });
 
-      const rows = result.ok
-        ? await db.select().from(nodes).where(eq(nodes.machineKey, result.machineKey)).limit(1)
-        : [];
-      const node = rows[0];
+      const found = result.ok ? await nodeForRequest(db, c, result.machineKey) : null;
+      const node = found?.ok ? found.node : undefined;
+      const ambiguous = found !== null && !found.ok && found.status === 409;
       let connection: Connection | undefined;
 
       return {
         async onOpen(_event, ws) {
           if (!node) {
-            ws.close(4401, "unauthenticated");
+            // 4409 is "several waves, name one", the HTTP 409 of the other routes.
+            if (ambiguous) ws.close(4409, `name a wave in the ${WAVE_HEADER} header`);
+            else ws.close(4401, "unauthenticated");
             return;
           }
           connection = {

@@ -2,7 +2,7 @@ import { createMemoryNonceStore, type NonceStore } from "@wave/crypto";
 import { Hono } from "hono";
 import type { Database } from "../db/client.ts";
 import type { ReleaseFeed } from "../updates/releases.ts";
-import { authenticateMachine, nodeByMachineKey } from "./machine-auth.ts";
+import { authenticateMachine, nodeForRequest } from "./machine-auth.ts";
 
 /**
  * Where a device fetches the archive of an update it was offered (D13).
@@ -30,7 +30,8 @@ export function updateRoutes({ db, releases, nonces }: UpdateRouteDeps) {
   app.get("/v1/update/:version/:archive", async (c) => {
     const { result } = await authenticateMachine(c, nonceStore);
     if (!result.ok) return c.json({ error: result.reason }, 401);
-    if (!(await nodeByMachineKey(db, result.machineKey))) return c.json({ error: "unknown node" }, 404);
+    const found = await nodeForRequest(db, c, result.machineKey);
+    if (!found.ok) return c.json({ error: found.error }, found.status);
 
     let upstream: Response | null;
     try {

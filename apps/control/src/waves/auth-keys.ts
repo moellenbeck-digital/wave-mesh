@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { waveAuthKeys } from "../db/schema.ts";
 import { newId } from "../ids.ts";
@@ -100,6 +100,17 @@ export async function claimAuthKey(db: Database, token: string): Promise<UsableA
   if (claimed.length === 0) return null;
 
   return { id: key.id, waveId: key.waveId, userId: key.userId };
+}
+
+/**
+ * Gives back the use `claimAuthKey` took, for a registration that failed after
+ * claiming (the device turned out not to fit). Never below zero.
+ */
+export async function releaseAuthKey(db: Database, id: string): Promise<void> {
+  await db
+    .update(waveAuthKeys)
+    .set({ uses: sql`greatest(${waveAuthKeys.uses} - 1, 0)` })
+    .where(eq(waveAuthKeys.id, id));
 }
 
 export interface AuthKeyRow {

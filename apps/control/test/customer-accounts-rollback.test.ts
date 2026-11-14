@@ -25,21 +25,27 @@ import { schema, waves } from "../src/db/schema.ts";
  */
 
 const REAL = new URL("../drizzle", import.meta.url).pathname;
-const NEW_TAG = /^0022_/;
+/** Later migrations (0023 and on) belong to other releases; this file is about 0022. */
+const migrationNumber = (tag: string) => Number.parseInt(tag.slice(0, 4), 10);
 
 let client: PGlite;
 let dir: string;
+let newDir: string;
 let db: Database;
 
-/** The migration folder as the old image ships it: everything before 0022. */
-function oldFolder(): string {
+/**
+ * The migration folder as an image ships it: every migration up to `last`.
+ * The old image has everything before 0022; the image that brings 0022 has
+ * everything through it -- not the migrations that came after.
+ */
+function folderThrough(last: number): string {
   const root = mkdtempSync(join(tmpdir(), "wave-old-migrations-"));
   mkdirSync(join(root, "meta"));
   const journal = JSON.parse(readFileSync(join(REAL, "meta", "_journal.json"), "utf8")) as {
     entries: Array<{ tag: string }>;
   };
-  const kept = journal.entries.filter((entry) => !NEW_TAG.test(entry.tag));
-  expect(kept.length).toBe(journal.entries.length - 1);
+  const kept = journal.entries.filter((entry) => migrationNumber(entry.tag) <= last);
+  expect(kept.length).toBe(last + 1);
   writeFileSync(join(root, "meta", "_journal.json"), JSON.stringify({ ...journal, entries: kept }));
   for (const entry of kept) copyFileSync(join(REAL, `${entry.tag}.sql`), join(root, `${entry.tag}.sql`));
   return root;
@@ -82,13 +88,15 @@ const digest = async () => {
 };
 
 beforeAll(async () => {
-  dir = oldFolder();
+  dir = folderThrough(21);
+  newDir = folderThrough(22);
   client = new PGlite();
   db = drizzle(client, { schema }) as unknown as Database;
 });
 afterAll(async () => {
   await client.close();
   rmSync(dir, { recursive: true, force: true });
+  rmSync(newDir, { recursive: true, force: true });
 });
 
 describe("the old image against the new schema", () => {
@@ -120,7 +128,7 @@ describe("the old image against the new schema", () => {
   });
 
   test("0022 only adds: one table, one nullable column, nothing existing is touched", async () => {
-    await migrate(drizzle(client), { migrationsFolder: REAL });
+    await migrate(drizzle(client), { migrationsFolder: newDir });
     const now = await structure();
 
     // No existing column changed or went; the only new ones are the table's and waves.account_id.

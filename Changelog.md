@@ -6,6 +6,23 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Gerätegrenze für kostenlose Konten (#116):** Ein gehostetes Gratis-Konto kann höchstens 100
+  verschiedene Geräte über alle seine Waves anmelden. Das 101. Gerät wird mit einer verständlichen
+  Meldung abgewiesen: im Browser in der Sprache des Benutzers, bei Pre-Auth-Key und Connector als
+  Fehler mit Grund und Code `device_limit`. Ein Pre-Auth-Key wird dabei nicht verbraucht. Ein Gerät,
+  das schon im Konto ist, belegt in einer weiteren Wave keinen zusätzlichen Platz; wird ein Gerät
+  entfernt, ist sein Platz sofort wieder frei. Konten mit Abo und selbst betriebene Server bleiben
+  unbegrenzt.
+
+### Änderungen
+
+- **Ein Gerät kann in mehreren Waves stehen:** Der Schlüssel eines Geräts ist jetzt je Wave eindeutig
+  statt auf dem ganzen Server. Anfragen eines Geräts in mehreren Waves nennen ihre Wave im Header
+  `X-Wave-Id`, sonst antwortet der Server mit 409. Bisherige Geräte und Clients sind nicht betroffen.
+  Hintergrund: `docs/DEVICE-IDENTITY.md`.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.5 (14.11.2026)
