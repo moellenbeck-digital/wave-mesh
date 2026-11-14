@@ -1,10 +1,24 @@
 import { redirect } from "next/navigation";
+import { AccountUsage } from "@/components/account-usage";
 import { LinkNotice } from "@/components/link-notice";
 import { TwoFactorPanel } from "@/components/two-factor";
 import { accountMessages } from "@/i18n/account";
 import { rich } from "@/i18n/rich";
-import { fetchMe, fetchTwoFactor } from "@/lib/control";
+import { type AccountPlanView, fetchMe, fetchTwoFactor, type Me } from "@/lib/control";
 import { getLocale } from "@/lib/i18n";
+
+/** The plan block of `/api/me`, if the server sends one (a hosted one does). */
+const planOf = (me: Me): AccountPlanView | undefined => {
+  const { account } = me;
+  if (!account?.plan || !account.limits || !account.usage || !account.overhang) return undefined;
+  return {
+    accountId: account.accountId ?? null,
+    plan: account.plan,
+    limits: account.limits,
+    usage: account.usage,
+    overhang: account.overhang,
+  };
+};
 
 /** The account's own settings: the second factor of the password login, and the ways out. */
 export default async function AccountPage() {
@@ -25,6 +39,8 @@ export default async function AccountPage() {
       <div className="mt-8">
         <LinkNotice me={me} />
       </div>
+
+      <AccountUsage plan={planOf(me)} />
 
       <section className="wc-card animate-slide-up relative mt-8 rounded-lg p-8">
         <div className="absolute top-0 right-0 left-0 h-1 rounded-t-lg bg-accent" />

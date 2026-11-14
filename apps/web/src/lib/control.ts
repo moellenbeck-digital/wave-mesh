@@ -49,13 +49,42 @@ export interface AccountIdentity {
   label: string | null;
 }
 
+export interface Counts {
+  waves: number;
+  people: number;
+  devices: number;
+}
+
+/** What an account holds above its plan: by number, and per wave who and which devices. */
+export interface Overhang extends Counts {
+  perWave: Array<{
+    waveId: string;
+    waveName: string;
+    people: Array<{ email: string | null; kind: "member" | "invitation" }>;
+    devices: Array<{ name: string }>;
+  }>;
+}
+
+/**
+ * The customer account's plan against its usage (ticket #117). A limit is `null`
+ * where the plan has none. Only on a hosted server; absent on a self-hosted one
+ * and on an older control server.
+ */
+export interface AccountPlanView {
+  accountId: string | null;
+  plan: "free" | "paid";
+  limits: { waves: number | null; people: number | null; devices: number | null };
+  usage: Counts;
+  overhang: Overhang;
+}
+
 export interface Me {
   user: { id: string; email: string | null; emailVerified: boolean; name: string | null };
   /**
    * Which logins this account has, and whether the guided link of a split-off
    * account is on offer. Missing from an older control server.
    */
-  account?: { identities: AccountIdentity[]; linkable: boolean };
+  account?: { identities: AccountIdentity[]; linkable: boolean } & Partial<AccountPlanView>;
   waves: Wave[];
   invites: WaitingInvite[];
   /** What the create form starts with, so neither field is ever empty. */
