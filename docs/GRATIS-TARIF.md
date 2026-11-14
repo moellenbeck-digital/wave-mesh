@@ -84,6 +84,13 @@ Ein selbst betriebener Control-Server (ohne `WAVE_BILLING_TOKEN`) kennt keinen T
 
 Was dort begrenzt, sind nur Hardware und Adressraum. Betrieb: [`deployment/README.md`](../deployment/README.md).
 
+**Lizenz.** Selfhosting ist kostenlos, der Code ist quelloffen und einsehbar. Er steht unter der
+[Elastic License 2.0](../LICENSE) (ELv2, <https://www.elastic.co/licensing/elastic-license>): Benutzen,
+verändern und weitergeben ist erlaubt, auch im eigenen Unternehmen. **Nicht erlaubt** ist, wave-mesh
+Dritten als gehosteten oder verwalteten Dienst anzubieten. Wegen dieser Einschränkung ist ELv2 **keine
+OSI-konforme Open-Source-Lizenz**; „unbegrenzt“ meint die fehlenden Gratis-Grenzen, nicht eine
+Freigabe für ein eigenes Hosting-Angebot.
+
 ## Für Betreiber gehosteter Server
 
 | Einstellung | Standard | Bedeutung |

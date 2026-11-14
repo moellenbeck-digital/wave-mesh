@@ -199,6 +199,17 @@ bills with `WAVE_BILLING_TOKEN`; there they can be set with `WAVE_FREE_MAX_WAVES
 [`docs/FREE-PLAN.md`](../docs/FREE-PLAN.md) and
 [`docs/ACCOUNT-SUBSCRIPTIONS.en.md`](../docs/ACCOUNT-SUBSCRIPTIONS.en.md).
 
+**Lizenz:** Selfhosting ist kostenlos, der Code ist quelloffen und einsehbar. Er steht unter der
+[Elastic License 2.0](../LICENSE) (ELv2, <https://www.elastic.co/licensing/elastic-license>). Benutzen,
+verändern und weitergeben ist erlaubt, auch im eigenen Unternehmen; **nicht erlaubt** ist, wave-mesh Dritten
+als gehosteten oder verwalteten Dienst anzubieten. ELv2 ist deshalb **keine OSI-konforme Open-Source-Lizenz**.
+
+**License:** self-hosting is free, and the code is source-available. It is licensed under the
+[Elastic License 2.0](../LICENSE) (ELv2, <https://www.elastic.co/licensing/elastic-license>). Using,
+modifying and redistributing it is allowed, including inside your own company; **not allowed** is offering
+wave-mesh to third parties as a hosted or managed service. ELv2 is therefore **not an OSI-approved
+open-source license**.
+
 ## Was in den Manifesten steckt
 
 Vier Entscheidungen, die man beim Umbauen kennen sollte; die Begründung steht

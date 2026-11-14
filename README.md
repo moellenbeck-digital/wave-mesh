@@ -35,12 +35,17 @@ auf echter Hardware geprüft.
 **Deutsch:** Auf einem gehosteten Server (wave-mesh.org) heißt Gratis: **3 Waves, 3 Personen und 100 Geräte über
 alle Waves des Kontos**; offene Einladungen zählen als Personen, wer in mehreren Waves ist, zählt einmal. Ein
 Abo hebt die Grenzen an. **Selfhosting ist unbegrenzt**: Ein selbst betriebener Server kennt keinen Tarif,
-zeigt keine Quote und wendet keine an. Mehr: [`docs/GRATIS-TARIF.md`](docs/GRATIS-TARIF.md).
+zeigt keine Quote und wendet keine an. Selfhosting ist kostenlos, der Code quelloffen unter der
+[Elastic License 2.0](LICENSE) (ELv2); wave-mesh Dritten als gehosteten oder verwalteten Dienst anzubieten ist
+nicht erlaubt, und ELv2 ist keine OSI-konforme Open-Source-Lizenz (siehe „Lizenz“). Mehr:
+[`docs/GRATIS-TARIF.md`](docs/GRATIS-TARIF.md).
 
 **English:** On a hosted server (wave-mesh.org), free means **3 waves, 3 people and 100 devices across all waves
 of the account**; open invitations count as people, and a person in several waves counts once. A
 subscription raises the limits. **Self-hosting is unlimited**: a server you run yourself has no plan, shows
-no quota and applies none. More: [`docs/FREE-PLAN.md`](docs/FREE-PLAN.md).
+no quota and applies none. Self-hosting is free and the code is source-available under the
+[Elastic License 2.0](LICENSE) (ELv2); offering wave-mesh to third parties as a hosted or managed service is
+not allowed, and ELv2 is not an OSI-approved open-source license. More: [`docs/FREE-PLAN.md`](docs/FREE-PLAN.md).
 
 ## Entwicklung
 
