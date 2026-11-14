@@ -65,6 +65,30 @@ const en = {
   loginCodeInvalid: "That code did not work.",
   loginCodeThrottled: "Too many wrong codes. Wait a quarter of an hour, then sign in again.",
   loginExpired: "That took too long. Sign in again.",
+  planTitle: "Plan and usage",
+  planLabel: "Plan",
+  planFree: "Free",
+  planPaid: "Paid",
+  planFreeNote:
+    "A free account holds a limited number of waves, people and devices across all its waves. A subscription raises the limits.",
+  planPaidNote:
+    "Your subscription sets how many people the account holds; waves and devices are not limited.",
+  usageWaves: "Waves",
+  usagePeople: "People",
+  usageDevices: "Devices",
+  ofLimit: (limit: number) => `of ${limit}`,
+  noLimit: "no limit",
+  overhangTitle: "Above the limits of your plan",
+  overhangIntro:
+    "Nothing is removed. Everything that is there stays and keeps working; only new waves, people and devices are turned away until the account is within the limits again.",
+  overWaves: (n: number) => (n === 1 ? "1 wave too many" : `${n} waves too many`),
+  overPeople: (n: number) => (n === 1 ? "1 person too many" : `${n} people too many`),
+  overDevices: (n: number) => (n === 1 ? "1 device too many" : `${n} devices too many`),
+  perWaveTitle: "Who and what is in each wave",
+  peopleHeading: "People",
+  devicesHeading: "Devices",
+  invited: "(invited)",
+  none: "none",
 };
 
 const de: typeof en = {
@@ -124,6 +148,30 @@ const de: typeof en = {
   loginCodeInvalid: "Dieser Code hat nicht funktioniert.",
   loginCodeThrottled: "Zu viele falsche Codes. Warte eine Viertelstunde und melde dich dann noch einmal an.",
   loginExpired: "Das hat zu lange gedauert. Melde dich noch einmal an.",
+  planTitle: "Tarif und Nutzung",
+  planLabel: "Tarif",
+  planFree: "Gratis",
+  planPaid: "Bezahlt",
+  planFreeNote:
+    "Ein Gratis-Konto fasst über alle seine Waves hinweg nur eine begrenzte Zahl an Waves, Personen und Geräten. Ein Abo hebt die Grenzen an.",
+  planPaidNote:
+    "Dein Abo legt fest, wie viele Personen das Konto fasst; Waves und Geräte sind nicht begrenzt.",
+  usageWaves: "Waves",
+  usagePeople: "Personen",
+  usageDevices: "Geräte",
+  ofLimit: (limit) => `von ${limit}`,
+  noLimit: "keine Grenze",
+  overhangTitle: "Über den Grenzen deines Tarifs",
+  overhangIntro:
+    "Es wird nichts entfernt. Alles, was da ist, bleibt und funktioniert weiter; nur neue Waves, Personen und Geräte werden abgewiesen, bis das Konto wieder in den Grenzen liegt.",
+  overWaves: (n) => (n === 1 ? "1 Wave zu viel" : `${n} Waves zu viel`),
+  overPeople: (n) => (n === 1 ? "1 Person zu viel" : `${n} Personen zu viel`),
+  overDevices: (n) => (n === 1 ? "1 Gerät zu viel" : `${n} Geräte zu viel`),
+  perWaveTitle: "Wer und was in welchem Wave ist",
+  peopleHeading: "Personen",
+  devicesHeading: "Geräte",
+  invited: "(eingeladen)",
+  none: "keine",
 };
 
 export type AccountMessages = typeof en;

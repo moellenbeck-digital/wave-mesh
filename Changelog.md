@@ -21,6 +21,12 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
   Grenze überschritten würde. Es wird nichts geändert.
 - **Missbrauchsschutz:** Das Anlegen von Waves ist je Benutzer und je Adresse begrenzt (Antwort 429
   mit Wartezeit). Jede Entscheidung steht im Log.
+- **Konto-Bereich:** Unter „Dein Konto“ zeigt der neue Abschnitt „Tarif und Nutzung“ den Tarif
+  (Gratis oder Bezahlt) und die Nutzung gegen die Grenzen. Liegt ein Konto nach einer Kündigung über den
+  Gratis-Grenzen, steht dort konkret, wie viele Waves, Personen und Geräte zu viel sind und welche
+  Personen und Geräte in welchem Wave stecken. Das System entfernt dabei nichts.
+- **Downgrade-Prüfung für die Abrechnung:** Die Seite kann vor einer Kündigung abfragen, ob ein Konto in die
+  Gratis-Grenzen passt (`GET /api/billing/accounts/:id/downgrade-check`).
 
 ---
 
