@@ -142,10 +142,22 @@ describe("a free account", () => {
     const { res, key } = await enrol(wave, userId, "d");
 
     expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: string; code: string; limit: number };
+    const body = (await res.json()) as {
+      error: string;
+      code: string;
+      limit: number;
+      used: number;
+      upgradeUrl: string;
+    };
     expect(body.code).toBe("device_limit");
     expect(body.limit).toBe(LIMIT);
+    // `used / limit` and the next steps (ticket #119); code and `limit` stay as they were.
+    expect(body.used).toBe(LIMIT);
     expect(body.error).toContain(`${LIMIT} devices`);
+    expect(body.error).toContain(`${LIMIT} / ${LIMIT}`);
+    expect(body.error).toContain("remove a device");
+    expect(body.upgradeUrl).toEndWith("/account#plan");
+    expect(body.error).toContain(body.upgradeUrl);
     expect(await db.select().from(nodes)).toHaveLength(LIMIT);
     expect(await accountDeviceCount(db, accountId ?? "")).toBe(LIMIT);
     // The refusal does not spend the key: it is still as unused as it was made.
@@ -363,10 +375,15 @@ describe("approving in the browser", () => {
     const page = await german.text();
     expect(page).toContain("Gerätegrenze erreicht");
     expect(page).toContain(`${LIMIT} Geräte`);
+    expect(page).toContain(`${LIMIT} / ${LIMIT}`);
+    expect(page).toContain("Nächster Schritt");
+    expect(page).toContain('<a href="/account#plan">/account#plan</a>');
 
     const english = await approve(jar, request, "en");
     expect(english.status).toBe(403);
-    expect(await english.text()).toContain("Device limit reached");
+    const englishPage = await english.text();
+    expect(englishPage).toContain("Device limit reached");
+    expect(englishPage).toContain("Next step: remove a device");
     expect(await db.select().from(nodes)).toHaveLength(LIMIT);
   });
 

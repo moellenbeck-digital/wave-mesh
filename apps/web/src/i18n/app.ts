@@ -67,7 +67,7 @@ const en = {
       "email-domain": "This address cannot start a free account",
       "wave-limit": "Free limit reached",
     })[reason] ?? "You cannot create a wave here",
-  waveDenialBody: (reason: string, limit: number): string =>
+  waveDenialBody: (reason: string, limit: number, used?: number): string =>
     ({
       placeholder:
         "Nobody has confirmed the address of this account yet. Open the link that was mailed to it first.",
@@ -75,7 +75,7 @@ const en = {
         "Waves can only be created with a confirmed email address. Sign in with a provider that confirms addresses, or set a password through the link mailed to you.",
       "email-domain":
         "Addresses of this domain cannot start a free account. Use another address, or subscribe.",
-      "wave-limit": `A free account holds up to ${limit} waves. Delete one you no longer use, or subscribe to add more.`,
+      "wave-limit": `A free account holds up to ${limit} waves across the account, and yours holds ${used ?? limit} of ${limit}. Next step: delete a wave you no longer use, or subscribe at {upgrade}.`,
     })[reason] ?? "Ask the owner of a wave to invite you.",
 
   // ---- login ----
@@ -267,7 +267,7 @@ const de: typeof en = {
       "email-domain": "Mit dieser Adresse geht kein kostenloses Konto",
       "wave-limit": "Kostenlose Grenze erreicht",
     })[reason] ?? "Du kannst hier keinen Wave anlegen",
-  waveDenialBody: (reason, limit) =>
+  waveDenialBody: (reason, limit, used) =>
     ({
       placeholder:
         "Die Adresse dieses Kontos hat noch niemand bestätigt. Öffne zuerst den Link, der ihr geschickt wurde.",
@@ -275,7 +275,7 @@ const de: typeof en = {
         "Waves legst du nur mit einer bestätigten E-Mail-Adresse an. Melde dich bei einem Anbieter an, der Adressen bestätigt, oder lege über den Link, der dir geschickt wurde, ein Passwort fest.",
       "email-domain":
         "Adressen dieser Domain können kein kostenloses Konto starten. Nimm eine andere Adresse oder schließe ein Abo ab.",
-      "wave-limit": `Ein kostenloses Konto fasst höchstens ${limit} Waves. Lösche einen, den du nicht mehr brauchst, oder schließe ein Abo ab.`,
+      "wave-limit": `Ein kostenloses Konto fasst höchstens ${limit} Waves, und deins hält ${used ?? limit} von ${limit}. Nächster Schritt: Lösche einen Wave, den du nicht mehr brauchst, oder schließe ein Abo ab unter {upgrade}.`,
     })[reason] ?? "Lass dich vom Eigentümer eines Waves einladen.",
 
   loginLead: "Mit deinem Konto verwaltest du die Geräte in deinem Wave.",

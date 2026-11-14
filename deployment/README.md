@@ -181,6 +181,24 @@ kubectl -n wave logs sts/wave-connector -c connector  # die nftables-Regel
 kubectl -n wave logs sts/wave-connector -c daemon     # der Tunnel
 ```
 
+## Gratis-Grenzen: nur auf gehosteten Servern / Free limits: hosted servers only
+
+**Deutsch:** Diese Bäume betreiben einen **selbst gehosteten** Server, und der ist unbegrenzt: Ohne
+`WAVE_BILLING_TOKEN` gibt es keinen Tarif, keine Gratis-Grenze und keinen Quotenhinweis in der Oberfläche; Waves,
+Personen und Geräte werden nicht gezählt. Die Grenzen (3 Waves, 3 Personen und 100 Geräte je Konto über alle
+Waves) gelten nur auf einem **gehosteten** Server, der mit `WAVE_BILLING_TOKEN` abrechnet; sie lassen sich dort mit
+`WAVE_FREE_MAX_WAVES` und `WAVE_FREE_DEVICE_LIMIT` einstellen (die Personen-Grenze ist fest). Wer den Token in
+`secret.env` setzt, schaltet sie damit ein. Siehe [`docs/GRATIS-TARIF.md`](../docs/GRATIS-TARIF.md) und
+[`docs/ACCOUNT-SUBSCRIPTIONS.md`](../docs/ACCOUNT-SUBSCRIPTIONS.md).
+
+**English:** These trees run a **self-hosted** server, and that is unlimited: without `WAVE_BILLING_TOKEN` there
+is no plan, no free limit and no quota hint in the interface; waves, people and devices are not counted. The
+limits (3 waves, 3 people and 100 devices per account across all waves) apply only on a **hosted** server that
+bills with `WAVE_BILLING_TOKEN`; there they can be set with `WAVE_FREE_MAX_WAVES` and `WAVE_FREE_DEVICE_LIMIT`
+(the people limit is fixed). Setting the token in `secret.env` turns them on. See
+[`docs/FREE-PLAN.md`](../docs/FREE-PLAN.md) and
+[`docs/ACCOUNT-SUBSCRIPTIONS.en.md`](../docs/ACCOUNT-SUBSCRIPTIONS.en.md).
+
 ## Was in den Manifesten steckt
 
 Vier Entscheidungen, die man beim Umbauen kennen sollte; die Begründung steht

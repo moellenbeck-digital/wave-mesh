@@ -39,7 +39,7 @@ import {
 } from "./expose.ts";
 import { platformLink } from "./link-platform.ts";
 import { describeConflict, findConflict } from "./overlap.ts";
-import { HttpError, serverReason } from "./retry.ts";
+import { deviceLimitOf, HttpError, serverReason } from "./retry.ts";
 import {
   ambiguity,
   ensureProfile,
@@ -374,6 +374,7 @@ export class Daemon {
     runtime.notice = null;
     const cancel = new AbortController();
     runtime.cancel = cancel;
+    let failure: Notice | null = null;
     void this.publish();
 
     try {
@@ -438,6 +439,17 @@ export class Daemon {
       if (!cancel.signal.aborted) {
         runtime.state = "failed";
         runtime.message = error instanceof Error ? error.message : String(error);
+        // The free device limit is not a fault to read off the wire: it gets
+        // its words, with the same `used / limit` and next step as the web.
+        const full = deviceLimitOf(error);
+        if (full) {
+          failure = notice("device-limit", {
+            limit: String(full.limit),
+            ...(full.used === null ? {} : { used: String(full.used) }),
+            ...(full.upgradeUrl === null ? {} : { upgradeUrl: full.upgradeUrl }),
+          });
+          runtime.message = englishText(failure);
+        }
         this.log(`${profile.label ?? profileKey(profile)} could not come up: ${runtime.message}`);
       }
     } finally {
@@ -445,7 +457,8 @@ export class Daemon {
       // by an `up` that has its own controller and its own waiting line.
       if (runtime.cancel === cancel) {
         runtime.cancel = undefined;
-        runtime.notice = null;
+        // The waiting line ends with the attempt; a refusal with a next step stays.
+        runtime.notice = failure;
         runtime.onWaiting = [];
       }
     }

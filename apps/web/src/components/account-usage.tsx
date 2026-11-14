@@ -39,7 +39,9 @@ export async function AccountUsage({ plan }: { plan: AccountPlanView | undefined
           {plan.plan === "free" ? t.planFree : t.planPaid}
         </strong>
       </p>
-      <p className="mt-1 text-body-sm text-slate">{plan.plan === "free" ? t.planFreeNote : t.planPaidNote}</p>
+      <p className="mt-1 text-body-sm text-slate">
+        {plan.plan === "free" ? t.planFreeNote(plan.limits) : t.planPaidNote}
+      </p>
 
       <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         {rows.map(({ key, label }) => {
@@ -49,7 +51,7 @@ export async function AccountUsage({ plan }: { plan: AccountPlanView | undefined
               <dt className="text-caption text-slate">{label}</dt>
               <dd className="mt-1 font-display text-xl text-navy">
                 <span data-field="used">{plan.usage[key]}</span>
-                <span className="text-body-sm text-slate">
+                <span className="text-body-sm text-slate" data-field="limit">
                   {" "}
                   {limit === null ? t.noLimit : t.ofLimit(limit)}
                 </span>
@@ -58,6 +60,17 @@ export async function AccountUsage({ plan }: { plan: AccountPlanView | undefined
           );
         })}
       </dl>
+
+      {plan.plan === "free" ? (
+        <div data-counting="true" className="mt-4">
+          <h3 className="font-medium text-body-sm text-navy">{t.planCountingTitle}</h3>
+          <ul className="mt-1 list-disc pl-5 text-body-sm text-slate">
+            <li>{t.countWaves}</li>
+            <li>{t.countPeople}</li>
+            <li>{t.countDevices}</li>
+          </ul>
+        </div>
+      ) : null}
 
       {over ? (
         <div data-overhang="true" className="mt-6">

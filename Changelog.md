@@ -6,6 +6,24 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Gratis-Tarif verständlich (#119):** Die Kontoübersicht (`/account#plan`) zeigt Tarif, Waves, Personen und
+  Geräte als „belegt von erlaubt“ und erklärt, wie gezählt wird (über alle Waves des Kontos, offene
+  Einladungen reservieren einen Platz, wer in mehreren Waves ist, zählt einmal). Beim Einladen steht die
+  aktuelle Belegung der Personen dabei, nur auf gehosteten Servern mit Tarif.
+- **Quotenfehler mit nächstem Schritt:** Die Meldungen zu Wave-, Personen- und Gerätegrenze nennen die Zahlen
+  („3 / 3“) und was zu tun ist (Einladung zurückziehen, Gerät entfernen, Wave löschen oder Abo abschließen).
+  Auch `wave up`, der Dienst und die DSM-Oberfläche zeigen die Gerätegrenze jetzt lesbar auf Deutsch oder
+  Englisch statt als rohe Serverantwort.
+- **Dokumentation:** Gratis-Tarif und unbegrenztes Selfhosting stehen in Deutsch und Englisch in
+  `docs/GRATIS-TARIF.md`, `docs/FREE-PLAN.md` und den Konto-Abo-Dokumenten.
+
+### Fehlerbehebungen
+
+- Bei einem Konto, das nur über Wave-Abos bezahlt ist, zählt die Personenanzeige jetzt so wie die Grenze
+  (Mitgliedschaften plus offene Einladungen).
+
 ---
 
 ## 🔬 Development v0.17.0-develop.10 (14.11.2026)

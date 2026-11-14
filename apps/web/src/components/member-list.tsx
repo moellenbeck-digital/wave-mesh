@@ -1,4 +1,5 @@
 import type { Locale } from "@wave/i18n";
+import { PeopleQuota } from "@/components/people-quota";
 import { appMessages } from "@/i18n/app";
 import {
   canManage,
@@ -150,6 +151,9 @@ export function MemberList({
           <InviteRow key={invite.id} invite={invite} wave={wave} locale={locale} />
         ))}
       </ul>
+
+      {/* Before the form: how many places the account has left, on a hosted server only. */}
+      {manage ? <PeopleQuota account={membership.account} locale={locale} /> : null}
 
       {manage ? (
         <form

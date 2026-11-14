@@ -41,6 +41,8 @@ export class AccountSeatLimitError extends SeatLimitError {
     readonly accountId: string,
     readonly limit: number,
     readonly plan: "free" | "paid",
+    /** People the account holds now, open invitations included (`used / limit`). */
+    readonly used: number = limit,
   ) {
     super(waveId, limit);
     this.name = "AccountSeatLimitError";
@@ -133,6 +135,6 @@ async function ensureAccountSeat(db: Database, waveId: string, email: string): P
         have,
       });
     }
-    throw new AccountSeatLimitError(waveId, accountId, rule.limit, plan.kind);
+    throw new AccountSeatLimitError(waveId, accountId, rule.limit, plan.kind, have);
   }
 }

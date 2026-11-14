@@ -16,8 +16,10 @@ export class DeviceLimitError extends Error {
   constructor(
     readonly accountId: string,
     readonly limit: number,
+    /** Devices the account holds now (`used / limit`); at least `limit`. */
+    readonly used: number = limit,
   ) {
-    super(`account ${accountId} has no room for another device (${limit} registered)`);
+    super(`account ${accountId} has no room for another device (${used} / ${limit} registered)`);
     this.name = "DeviceLimitError";
   }
 }
@@ -68,7 +70,7 @@ export async function ensureDeviceSlot(
   const have = await accountDeviceCount(db, accountId);
   if (have >= input.limit) {
     logFreeDecision("denied", { reason: "device-limit", account: accountId, limit: input.limit, have });
-    throw new DeviceLimitError(accountId, input.limit);
+    throw new DeviceLimitError(accountId, input.limit, have);
   }
 }
 

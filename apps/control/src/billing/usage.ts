@@ -162,13 +162,16 @@ export async function accountOverview(
   }
   const plan = await accountPlan(db, accountId);
   const limits = limitsOfPlan(plan, free);
-  const usage = await accountUsage(db, accountId);
+  let usage = await accountUsage(db, accountId);
   let excess = excessOf(usage, limits);
   if (!isFreePlan(plan)) {
     // A paid account counts its people the way its plan does (memberships for an
-    // account paid only through wave_billing); the excess has to be that count's.
+    // account paid only through wave_billing). The usage shown next to the limit
+    // and the excess have to be that count: `used / limit` is one rule, the
+    // plan's, on every screen.
     const rule = seatRule(plan, free);
     const held = countPeople(await accountRoster(db, accountId), rule.mode);
+    usage = { ...usage, people: held };
     excess = { ...excess, people: over(held, rule.limit) };
   }
   return {
@@ -187,6 +190,27 @@ export async function accountOverviewOf(
   free: FreeLimits,
 ): Promise<AccountOverview> {
   return accountOverview(db, await oldestAccountOf(db, userId), free);
+}
+
+/**
+ * What the account a wave belongs to holds against its plan, as a fragment of
+ * the members answer (`{ account: { plan, limits, usage } }`): the numbers the
+ * invitation form puts beside the field. Empty for a wave without an account
+ * (self-hosted, or made before accounts) -- no plan, no hint. Read-only.
+ */
+export async function waveAccountOverview(
+  db: Database,
+  waveId: string,
+  free: FreeLimits,
+): Promise<{ account?: Pick<AccountOverview, "plan" | "limits" | "usage"> }> {
+  const [wave] = await db
+    .select({ accountId: waves.accountId })
+    .from(waves)
+    .where(eq(waves.id, waveId))
+    .limit(1);
+  if (!wave?.accountId) return {};
+  const { plan, limits, usage } = await accountOverview(db, wave.accountId, free);
+  return { account: { plan, limits, usage } };
 }
 
 /**

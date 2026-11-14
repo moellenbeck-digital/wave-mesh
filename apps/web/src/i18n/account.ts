@@ -69,15 +69,20 @@ const en = {
   planLabel: "Plan",
   planFree: "Free",
   planPaid: "Paid",
-  planFreeNote:
-    "A free account holds a limited number of waves, people and devices across all its waves. A subscription raises the limits.",
+  planFreeNote: (limits: { waves: number | null; people: number | null; devices: number | null }) =>
+    `Free means ${limits.waves ?? "—"} waves, ${limits.people ?? "—"} people and ${limits.devices ?? "—"} devices across all waves of the account. A subscription raises the limits. Self-hosting has no limits.`,
+  planCountingTitle: "How it is counted",
+  countWaves: "Waves: every wave of the account.",
+  countPeople:
+    "People: members plus open invitations. An open invitation reserves a place; a person who is in several waves counts once.",
+  countDevices: "Devices: every device once, however many waves of the account it is in.",
   planPaidNote:
     "Your subscription sets how many people the account holds; waves and devices are not limited.",
   usageWaves: "Waves",
   usagePeople: "People",
   usageDevices: "Devices",
-  ofLimit: (limit: number) => `of ${limit}`,
-  noLimit: "no limit",
+  ofLimit: (limit: number) => `of ${limit} used`,
+  noLimit: "used, no limit",
   overhangTitle: "Above the limits of your plan",
   overhangIntro:
     "Nothing is removed. Everything that is there stays and keeps working; only new waves, people and devices are turned away until the account is within the limits again.",
@@ -89,6 +94,17 @@ const en = {
   devicesHeading: "Devices",
   invited: "(invited)",
   none: "none",
+  // --- the people line beside the invitation form ---
+  quotaFree: (used: number, limit: number) =>
+    `People in your account: ${used} of ${limit} used. A free account holds ${limit} people across all its waves.`,
+  quotaPaid: (used: number, limit: number) =>
+    `People in your account: ${used} of ${limit} used. Your subscription covers ${limit} people across all its waves.`,
+  quotaRules:
+    "The count is the same in every wave of the account. An open invitation reserves a place until it is accepted or withdrawn. A person who is in several waves counts once.",
+  quotaFull: "No place is left.",
+  quotaNextStep:
+    "Next step: withdraw an invitation or remove a person in the list above, or subscribe at {upgrade}.",
+  quotaUpgrade: "/account#plan",
 };
 
 const de: typeof en = {
@@ -152,15 +168,20 @@ const de: typeof en = {
   planLabel: "Tarif",
   planFree: "Gratis",
   planPaid: "Bezahlt",
-  planFreeNote:
-    "Ein Gratis-Konto fasst über alle seine Waves hinweg nur eine begrenzte Zahl an Waves, Personen und Geräten. Ein Abo hebt die Grenzen an.",
+  planFreeNote: (limits) =>
+    `Gratis heißt ${limits.waves ?? "—"} Waves, ${limits.people ?? "—"} Personen und ${limits.devices ?? "—"} Geräte über alle Waves des Kontos. Ein Abo hebt die Grenzen an. Selfhosting ist unbegrenzt.`,
+  planCountingTitle: "So wird gezählt",
+  countWaves: "Waves: jeder Wave des Kontos.",
+  countPeople:
+    "Personen: Mitglieder plus offene Einladungen. Eine offene Einladung reserviert einen Platz; wer in mehreren Waves ist, zählt einmal.",
+  countDevices: "Geräte: jedes Gerät einmal, egal in wie vielen Waves des Kontos es ist.",
   planPaidNote:
     "Dein Abo legt fest, wie viele Personen das Konto fasst; Waves und Geräte sind nicht begrenzt.",
   usageWaves: "Waves",
   usagePeople: "Personen",
   usageDevices: "Geräte",
-  ofLimit: (limit) => `von ${limit}`,
-  noLimit: "keine Grenze",
+  ofLimit: (limit) => `von ${limit} belegt`,
+  noLimit: "belegt, keine Grenze",
   overhangTitle: "Über den Grenzen deines Tarifs",
   overhangIntro:
     "Es wird nichts entfernt. Alles, was da ist, bleibt und funktioniert weiter; nur neue Waves, Personen und Geräte werden abgewiesen, bis das Konto wieder in den Grenzen liegt.",
@@ -172,6 +193,16 @@ const de: typeof en = {
   devicesHeading: "Geräte",
   invited: "(eingeladen)",
   none: "keine",
+  quotaFree: (used, limit) =>
+    `Personen in deinem Konto: ${used} von ${limit} belegt. Ein Gratis-Konto fasst ${limit} Personen über alle seine Waves.`,
+  quotaPaid: (used, limit) =>
+    `Personen in deinem Konto: ${used} von ${limit} belegt. Dein Abo deckt ${limit} Personen über alle seine Waves.`,
+  quotaRules:
+    "Die Zählung gilt in jedem Wave des Kontos gleich. Eine offene Einladung reserviert einen Platz, bis sie angenommen oder zurückgezogen wird. Wer in mehreren Waves ist, zählt einmal.",
+  quotaFull: "Es ist kein Platz mehr frei.",
+  quotaNextStep:
+    "Nächster Schritt: Zieh in der Liste oben eine Einladung zurück oder entferne eine Person, oder schließe ein Abo ab unter {upgrade}.",
+  quotaUpgrade: "/account#plan",
 };
 
 export type AccountMessages = typeof en;

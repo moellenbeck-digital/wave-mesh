@@ -10,6 +10,7 @@ import {
   type ExposedList,
   type ExposedName,
   type Notice,
+  notice,
   type PierRow,
   PLATFORM,
   profileKeyOf,
@@ -27,7 +28,7 @@ import { DEFAULT_MTU, resolveInterfaceName, up } from "./engine.ts";
 import { platformLink } from "./link-platform.ts";
 import { locale, setLocale, t } from "./messages.ts";
 import { paint, renderStatus, shouldWatch } from "./render.ts";
-import { isAbort } from "./retry.ts";
+import { deviceLimitOf, isAbort } from "./retry.ts";
 import {
   ambiguity,
   defaultStatePath,
@@ -289,6 +290,17 @@ async function runHere(controlUrl: string, authKey?: string): Promise<number> {
       log,
     });
   } catch (error) {
+    // The free device limit: its numbers and next step, not the wire format.
+    const full = deviceLimitOf(error);
+    if (full) {
+      const said = notice("device-limit", {
+        limit: String(full.limit),
+        ...(full.used === null ? {} : { used: String(full.used) }),
+        ...(full.upgradeUrl === null ? {} : { upgradeUrl: full.upgradeUrl }),
+      });
+      console.error(readNotice({ notice: said }, locale()));
+      return 1;
+    }
     if (!isAbort(error)) throw error;
     if (process.stdout.isTTY) process.stdout.write("\n");
     return 0;

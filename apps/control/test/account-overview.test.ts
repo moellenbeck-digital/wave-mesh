@@ -7,6 +7,7 @@ import {
   customerAccounts,
   nodes,
   users,
+  waveBilling,
   waveInvites,
   waveMembers,
   waves,
@@ -350,5 +351,102 @@ describe("/api/me: plan, limits, usage and overhang", () => {
     const me = await meOf(await sessionOf("u_a"));
     expect(Object.keys(me.account).sort()).toEqual(["identities", "linkable"]);
     expect(me.user.id).toBe("u_a");
+  });
+});
+
+describe("/api/me: people and devices as used / allowed (ticket #119)", () => {
+  test("hosted, free: waves, people and devices each as used and limit, one rule", async () => {
+    const [one, two] = await seed("u_a", "ca_a", 2);
+    await addPerson(one ?? "", "u_b");
+    await invite(two ?? "", "wait@x.example", "u_a");
+    await addDevice(one ?? "", "u_a", "m1");
+    await addDevice(two ?? "", "u_a", "m1");
+    await addDevice(two ?? "", "u_a", "m2");
+    const me = await meOf(await sessionOf("u_a"));
+    // People: owner, u_b and one open invitation; devices: distinct machines, m1 once.
+    expect(me.account.plan).toBe("free");
+    expect(me.account.usage).toEqual({ waves: 2, people: 3, devices: 2 });
+    expect(me.account.limits).toEqual({ waves: 3, people: 3, devices: 100 });
+  });
+
+  test("hosted, subscription: waves and devices have no limit (null), people have the seats", async () => {
+    await seed("u_a", "ca_a", 1);
+    await db
+      .insert(accountSubscriptions)
+      .values({ id: "as_1", subscriptionId: "sub_1", accountId: "ca_a", seats: 7, state: "active" });
+    const me = await meOf(await sessionOf("u_a"));
+    expect(me.account.plan).toBe("paid");
+    expect(me.account.limits).toEqual({ waves: null, people: 7, devices: null });
+  });
+
+  test("hosted, paid only through wave_billing: people are counted the way that plan limits them", async () => {
+    const [one, two] = await seed("u_a", "ca_a", 2);
+    await addPerson(two ?? "", "u_b");
+    // u_a (the seed's owner) is in both waves: two memberships of the plan's seats, one distinct person.
+    await db
+      .insert(waveBilling)
+      .values({ waveId: one ?? "", subscriptionId: "sub_w", seats: 5, state: "active" });
+    const me = await meOf(await sessionOf("u_a"));
+    expect(me.account.plan).toBe("paid");
+    expect(me.account.limits.people).toBe(5);
+    expect(me.account.usage.people).toBe(3);
+    expect(me.account.overhang.people).toBe(0);
+  });
+
+  test("the members of a wave carry the plan, limits and usage of its account, for the invitation hint", async () => {
+    const [one] = await seed("u_a", "ca_a", 1);
+    await addPerson(one ?? "", "u_b");
+    await invite(one ?? "", "wait@x.example", "u_a");
+    const jar = await sessionOf("u_a");
+    const res = await app.request(`/api/waves/${one}/members`, { headers: { cookie: jar.header() } });
+    const body = (await res.json()) as { account?: Record<string, unknown> };
+    expect(body.account).toEqual({
+      plan: "free",
+      limits: { waves: 3, people: 3, devices: 100 },
+      usage: { waves: 1, people: 3, devices: 0 },
+    });
+  });
+
+  test("a self-hosted server shows and applies no free limit anywhere: no plan, no hint, no refusal", async () => {
+    makeApp({ WAVE_BILLING_TOKEN: "" });
+    await db.insert(users).values({ id: "u_a", email: "a@x.example", emailVerified: true });
+    const jar = await sessionOf("u_a");
+    const createWave = (name: string) =>
+      app.request("/waves", {
+        method: "POST",
+        body: new URLSearchParams({ name, suffix: `${name}.wave.internal` }),
+        headers: { cookie: jar.header(), accept: "application/json" },
+      });
+    // More waves than a free account holds: none is refused, and none gets an account.
+    for (const name of ["one", "two", "three", "four"])
+      expect([200, 303]).toContain((await createWave(name)).status);
+    const made = await db.select().from(waves);
+    expect(made).toHaveLength(4);
+    expect(made.every((w) => w.accountId === null)).toBe(true);
+    const one = made[0]?.id ?? "";
+
+    // /api/me: no plan, no limits, no usage, no overhang -- and nothing that denies a new wave.
+    const me = await meOf(jar);
+    for (const key of ["plan", "limits", "usage", "overhang", "accountId"]) {
+      expect(me.account[key]).toBeUndefined();
+    }
+    expect(me.canCreateWave).toBe(true);
+    expect(me.waveCreation).toMatchObject({ allowed: true, reason: null });
+
+    // The members of a wave: no `account`, so the web app has nothing to hint at.
+    const members = (await (
+      await app.request(`/api/waves/${one}/members`, { headers: { cookie: jar.header() } })
+    ).json()) as Record<string, unknown>;
+    expect(members.account).toBeUndefined();
+
+    // More people than three, open invitations included: not refused.
+    for (const id of ["u_b", "u_c", "u_d", "u_e"]) await addPerson(one, id);
+    for (const email of ["i1", "i2", "i3"]) await invite(one, `${email}@x.example`, "u_a");
+    const post = await app.request(`/waves/${one}/invites`, {
+      method: "POST",
+      body: new URLSearchParams({ email: "more@x.example" }),
+      headers: { cookie: jar.header(), accept: "application/json" },
+    });
+    expect([200, 303]).toContain(post.status);
   });
 });

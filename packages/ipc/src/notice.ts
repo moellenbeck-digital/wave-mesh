@@ -58,6 +58,8 @@ const en = {
   "update-failed": (p: Params) => `the update to ${p.version} failed: ${p.reason}`,
   "waiting-for-control": (p: Params) => `waiting for the control server … (${p.reason})`,
   "waiting-for-clock": () => "system clock is off, waiting for time synchronization …",
+  "device-limit": (p: Params) =>
+    `this device was not added: its free account already holds ${p.used ?? p.limit} / ${p.limit} devices, counted across all its waves; next step: remove a device you no longer use (in the web app, or \`wave logout <wave>\` on it), or subscribe at ${p.upgradeUrl ?? "/account#plan"}`,
 } satisfies Messages;
 
 const de: typeof en = {
@@ -97,6 +99,8 @@ const de: typeof en = {
   "update-failed": (p) => `das Update auf ${p.version} ist gescheitert: ${p.reason}`,
   "waiting-for-control": (p) => `wartet auf den Control-Server … (${p.reason})`,
   "waiting-for-clock": () => "Systemuhr weicht ab, warte auf Zeitsynchronisation …",
+  "device-limit": (p) =>
+    `dieses Gerät wurde nicht hinzugefügt: sein kostenloses Konto hält schon ${p.used ?? p.limit} / ${p.limit} Geräte, gezählt über alle seine Waves; nächster Schritt: Entferne ein Gerät, das du nicht mehr brauchst (in der Web-Oberfläche oder mit \`wave logout <Wave>\` an ihm), oder schließe ein Abo ab unter ${p.upgradeUrl ?? "/account#plan"}`,
 };
 
 type Params = Record<string, string | undefined>;

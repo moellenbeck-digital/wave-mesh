@@ -1,5 +1,6 @@
 import type { Locale, Messages } from "@wave/i18n";
 import type { Counts, ProblemReason } from "./billing/migrate-accounts.ts";
+import { UPGRADE_PATH } from "./billing/plan.ts";
 import type { ServerCapacity } from "./net/capacity.ts";
 
 /**
@@ -183,10 +184,10 @@ a device put names through it, deny-pier takes its names back.`,
   inviteRevoked: (email: string) => `The invitation for ${email} no longer works.`,
   noSeatLeft: (wave: string, seats: number) =>
     `${wave} is booked for ${seats} people, open invitations included. More seats come with the subscription.`,
-  accountNoSeatLeft: (wave: string, limit: number, free: boolean) =>
+  accountNoSeatLeft: (wave: string, limit: number, used: number, free: boolean) =>
     free
-      ? `${wave} belongs to a free account, which holds up to ${limit} people across all its waves, open invitations included. A subscription adds more.`
-      : `${wave} belongs to an account booked for ${limit} people across its waves, open invitations included. More seats come with the subscription.`,
+      ? `${wave} belongs to a free account, which holds up to ${limit} people across all its waves, open invitations included; it holds ${used} / ${limit}. A person in several waves counts once. Next step: withdraw an invitation (\`revoke-invite\`), or the owner subscribes at ${UPGRADE_PATH}.`
+      : `${wave} belongs to an account booked for ${limit} people across its waves, open invitations included; it holds ${used} / ${limit}. Next step: withdraw an invitation, or the owner books more seats at ${UPGRADE_PATH}.`,
   noInvite: (email: string, wave: string) => `no open invitation for ${email} in ${wave}`,
   billedNotDeletable: (wave: string, state: string) =>
     `${wave} is a booked wave (subscription ${state}). Cancel the subscription; the wave is deleted after the retention.`,
@@ -419,10 +420,10 @@ allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie
   inviteRevoked: (email) => `Die Einladung für ${email} funktioniert nicht mehr.`,
   noSeatLeft: (wave, seats) =>
     `${wave} ist für ${seats} Personen gebucht, offene Einladungen mitgezählt. Mehr Plätze gibt es über das Abo.`,
-  accountNoSeatLeft: (wave, limit, free) =>
+  accountNoSeatLeft: (wave, limit, used, free) =>
     free
-      ? `${wave} gehört zu einem kostenlosen Konto, das höchstens ${limit} Personen über alle seine Waves fasst, offene Einladungen mitgezählt. Mehr gibt es mit einem Abo.`
-      : `${wave} gehört zu einem Konto, das für ${limit} Personen über seine Waves gebucht ist, offene Einladungen mitgezählt. Mehr Plätze gibt es über das Abo.`,
+      ? `${wave} gehört zu einem kostenlosen Konto, das höchstens ${limit} Personen über alle seine Waves fasst, offene Einladungen mitgezählt; es hält ${used} / ${limit}. Wer in mehreren Waves ist, zählt einmal. Nächster Schritt: Zieh eine Einladung zurück (\`revoke-invite\`) oder der Eigentümer schließt ein Abo ab unter ${UPGRADE_PATH}.`
+      : `${wave} gehört zu einem Konto, das für ${limit} Personen über seine Waves gebucht ist, offene Einladungen mitgezählt; es hält ${used} / ${limit}. Nächster Schritt: Zieh eine Einladung zurück oder der Eigentümer bucht mehr Plätze unter ${UPGRADE_PATH}.`,
   noInvite: (email, wave) => `keine offene Einladung für ${email} in ${wave}`,
   billedNotDeletable: (wave, state) =>
     `${wave} ist ein gebuchter Wave (Abo ${state}). Kündige das Abo; der Wave wird nach der Aufbewahrungsfrist gelöscht.`,

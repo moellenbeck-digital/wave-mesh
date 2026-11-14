@@ -62,7 +62,8 @@ function describeState(snapshot: ProfileStatus): string {
   }
   // The message is the error as it happened, from the network or the system;
   // it stays in its own words (see @wave/ipc notice.ts).
-  if (snapshot.state === "failed") return `\x1b[31m${snapshot.message ?? m.failed}\x1b[0m`;
+  // A refusal with its own words (the free device limit) is said in the reader's language.
+  if (snapshot.state === "failed") return `\x1b[31m${waiting ?? snapshot.message ?? m.failed}\x1b[0m`;
   if (snapshot.state === "starting") return yellow(waiting ?? m.starting);
   return dim(snapshot.message ?? m.notConnected);
 }

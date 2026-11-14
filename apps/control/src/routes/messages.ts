@@ -1,4 +1,5 @@
 import type { Locale, Messages } from "@wave/i18n";
+import { UPGRADE_PATH } from "../billing/plan.ts";
 
 /**
  * Everything this server says to a person in a browser: its own plain pages,
@@ -14,10 +15,18 @@ import type { Locale, Messages } from "@wave/i18n";
  */
 const e = (value: string): string => Bun.escapeHTML(value);
 
+/**
+ * An escaped sentence with the upgrade path turned into a link: the limit
+ * messages name `/account#plan` as the way to subscribe, and on a page that is
+ * something to click. A JSON error keeps it as plain text.
+ */
+export const linkUpgrade = (escaped: string): string =>
+  escaped.replace(UPGRADE_PATH, `<a href="${UPGRADE_PATH}">${UPGRADE_PATH}</a>`);
+
 /** Why a wave could not be created, as a title and a sentence (see billing/free-account.ts). */
 function denialEn(
   code: string,
-  extra: { limit?: number; wait?: number } = {},
+  extra: { limit?: number; used?: number; wait?: number } = {},
 ): [title: string, body: string] {
   switch (code) {
     case "placeholder":
@@ -38,7 +47,7 @@ function denialEn(
     case "wave-limit":
       return [
         "Free limit reached",
-        `A free account holds up to ${extra.limit ?? 3} waves. Delete one you no longer use, or subscribe to add more.`,
+        `A free account holds up to ${extra.limit ?? 3} waves across the account, and yours holds ${extra.used ?? extra.limit ?? 3} / ${extra.limit ?? 3}. Next step: delete a wave you no longer use, or subscribe at ${UPGRADE_PATH}.`,
       ];
     case "rate-limited":
       return [
@@ -57,7 +66,7 @@ function denialEn(
 
 function denialDe(
   code: string,
-  extra: { limit?: number; wait?: number } = {},
+  extra: { limit?: number; used?: number; wait?: number } = {},
 ): [title: string, body: string] {
   switch (code) {
     case "placeholder":
@@ -78,7 +87,7 @@ function denialDe(
     case "wave-limit":
       return [
         "Kostenlose Grenze erreicht",
-        `Ein kostenloses Konto fasst höchstens ${extra.limit ?? 3} Waves. Lösche einen, den du nicht mehr brauchst, oder schließe ein Abo ab.`,
+        `Ein kostenloses Konto fasst höchstens ${extra.limit ?? 3} Waves, und deins hält ${extra.used ?? extra.limit ?? 3} / ${extra.limit ?? 3}. Nächster Schritt: Lösche einen Wave, den du nicht mehr brauchst, oder schließe ein Abo ab unter ${UPGRADE_PATH}.`,
       ];
     case "rate-limited":
       return [
@@ -149,7 +158,8 @@ const en = {
   noWaveCreation: "You cannot create a wave here",
   noWaveCreationBody: "Ask the owner of a wave to invite you, or confirm your address and try again.",
   waveDeniedTitle: (code: string) => denialEn(code)[0],
-  waveDeniedBody: (code: string, limit: number, wait: number) => denialEn(code, { limit, wait })[1],
+  waveDeniedBody: (code: string, limit: number, wait: number, used?: number) =>
+    denialEn(code, { limit, wait, used })[1],
   invalidInput: (kind: "domain" | "wave-name", input: string) =>
     kind === "domain" ? `not a domain name: ${input}` : `not a wave name: ${input}`,
   invalid: "Invalid.",
@@ -193,16 +203,16 @@ const en = {
   waveSuspendedBody: (wave: string) =>
     `${wave} is paused because its subscription is not active. No device can be added until it is again.`,
   deviceLimit: "Device limit reached",
-  deviceLimitBody: (wave: string, limit: number) =>
-    `${wave} belongs to a free account that already has ${limit} devices. Remove one you no longer use, or subscribe to add more. This device was not added.`,
+  deviceLimitBody: (wave: string, limit: number, used: number) =>
+    `${wave} belongs to a free account that already holds ${used} / ${limit} devices, counted across all its waves. Next step: remove a device you no longer use, or subscribe at ${UPGRADE_PATH}. This device was not added.`,
   noSeatLeft: "No seat left",
   noSeatLeftBody: (seats: number) =>
     `This wave is booked for ${seats} people, open invitations included. Book more, or withdraw an invitation.`,
   accountNoSeatLeft: "No room for another person",
-  accountNoSeatLeftBody: (limit: number, free: boolean) =>
+  accountNoSeatLeftBody: (limit: number, used: number, free: boolean) =>
     free
-      ? `A free account holds up to ${limit} people across all its waves, open invitations included. Withdraw an invitation, or subscribe to add more.`
-      : `This account is booked for ${limit} people across its waves, open invitations included. Book more, or withdraw an invitation.`,
+      ? `A free account holds up to ${limit} people across all its waves, open invitations included, and yours holds ${used} / ${limit}. A person who is in several waves counts once. Next step: withdraw an invitation, or subscribe at ${UPGRADE_PATH}.`
+      : `This account is booked for ${limit} people across its waves, open invitations included, and holds ${used} / ${limit}. Next step: withdraw an invitation, or book more at ${UPGRADE_PATH}.`,
   setPasswordTitle: "Set your password",
   setPasswordFor: (email: string) => `For ${email}. From now on you sign in with this address and password.`,
   savePassword: "Save password",
@@ -374,7 +384,7 @@ const de: typeof en = {
   noWaveCreationBody:
     "Lass dich vom Eigentümer eines Waves einladen oder bestätige deine Adresse und versuche es dann erneut.",
   waveDeniedTitle: (code) => denialDe(code)[0],
-  waveDeniedBody: (code, limit, wait) => denialDe(code, { limit, wait })[1],
+  waveDeniedBody: (code, limit, wait, used) => denialDe(code, { limit, wait, used })[1],
   invalidInput: (kind, input) =>
     kind === "domain" ? `kein gültiger Domainname: ${input}` : `kein gültiger Wave-Name: ${input}`,
   invalid: "Ungültig.",
@@ -420,16 +430,16 @@ const de: typeof en = {
   waveSuspendedBody: (wave) =>
     `${wave} ist pausiert, weil sein Abo nicht aktiv ist. Bis es das wieder ist, kommt kein Gerät hinzu.`,
   deviceLimit: "Gerätegrenze erreicht",
-  deviceLimitBody: (wave, limit) =>
-    `${wave} gehört zu einem kostenlosen Konto, das schon ${limit} Geräte hat. Entferne ein Gerät, das du nicht mehr brauchst, oder schließe ein Abo ab. Dieses Gerät wurde nicht hinzugefügt.`,
+  deviceLimitBody: (wave, limit, used) =>
+    `${wave} gehört zu einem kostenlosen Konto, das schon ${used} / ${limit} Geräte hält, gezählt über alle seine Waves. Nächster Schritt: Entferne ein Gerät, das du nicht mehr brauchst, oder schließe ein Abo ab unter ${UPGRADE_PATH}. Dieses Gerät wurde nicht hinzugefügt.`,
   noSeatLeft: "Kein Platz mehr frei",
   noSeatLeftBody: (seats) =>
     `Dieser Wave ist für ${seats} Personen gebucht, offene Einladungen mitgezählt. Buch mehr dazu oder zieh eine Einladung zurück.`,
   accountNoSeatLeft: "Kein Platz für eine weitere Person",
-  accountNoSeatLeftBody: (limit, free) =>
+  accountNoSeatLeftBody: (limit, used, free) =>
     free
-      ? `Ein kostenloses Konto fasst höchstens ${limit} Personen über alle seine Waves, offene Einladungen mitgezählt. Zieh eine Einladung zurück oder schließe ein Abo ab, um mehr aufzunehmen.`
-      : `Dieses Konto ist für ${limit} Personen über seine Waves gebucht, offene Einladungen mitgezählt. Buch mehr dazu oder zieh eine Einladung zurück.`,
+      ? `Ein kostenloses Konto fasst höchstens ${limit} Personen über alle seine Waves, offene Einladungen mitgezählt, und deins hält ${used} / ${limit}. Wer in mehreren Waves ist, zählt einmal. Nächster Schritt: Zieh eine Einladung zurück oder schließe ein Abo ab unter ${UPGRADE_PATH}.`
+      : `Dieses Konto ist für ${limit} Personen über seine Waves gebucht, offene Einladungen mitgezählt, und hält ${used} / ${limit}. Nächster Schritt: Zieh eine Einladung zurück oder buch mehr dazu unter ${UPGRADE_PATH}.`,
   setPasswordTitle: "Lege dein Passwort fest",
   setPasswordFor: (email) =>
     `Für ${email}. Ab jetzt meldest du dich mit dieser Adresse und diesem Passwort an.`,

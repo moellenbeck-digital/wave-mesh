@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   classify,
+  deviceLimitOf,
   HttpError,
   isAbort,
   MAX_BACKOFF_MS,
   MIN_BACKOFF_MS,
   retrying,
+  serverReason,
   sleep,
 } from "../src/retry.ts";
 
@@ -211,5 +213,52 @@ describe("sleep", () => {
     const controller = new AbortController();
     controller.abort();
     await expect(sleep(60_000, controller.signal)).rejects.toThrow();
+  });
+});
+
+describe("the free device limit in a refusal", () => {
+  const body = {
+    error: `device limit reached: this account holds 100 / 100 devices, counted across all its waves. Next step: remove a device you no longer use, or subscribe at https://control.example/account#plan.`,
+    code: "device_limit",
+    limit: 100,
+    used: 100,
+    upgradeUrl: "https://control.example/account#plan",
+  };
+  const refusal = (payload: unknown, whole = true) => {
+    const text = JSON.stringify(payload);
+    return new HttpError(
+      403,
+      `POST /v1/machine/register failed: 403 ${text.slice(0, 200)}`,
+      whole ? text : undefined,
+    );
+  };
+
+  test("is recognised with its numbers and the way up, from the whole body", () => {
+    expect(deviceLimitOf(refusal(body))).toEqual({
+      limit: 100,
+      used: 100,
+      upgradeUrl: "https://control.example/account#plan",
+    });
+    expect(serverReason(refusal(body))).toContain("100 / 100 devices");
+  });
+
+  test("an older server sends only the limit: used and the address are null", () => {
+    expect(
+      deviceLimitOf(refusal({ error: "device limit reached", code: "device_limit", limit: 100 })),
+    ).toEqual({
+      limit: 100,
+      used: null,
+      upgradeUrl: null,
+    });
+  });
+
+  test("any other refusal, status or error is not it", () => {
+    expect(deviceLimitOf(refusal({ error: "no", code: "paused" }))).toBeNull();
+    expect(deviceLimitOf(new HttpError(500, 'failed: 500 {"code":"device_limit","limit":1}'))).toBeNull();
+    expect(deviceLimitOf(new Error("boom"))).toBeNull();
+  });
+
+  test("is never retried: waiting does not make room", () => {
+    expect(wait(refusal(body))).toBe(false);
   });
 });

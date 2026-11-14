@@ -1377,6 +1377,7 @@ Verwaltungs-API (`apps/control/src/routes/billing.ts`, `src/billing/`):
 WAVE_BILLING_TOKEN=…              # ≥ 32 Zeichen; ohne ihn gibt es /api/billing/* nicht (404)
 WAVE_BILLING_RETENTION_DAYS=30    # so lange bleibt ein gekündigter Wave stehen; leer = 30, mindestens 1
 WAVE_FREE_MAX_WAVES=3             # Waves je Gratis-Konto; leer = 3, mindestens 1 (Ticket #117)
+WAVE_FREE_DEVICE_LIMIT=100        # verschiedene Geräte je Gratis-Konto, über alle Waves; leer = 100, mindestens 1 (#116)
 WAVE_FREE_BLOCKED_EMAIL_DOMAINS=  # optional, Komma-Liste (Wegwerf-Domains); sperrt nur den Gratis-Start
 ```
 
@@ -1615,8 +1616,9 @@ Verbindungen angefasst werden — die Grenzen sagen nur zu **Neuem** nein, was d
 
 - **Gratis-Grenzen je Konto, über alle Waves:** 3 Personen (verschiedene Benutzer plus offene
   Einladungen an noch nicht beteiligte Adressen; eine Einladung an eine Adresse, die schon Mitglied
-  oder anderswo eingeladen ist, kostet nichts), 100 Geräte (`WAVE_FREE_DEVICE_LIMIT`, #116) und 3 Waves
-  (`WAVE_FREE_MAX_WAVES`). Geprüft in `ensureSeatFor()` (Personen, der eine Weg für `createInvite()`
+  oder anderswo eingeladen ist, kostet nichts; eine Person in mehreren Waves zählt einmal), 100 Geräte
+  (`WAVE_FREE_DEVICE_LIMIT`, #116) und 3 Waves (`WAVE_FREE_MAX_WAVES`). Die Personen-Grenze ist fest
+  (`FREE_PEOPLE_LIMIT` in `billing/plan.ts`, **kein** Env). Geprüft in `ensureSeatFor()` (Personen, der eine Weg für `createInvite()`
   und `wave-admin add-member`), `createNode()` (Geräte) und `createWaveForUser()` (Waves), jeweils
   unter einer Sperre auf der Kontozeile. Sperrreihenfolge: Wave, dann Konto (wie `createNode`);
   beim Anlegen: Adresse, Benutzerzeile, Konto.
@@ -1664,6 +1666,29 @@ Verbindungen angefasst werden — die Grenzen sagen nur zu **Neuem** nein, was d
   Gratis, Bestehendes bleibt, nur Neues wird abgewiesen. `apps/web` zeigt es auf `/account#plan`
   (`components/account-usage.tsx`, Deutsch und Englisch). Oberflächentest: `apps/e2e/tests/t117-*`, er
   überspringt ohne Plan-Block (selbst betriebenes Testsystem).
+- **Zahlen und Fehler an den Grenzen (Ticket #119).** Eine Regel für `belegt / erlaubt`: `usage.people`
+  in `accountOverview()` zählt wie der Plan begrenzt (`seatRule()`: verschiedene Personen bei Gratis und
+  Konto-Abo, Mitgliedschaften bei einem nur über `wave_billing` bezahlten Konto). `GET
+  /api/waves/:id/members` trägt auf einem gehosteten Server `account` (`{ plan, limits, usage }` des
+  Kontos des Waves, `waveAccountOverview()`); fehlt er (Selfhost, Wave ohne Konto), zeigt `apps/web` keinen
+  Personen-Hinweis. Jede Abweisung nennt `used`/`limit` und einen nächsten Schritt: `DeviceLimitError` und
+  `AccountSeatLimitError` tragen `used`; `wave-limit` (`POST /waves`), `people-limit`
+  (`POST /waves/:id/invites`, 409) und `device_limit` (`POST /v1/machine/register`, Code und `limit`
+  bleiben) liefern als JSON `used`, `upgradeUrl` (`<WAVE_BASE_URL>/account#plan`) und, außer bei
+  `device_limit`, `message`; die HTML-Seiten (`linkUpgrade()` in `routes/messages.ts`) und
+  `wave-admin` sagen dieselben Sätze, DE/EN. Die Texte stehen an einer Stelle je Sprache
+  (`routes/messages.ts`, `admin-messages.ts`, `apps/web/src/i18n/account.ts|app.ts`,
+  `packages/ipc/src/notice.ts`); wer eine Zahl oder einen Schritt ändert, ändert alle.
+- **Client und DSM (#119).** `ControlClient` hält den ganzen Antwortkörper in `HttpError.body` (die
+  Meldung kürzt bei 200 Zeichen, ein `device_limit` ist länger). `deviceLimitOf()` (`retry.ts`) erkennt ihn;
+  der Daemon macht daraus den Hinweis `device-limit` (Zustand `failed`, `notice` bleibt stehen), `wave
+  up|login` ohne Daemon druckt ihn, `render.ts` und `profileProblem()` der DSM-Oberfläche zeigen ihn in der
+  Sprache des Lesers. Die DSM-Installationsschritte sind unverändert, der Anmeldeablauf auch.
+- **Selfhost ohne Quote (#119).** Ohne `WAVE_BILLING_TOKEN` entstehen Waves ohne `account_id`; es gibt
+  keinen `plan` in `/api/me`, kein `account` im Mitgliederabruf und keinen Hinweis in `apps/web`. Belegt
+  durch `test/account-overview.test.ts` („a self-hosted server shows and applies no free limit anywhere“) und
+  `apps/web/test/people-quota.test.tsx`. Doku für Anwender: `docs/GRATIS-TARIF.md` / `docs/FREE-PLAN.md`,
+  Vertrag: `docs/ACCOUNT-SUBSCRIPTIONS.md` / `.en.md` (DE und EN gleichzeitig pflegen).
 - **Konto-Abo (Migration `0024_account-subscriptions`, additiv):** Tabelle `account_subscriptions`
   (`subscription_id` unique, `account_id`, `seats`, `state`, `state_as_of`, `delete_after`,
   Zeitstempel), ein partieller Unique-Index lässt je Konto höchstens ein nicht beendetes zu. Nichts
