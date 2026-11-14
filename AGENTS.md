@@ -1654,6 +1654,16 @@ Verbindungen angefasst werden — die Grenzen sagen nur zu **Neuem** nein, was d
   `email-domain`, `wave-limit`, `rate-limit`, `people-limit`, `device-limit`, `merge-limit`.
   `created`/`wave-created` stehen zusätzlich im Audit-Log des neuen Waves (`free-account.created`,
   Ziel = Konto-ID); ein `denied` hat keinen Wave, an dem es hängen könnte.
+- **Downgrade-Prüfung und Überhang (Nacharbeit, `billing/usage.ts`):** `GET
+  /api/billing/accounts/:accountId/downgrade-check` (Bearer-Token wie die anderen) sagt der Seite, ob das
+  Konto in die **Gratis**-Grenzen passt: `{ allowed, limits, usage, overhang }`, `404 unknown-account`,
+  Vertrag in `docs/ACCOUNT-SUBSCRIPTIONS.md`. `/api/me` trägt auf einem gehosteten Server in `account`
+  zusätzlich `accountId`, `plan`, `limits`, `usage` und `overhang` (mit `perWave`: Personen nach Adresse,
+  Geräte nach Name); bezahlte Konten haben `null` als Wave- und Gerätegrenze. Der Überhang ist ein
+  Bericht: **nichts wird gelöscht, gestoppt oder abgelaufen** — nach einer Kündigung ist das Konto wieder
+  Gratis, Bestehendes bleibt, nur Neues wird abgewiesen. `apps/web` zeigt es auf `/account#plan`
+  (`components/account-usage.tsx`, Deutsch und Englisch). Oberflächentest: `apps/e2e/tests/t117-*`, er
+  überspringt ohne Plan-Block (selbst betriebenes Testsystem).
 - **Konto-Abo (Migration `0024_account-subscriptions`, additiv):** Tabelle `account_subscriptions`
   (`subscription_id` unique, `account_id`, `seats`, `state`, `state_as_of`, `delete_after`,
   Zeitstempel), ein partieller Unique-Index lässt je Konto höchstens ein nicht beendetes zu. Nichts

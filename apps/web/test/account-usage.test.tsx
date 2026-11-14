@@ -51,7 +51,8 @@ describe("the plan block", () => {
   test("a free account: plan, and each usage against its limit", async () => {
     const tree = await AccountUsage({ plan: free() });
     const section = attr(tree, "data-plan")[0];
-    expect((section?.props as { "data-plan": string })["data-plan"]).toBe("free");
+    const props = (section?.props ?? {}) as Record<string, unknown>;
+    expect(props["data-plan"]).toBe("free");
     const usage = attr(tree, "data-usage").map((e) => text(e));
     expect(usage[0]).toContain("Waves");
     expect(usage[0]).toContain("2");

@@ -72,3 +72,71 @@ Jede andere 404 (kein Token, falsche Adresse) ist Konfiguration, nicht „unbeka
 - **Geräte:** ein Konto mit nicht beendetem Konto-Abo hat keine Gerätegrenze.
 - **Keine Netzkarte:** ein Konto-Abo startet oder stoppt kein Mesh; an Geräte wird nichts gesendet.
 - **Log:** `billing: account <id> subscription <sub> is <state>, <n> seats` bei jeder Änderung.
+
+## Downgrade-Prüfung
+
+Bevor die Seite eine Kündigung zulässt, fragt sie, ob das Konto als Gratis-Konto so bleiben dürfte. Die
+Prüfung ändert nichts und löscht nichts; die Entscheidung bleibt bei der Seite.
+
+```bash
+curl "$CONTROL/api/billing/accounts/$ACCOUNT_ID/downgrade-check" \
+  -H "Authorization: Bearer $WAVE_BILLING_TOKEN"
+```
+
+`$ACCOUNT_ID` ist die `accountId` aus der Antwort des Konto-Abos (`ca_…`).
+
+```json
+{
+  "allowed": false,
+  "limits": { "waves": 3, "people": 3, "devices": 100 },
+  "usage": { "waves": 4, "people": 5, "devices": 12 },
+  "overhang": { "waves": 1, "people": 2, "devices": 0 }
+}
+```
+
+- `allowed` ist wahr bei höchstens `limits.waves` Waves, `limits.people` Personen und `limits.devices`
+  Geräten (Standard 3 / 3 / 100; die Grenzen sind die der Gratis-Konten dieses Servers,
+  `WAVE_FREE_MAX_WAVES`, `WAVE_FREE_DEVICE_LIMIT`).
+- `usage.people` sind verschiedene Benutzer plus offene Einladungen an noch nicht beteiligte Adressen,
+  `usage.devices` verschiedene Geräte (Maschinenschlüssel) über alle Waves des Kontos.
+- `overhang` ist, um wie viel `usage` über `limits` liegt, je Zahl (0, wenn sie passt).
+- Gemessen wird immer gegen die **Gratis**-Grenzen, auch bei einem Konto mit Abo: die Frage ist „würde es
+  passen“.
+
+| Status | Body | Bedeutung |
+|---|---|---|
+| 200 | wie oben | gilt für jedes Konto, auch ein leeres |
+| 401 | `{ "error": "unauthorized" }` | Token fehlt oder ist falsch |
+| 404 | `{ "error": "unknown-account" }` | die ID ist kein Kundenkonto |
+| 404 | (leer) | kein `WAVE_BILLING_TOKEN` auf dem Server: Konfiguration, nicht „unbekannt“ |
+
+## Was der Eigentümer sieht
+
+`/api/me` trägt in `account` zusätzlich zu `identities` und `linkable` (nur auf einem gehosteten Server,
+mit `WAVE_BILLING_TOKEN`):
+
+```json
+{
+  "accountId": "ca_…",
+  "plan": "free",
+  "limits": { "waves": 3, "people": 3, "devices": 100 },
+  "usage": { "waves": 2, "people": 1, "devices": 5 },
+  "overhang": {
+    "waves": 0, "people": 0, "devices": 0,
+    "perWave": [
+      { "waveId": "w_…", "waveName": "alpha",
+        "people": [{ "email": "anna@acme.example", "kind": "member" },
+                   { "email": "wait@acme.example", "kind": "invitation" }],
+        "devices": [{ "name": "laptop" }] }
+    ]
+  }
+}
+```
+
+`plan` ist `free` oder `paid`. Bei einem bezahlten Konto sind `limits.waves` und `limits.devices` `null`
+(keine Grenze) und `limits.people` ist die Platzzahl. `accountId` ist `null`, solange der Benutzer noch
+kein Konto hat (sein erster Wave legt es an); Plan `free`, Nutzung 0. `overhang.perWave` ist nur gefüllt,
+wenn etwas über einer Grenze liegt, und nennt dann für **jeden** Wave des Kontos die Personen (Adresse,
+Mitglied oder Einladung) und die Geräte (Name). Welche davon „zu viel“ sind, entscheidet das System nicht:
+Es **löscht und stoppt nichts**, die Grenzen sagen nur zu Neuem nein. In der Oberfläche steht das auf
+`/account` (Abschnitt „Tarif und Nutzung“, `#plan`).
