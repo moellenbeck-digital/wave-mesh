@@ -1355,6 +1355,30 @@ hinweg* abgleichen sollen: ein Notebook in zwei Waves ist für den Server zwei
 Knoten bei zwei Konten. Was beide verbindet, weiß nur das Gerät selbst. Bis das
 jemand braucht, bleibt der Abgleich innerhalb eines Waves.
 
+### D16 — Gratis-Konto, Grenzen und Selfhosting (#116–#119)
+
+Ein **gehosteter** Server (mit `WAVE_BILLING_TOKEN`) legt jeden Wave unter ein Kundenkonto. Das Konto ist
+*Gratis* oder *bezahlt*; der Tarif wird aus Abo und `wave_billing` abgeleitet, nie gespeichert. Gratis heißt:
+**3 Waves, 3 Personen und 100 Geräte über alle Waves des Kontos** (`WAVE_FREE_MAX_WAVES` und
+`WAVE_FREE_DEVICE_LIMIT` stellen Waves und Geräte ein; die Personen-Grenze ist fest). Gezählt wird so:
+Personen sind verschiedene Benutzer plus offene Einladungen (eine offene Einladung reserviert einen Platz,
+eine Person in mehreren Waves zählt einmal), Geräte sind verschiedene Maschinenschlüssel. Ein Konto-Abo hebt
+die Wave- und Gerätegrenze auf und setzt die Personen auf die gebuchten Plätze.
+
+- **Die Grenzen sagen nur zu Neuem nein.** Eine Kündigung lässt das Konto in Gratis zurückfallen; Waves,
+  Personen, Einladungen und Geräte bleiben, der Überhang ist ein Bericht. Vor der Kündigung fragt die Seite
+  `downgrade-check` (immer gegen die Gratis-Grenzen).
+- **Eine Quelle für Zahlen.** `/api/me` (`account`: `plan`, `limits`, `usage`, `overhang`) und
+  `/api/waves/:id/members` (`account`) liefern `belegt / erlaubt`; Weboberfläche, Fehlermeldungen
+  (Web, JSON, `wave-admin`, Client) und Doku benutzen dieselben Begriffe, die Oberfläche rechnet nichts selbst.
+  Jede Abweisung nennt die Zahlen und einen nächsten Schritt (Einladung zurückziehen, Gerät entfernen,
+  Wave löschen, Abo unter `/account#plan`).
+- **Selfhosting ist unbegrenzt.** Ohne `WAVE_BILLING_TOKEN` hat ein Wave kein Konto, `/api/me` kein `plan`,
+  und die Oberfläche zeigt keinen Quotenhinweis.
+
+Anwender-Doku: [`GRATIS-TARIF.md`](GRATIS-TARIF.md) / [`FREE-PLAN.md`](FREE-PLAN.md); Vertrag und Betrieb:
+[`ACCOUNT-SUBSCRIPTIONS.md`](ACCOUNT-SUBSCRIPTIONS.md) / [`.en.md`](ACCOUNT-SUBSCRIPTIONS.en.md).
+
 ## 4. Repo-Struktur
 
 ```

@@ -1,5 +1,7 @@
 # Konto-Abos: Aufrufe für wave-mesh.org
 
+*English: [`ACCOUNT-SUBSCRIPTIONS.en.md`](ACCOUNT-SUBSCRIPTIONS.en.md). Für Anwender: [`GRATIS-TARIF.md`](GRATIS-TARIF.md).*
+
 Ticket #117. Ein **Konto-Abo** gilt für ein ganzes gehostetes Kundenkonto (`customer_accounts`) und
 damit für alle seine Waves, im Unterschied zum Wave-Abo (`PUT /api/billing/subscriptions/:id`), das
 genau einen Wave bucht. Wer mit einem Gratis-Konto startet (bis zu 3 Waves, 3 Personen, 100 Geräte),
@@ -133,10 +135,57 @@ mit `WAVE_BILLING_TOKEN`):
 }
 ```
 
-`plan` ist `free` oder `paid`. Bei einem bezahlten Konto sind `limits.waves` und `limits.devices` `null`
+`plan` ist `free` oder `paid`. Abo (Limits `null`), Gratis-Konto und Selfhost (gar kein `plan`) sind damit
+drei verschiedene Antworten; die Oberfläche rechnet nichts selbst, sie liest nur diese Zahlen. Bei einem bezahlten Konto sind `limits.waves` und `limits.devices` `null`
 (keine Grenze) und `limits.people` ist die Platzzahl. `accountId` ist `null`, solange der Benutzer noch
-kein Konto hat (sein erster Wave legt es an); Plan `free`, Nutzung 0. `overhang.perWave` ist nur gefüllt,
+kein Konto hat (sein erster Wave legt es an); Plan `free`, Nutzung 0. `usage.people` zählt so, wie der Plan
+seine Personen begrenzt: Gratis und Konto-Abo als **verschiedene Personen** (Mitglieder plus offene
+Einladungen an noch nicht beteiligte Adressen, eine Person in zwei Waves einmal), ein nur über
+`wave_billing` bezahltes Konto als **Mitgliedschaften** plus offene Einladungen (eine Person in zwei Waves
+zweimal). So ist `belegt / erlaubt` immer eine Regel. `overhang.perWave` ist nur gefüllt,
 wenn etwas über einer Grenze liegt, und nennt dann für **jeden** Wave des Kontos die Personen (Adresse,
 Mitglied oder Einladung) und die Geräte (Name). Welche davon „zu viel“ sind, entscheidet das System nicht:
 Es **löscht und stoppt nichts**, die Grenzen sagen nur zu Neuem nein. In der Oberfläche steht das auf
 `/account` (Abschnitt „Tarif und Nutzung“, `#plan`).
+
+Für die Personen-Hinweise beim Einladen liefert `GET /api/waves/:id/members` zusätzlich `account`
+(`{ plan, limits, usage }`, wie oben): die Belegung des Kontos, zu dem der Wave gehört. Der Schlüssel fehlt
+auf einem selbst betriebenen Server und bei einem Wave ohne Konto, dann zeigt die Oberfläche keinen
+Hinweis.
+
+## Grenzen einstellen (Betrieb)
+
+| Einstellung | Standard | Wirkung |
+|---|---|---|
+| `WAVE_FREE_MAX_WAVES` | 3 | Waves je Gratis-Konto; leer = 3, mindestens 1 |
+| `WAVE_FREE_DEVICE_LIMIT` | 100 | verschiedene Geräte je Gratis-Konto, über alle Waves; leer = 100, mindestens 1 |
+| Personen | 3, fest | **kein Env:** die Konstante `FREE_PEOPLE_LIMIT` in `apps/control/src/billing/plan.ts` |
+| `WAVE_FREE_IPV4_PREFIX_LENGTH` | `/24` | Adressblock eines neuen Gratis-Waves (#118); muss für `WAVE_FREE_DEVICE_LIMIT` Platz lassen |
+| `WAVE_FREE_BLOCKED_EMAIL_DOMAINS` | leer | Komma-Liste; sperrt nur den Gratis-Start |
+| `WAVE_BASE_URL` | | Grundlage der `upgradeUrl` in den Fehlern (`<WAVE_BASE_URL>/account#plan`) |
+
+Die Grenzen gelten nur mit `WAVE_BILLING_TOKEN` (gehostet). Ohne ihn, also beim Selfhosting, werden Waves
+ohne Konto angelegt, und ohne Konto gibt es keine Grenze: weder eine Anzeige noch eine Abweisung.
+
+## Fehler an den Grenzen
+
+Jede Abweisung nennt `belegt / erlaubt` (`used` / `limit`) und mindestens einen nächsten Schritt; die
+Texte kommen auf Deutsch oder Englisch (Header `Accept-Language`). `upgradeUrl` ist die absolute Adresse
+von `/account#plan`.
+
+| Grenze | Aufruf | Antwort |
+|---|---|---|
+| Waves | `POST /waves` mit `Accept: application/json` | `403 { "error": "wave-limit", "limit": 3, "used": 3, "message": "…", "upgradeUrl": "…" }` |
+| Personen | `POST /waves/:id/invites` mit `Accept: application/json` | `409 { "error": "people-limit", "limit": 3, "used": 3, "plan": "free", "message": "…", "upgradeUrl": "…" }` |
+| Geräte | `POST /v1/machine/register` | `403 { "error": "…", "code": "device_limit", "limit": 100, "used": 100, "upgradeUrl": "…" }` |
+
+- `error` und `code` bleiben, wie sie waren; `used`, `message` und `upgradeUrl` sind neu. Bei `device_limit`
+  ist `error` ein englischer Satz mit denselben Zahlen und Schritten, den ein älterer Client unverändert
+  zeigt.
+- Nächste Schritte: Wave löschen oder Abo abschließen (Waves); Einladung zurückziehen, Person entfernen oder
+  Abo abschließen (Personen); Gerät entfernen oder Abo abschließen (Geräte).
+- Browser bekommen dieselben Sätze als Seite (`data-error="wave-limit"`, `409` beim Einladen, `403` bei der
+  Gerätefreigabe) mit einem Link auf `/account#plan`; `wave-admin add-member|invite` sagt sie auf der Shell.
+- Der Client (`wave up`, `wave login`, Daemon, DSM-Oberfläche) zeigt `device_limit` als Hinweis
+  `device-limit` in der Sprache des Lesers, statt der rohen Antwort.
+
