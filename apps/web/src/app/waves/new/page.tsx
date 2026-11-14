@@ -30,15 +30,19 @@ export default async function NewWavePage({
   const waiting = me.invites[0];
   const t = appMessages(await getLocale());
 
-  // Wo Waves verkauft werden, entsteht einer nur über das Abo. Statt eines
-  // Formulars, dessen Absenden der Server ohnehin ablehnt, steht hier warum --
-  // auch für den, den Login und Gerätefreigabe hierher schicken.
+  // Wer keinen Wave anlegen darf (unbestätigte Adresse, Platzhalter, gesperrte
+  // Domain, Gratis-Grenze), bekommt statt eines Formulars, dessen Absenden der
+  // Server ohnehin ablehnt, den Grund -- auch wenn Login und Gerätefreigabe
+  // ihn hierher schicken.
   if (me.canCreateWave === false) {
+    const reason = me.waveCreation?.reason ?? null;
     return (
       <div className="mx-auto max-w-lg">
         {/* Auch hier: ein getrenntes Konto landet hier, weil der Wave unter dem anderen Konto hängt. */}
         <LinkNotice me={me} />
-        <h1 className="animate-fade-in font-display text-display-sm text-navy">{t.noWaveBookedTitle}</h1>
+        <h1 className="animate-fade-in font-display text-display-sm text-navy">
+          {reason ? t.waveDenialTitle(reason) : t.noWaveBookedTitle}
+        </h1>
         {waiting ? (
           <p className="wc-alert-success mt-6" role="status">
             {rich(t.newInviteWaiting, {
@@ -47,7 +51,9 @@ export default async function NewWavePage({
             })}
           </p>
         ) : null}
-        <p className="mt-3 text-body-sm text-slate">{t.noWaveBooked}</p>
+        <p className="mt-3 text-body-sm text-slate" data-error={reason ?? undefined}>
+          {reason ? t.waveDenialBody(reason, me.waveCreation?.limit ?? 3) : t.noWaveBooked}
+        </p>
       </div>
     );
   }

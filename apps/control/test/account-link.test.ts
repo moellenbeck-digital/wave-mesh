@@ -732,3 +732,72 @@ describe("what the guided link does not touch", () => {
     expect(other.isNewUser).toBe(true);
   });
 });
+
+describe("two free customer accounts (ticket #117)", () => {
+  /** A hosted server: the free account of A starts with A's first wave. */
+  const hosted = () => {
+    app = createApp({
+      db,
+      config: testConfig({ WAVE_BILLING_TOKEN: "x".repeat(32) }),
+      providers: new Map<string, OAuthProvider>([["oidc", oidc]]),
+      signingKey: testSigningKey(),
+    });
+  };
+
+  /** B gets a free account of its own with `count` waves, the way a server of an earlier release left it. */
+  async function freeAccountOfB(b: string, count: number) {
+    await db.insert(customerAccounts).values({ id: "ca_b", ownerUserId: b });
+    for (let i = 0; i < count; i++) {
+      await db.insert(waves).values({
+        id: `w_b${i}`,
+        name: `b${i}`,
+        dnsSuffix: `b${i}.wave.example.com`,
+        ownerUserId: b,
+        accountId: "ca_b",
+        ipv4Prefix: `10.${100 + i}.0.0/16`,
+        ipv6Prefix: `fd7a:9:${i}::/48`,
+      });
+      await db.insert(waveMembers).values({ waveId: `w_b${i}`, userId: b, role: "owner" });
+    }
+  }
+
+  const shape = async () => ({
+    users: (await db.select().from(users)).map((u) => u.id).sort(),
+    accounts: (await db.select().from(customerAccounts)).map((a) => [a.id, a.ownerUserId]).sort(),
+    waves: (await db.select().from(waves)).map((w) => [w.id, w.accountId, w.ownerUserId]).sort(),
+  });
+
+  test("what does not fit is refused with the limit named, and nothing at all changes", async () => {
+    hosted();
+    const { a, b, jarB } = await scenario();
+    // A made its free account with its first wave; B holds three more -- four waves do not fit one.
+    expect((await db.select().from(customerAccounts)).map((x) => x.ownerUserId)).toEqual([a]);
+    await freeAccountOfB(b, 3);
+    const before = await shape();
+    await reachConfirmation(jarB);
+
+    expect(locationOf(await post("/account/link/confirm", jarB))).toBe(
+      "/account/link?error=free-limits-waves",
+    );
+    expect(await shape()).toEqual(before);
+    // The request is still open: B is still B, and can try again once it has made room.
+    expect((await state(jarB)).state).toBe("confirm");
+  });
+
+  test("what fits goes over into the first account: one account, all waves, B gone", async () => {
+    hosted();
+    const { a, b, jarB } = await scenario();
+    await freeAccountOfB(b, 2);
+    await reachConfirmation(jarB);
+
+    expect(locationOf(await post("/account/link/confirm", jarB))).toContain("/account/link/done");
+    const accounts = await db.select().from(customerAccounts);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]?.ownerUserId).toBe(a);
+    const rows = await db.select().from(waves);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((w) => w.accountId === accounts[0]?.id)).toBe(true);
+    expect(rows.every((w) => w.ownerUserId === a)).toBe(true);
+    expect((await db.select().from(users).where(eq(users.id, b))).length).toBe(0);
+  });
+});

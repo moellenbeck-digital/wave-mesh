@@ -149,12 +149,12 @@ describe("the notice on the create form", () => {
     expect(de).not.toContain(EN.linkWhyMissing);
   });
 
-  test("it also stands on the page that says waves come with a subscription", async () => {
+  test("it also stands on the page that says an unconfirmed address creates no wave on a hosted server", async () => {
     makeApp({ WAVE_BILLING_TOKEN: "x".repeat(32) });
     const jar = await splitOff();
 
     const closed = await (await request("/waves/new", jar)).text();
-    expect(closed).toContain(EN.noWaveCreation);
+    expect(closed).toContain(EN.waveDeniedTitle("unverified-email"));
     expect(hasNotice(closed, EN)).toBe(true);
   });
 
@@ -166,10 +166,11 @@ describe("the notice on the create form", () => {
     expect(page).not.toContain("/account/link");
 
     makeApp({ WAVE_BILLING_TOKEN: "x".repeat(32) });
-    const closed = await ordinary();
-    const closedPage = await (await request("/waves/new", closed)).text();
-    expect(closedPage).toContain(EN.noWaveCreation);
-    expect(closedPage).not.toContain("link-notice-title");
+    // A hosted server: the same account is confirmed, so it gets the form (ticket #117).
+    const hosted = await ordinary();
+    const hostedPage = await (await request("/waves/new", hosted)).text();
+    expect(hostedPage).toContain('<form method="post" action="/waves">');
+    expect(hostedPage).not.toContain("link-notice-title");
   });
 
   test("a split-off account can still make a wave: nothing is blocked", async () => {

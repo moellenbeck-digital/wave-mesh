@@ -1,4 +1,5 @@
 import type { AclPolicy, Candidate, ServiceScheme } from "@wave/proto";
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -667,6 +668,45 @@ export const waveBilling = pgTable(
 );
 
 /**
+ * The subscription of a whole customer account (ticket #117), as opposed to
+ * `wave_billing`, which is the subscription of one wave.
+ *
+ * Additive: nothing existing changes. The account's plan is *derived* and never
+ * stored (`billing/plan.ts`): paid when the account has a row here that is not
+ * `ended`, or when one of its waves has a `wave_billing` row; free otherwise.
+ * A cancellation (`ended`) therefore lets the account fall back to free without
+ * touching a wave, key, address or connection. `delete_after` is only the date
+ * the site was told; nothing is deleted when it passes.
+ *
+ * At most one row per account is not `ended` (partial unique index): a second
+ * live subscription for the same account is a conflict, not a second quota.
+ */
+export const accountSubscriptions = pgTable(
+  "account_subscriptions",
+  {
+    id: text("id").primaryKey(),
+    subscriptionId: text("subscription_id").notNull(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    /** How many people the account may hold across all its waves. */
+    seats: integer("seats").notNull(),
+    state: text("state", { enum: ["active", "suspended", "ended"] }).notNull(),
+    /** When the site read the state last applied (ms); an older read is stale. */
+    stateAsOf: bigint("state_as_of", { mode: "number" }),
+    /** Only in `ended`: the date the site was told the data goes. Nothing deletes by it. */
+    deleteAfter: timestamp("delete_after", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("account_subscriptions_subscription_idx").on(t.subscriptionId),
+    index("account_subscriptions_account_idx").on(t.accountId),
+    uniqueIndex("account_subscriptions_one_live_idx").on(t.accountId).where(sql`${t.state} <> 'ended'`),
+  ],
+);
+
+/**
  * A link that lets an account set its first password, sent to its address.
  *
  * Stored as SHA-256 like invitation tokens. Following it proves the mailbox,
@@ -749,6 +789,7 @@ export const accountLinks = pgTable(
 export const schema = {
   users,
   customerAccounts,
+  accountSubscriptions,
   waveAuthKeys,
   waveServices,
   wavePiers,

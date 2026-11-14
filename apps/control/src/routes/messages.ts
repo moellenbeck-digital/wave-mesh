@@ -14,6 +14,87 @@ import type { Locale, Messages } from "@wave/i18n";
  */
 const e = (value: string): string => Bun.escapeHTML(value);
 
+/** Why a wave could not be created, as a title and a sentence (see billing/free-account.ts). */
+function denialEn(
+  code: string,
+  extra: { limit?: number; wait?: number } = {},
+): [title: string, body: string] {
+  switch (code) {
+    case "placeholder":
+      return [
+        "This account cannot create waves",
+        "Nobody has confirmed the address of this account yet. Open the link that was mailed to it first.",
+      ];
+    case "unverified-email":
+      return [
+        "Confirm your address first",
+        "Waves can only be created with a confirmed email address. Sign in with a provider that confirms addresses, or set a password through the link mailed to you.",
+      ];
+    case "email-domain":
+      return [
+        "This address cannot start a free account",
+        "Addresses of this domain cannot start a free account. Use another address, or subscribe.",
+      ];
+    case "wave-limit":
+      return [
+        "Free limit reached",
+        `A free account holds up to ${extra.limit ?? 3} waves. Delete one you no longer use, or subscribe to add more.`,
+      ];
+    case "rate-limited":
+      return [
+        "Too many new waves",
+        `Wait ${Math.max(1, Math.ceil((extra.wait ?? 60) / 60))} minute(s) and try again.`,
+      ];
+    case "no-capacity":
+      return [
+        "This server is full",
+        "Every address block of this server is taken, so no wave can be created here right now.",
+      ];
+    default:
+      return ["You cannot create a wave here", "Ask the owner of a wave to invite you."];
+  }
+}
+
+function denialDe(
+  code: string,
+  extra: { limit?: number; wait?: number } = {},
+): [title: string, body: string] {
+  switch (code) {
+    case "placeholder":
+      return [
+        "Dieses Konto kann keine Waves anlegen",
+        "Die Adresse dieses Kontos hat noch niemand bestätigt. Öffne zuerst den Link, der ihr geschickt wurde.",
+      ];
+    case "unverified-email":
+      return [
+        "Bestätige zuerst deine Adresse",
+        "Waves legst du nur mit einer bestätigten E-Mail-Adresse an. Melde dich bei einem Anbieter an, der Adressen bestätigt, oder lege über den Link, der dir geschickt wurde, ein Passwort fest.",
+      ];
+    case "email-domain":
+      return [
+        "Mit dieser Adresse geht kein kostenloses Konto",
+        "Adressen dieser Domain können kein kostenloses Konto starten. Nimm eine andere Adresse oder schließe ein Abo ab.",
+      ];
+    case "wave-limit":
+      return [
+        "Kostenlose Grenze erreicht",
+        `Ein kostenloses Konto fasst höchstens ${extra.limit ?? 3} Waves. Lösche einen, den du nicht mehr brauchst, oder schließe ein Abo ab.`,
+      ];
+    case "rate-limited":
+      return [
+        "Zu viele neue Waves",
+        `Warte ${Math.max(1, Math.ceil((extra.wait ?? 60) / 60))} Minute(n) und versuche es erneut.`,
+      ];
+    case "no-capacity":
+      return [
+        "Dieser Server ist voll",
+        "Alle Adressblöcke dieses Servers sind vergeben, deshalb lässt sich hier gerade kein Wave anlegen.",
+      ];
+    default:
+      return ["Du kannst hier keinen Wave anlegen", "Lass dich vom Eigentümer eines Waves einladen."];
+  }
+}
+
 const en = {
   // --- signing in -----------------------------------------------------------
   signInWithPassword: "Sign in with email and password",
@@ -65,9 +146,10 @@ const en = {
   createWave: "Create wave",
   invitationOnlyHtml: (wave: string) =>
     `An invitation into <strong>${e(wave)}</strong> is waiting for you. Open the link it came with.`,
-  noWaveCreation: "Waves come with a subscription",
-  noWaveCreationBody:
-    "On this server a wave is booked, not created. Ask the owner of a wave to invite you, or book one of your own.",
+  noWaveCreation: "You cannot create a wave here",
+  noWaveCreationBody: "Ask the owner of a wave to invite you, or confirm your address and try again.",
+  waveDeniedTitle: (code: string) => denialEn(code)[0],
+  waveDeniedBody: (code: string, limit: number, wait: number) => denialEn(code, { limit, wait })[1],
   invalidInput: (kind: "domain" | "wave-name", input: string) =>
     kind === "domain" ? `not a domain name: ${input}` : `not a wave name: ${input}`,
   invalid: "Invalid.",
@@ -116,6 +198,11 @@ const en = {
   noSeatLeft: "No seat left",
   noSeatLeftBody: (seats: number) =>
     `This wave is booked for ${seats} people, open invitations included. Book more, or withdraw an invitation.`,
+  accountNoSeatLeft: "No room for another person",
+  accountNoSeatLeftBody: (limit: number, free: boolean) =>
+    free
+      ? `A free account holds up to ${limit} people across all its waves, open invitations included. Withdraw an invitation, or subscribe to add more.`
+      : `This account is booked for ${limit} people across its waves, open invitations included. Book more, or withdraw an invitation.`,
   setPasswordTitle: "Set your password",
   setPasswordFor: (email: string) => `For ${email}. From now on you sign in with this address and password.`,
   savePassword: "Save password",
@@ -226,6 +313,12 @@ const en = {
         "no-provider": "That sign-in is not one of this account's.",
         "provider-unavailable": "The sign-in service is not available right now.",
         "no-way": "The other account has not been shown to be yours yet.",
+        "free-limits-waves":
+          "Both accounts have a free plan, and together their waves would be more than a free account may hold. Nothing was changed. Delete a wave or subscribe, then link again.",
+        "free-limits-people":
+          "Both accounts have a free plan, and together their people would be more than a free account may hold. Nothing was changed. Remove a person or an invitation, or subscribe, then link again.",
+        "free-limits-devices":
+          "Both accounts have a free plan, and together their devices would be more than a free account may hold. Nothing was changed. Remove a device or subscribe, then link again.",
       }) as Record<string, string>
     )[code] ?? "That did not work. Nothing was changed.",
 } satisfies Messages;
@@ -277,9 +370,11 @@ const de: typeof en = {
   createWave: "Wave anlegen",
   invitationOnlyHtml: (wave) =>
     `Eine Einladung in <strong>${e(wave)}</strong> wartet auf dich. Öffne den Link, mit dem sie kam.`,
-  noWaveCreation: "Waves gibt es mit einem Abo",
+  noWaveCreation: "Du kannst hier keinen Wave anlegen",
   noWaveCreationBody:
-    "Auf diesem Server wird ein Wave gebucht, nicht angelegt. Lass dich vom Eigentümer eines Waves einladen oder buche einen eigenen.",
+    "Lass dich vom Eigentümer eines Waves einladen oder bestätige deine Adresse und versuche es dann erneut.",
+  waveDeniedTitle: (code) => denialDe(code)[0],
+  waveDeniedBody: (code, limit, wait) => denialDe(code, { limit, wait })[1],
   invalidInput: (kind, input) =>
     kind === "domain" ? `kein gültiger Domainname: ${input}` : `kein gültiger Wave-Name: ${input}`,
   invalid: "Ungültig.",
@@ -330,6 +425,11 @@ const de: typeof en = {
   noSeatLeft: "Kein Platz mehr frei",
   noSeatLeftBody: (seats) =>
     `Dieser Wave ist für ${seats} Personen gebucht, offene Einladungen mitgezählt. Buch mehr dazu oder zieh eine Einladung zurück.`,
+  accountNoSeatLeft: "Kein Platz für eine weitere Person",
+  accountNoSeatLeftBody: (limit, free) =>
+    free
+      ? `Ein kostenloses Konto fasst höchstens ${limit} Personen über alle seine Waves, offene Einladungen mitgezählt. Zieh eine Einladung zurück oder schließe ein Abo ab, um mehr aufzunehmen.`
+      : `Dieses Konto ist für ${limit} Personen über seine Waves gebucht, offene Einladungen mitgezählt. Buch mehr dazu oder zieh eine Einladung zurück.`,
   setPasswordTitle: "Lege dein Passwort fest",
   setPasswordFor: (email) =>
     `Für ${email}. Ab jetzt meldest du dich mit dieser Adresse und diesem Passwort an.`,
@@ -444,6 +544,12 @@ const de: typeof en = {
         "no-provider": "Diese Anmeldung gehört nicht zu diesem Konto.",
         "provider-unavailable": "Der Anmeldedienst ist gerade nicht erreichbar.",
         "no-way": "Das andere Konto wurde noch nicht als deins nachgewiesen.",
+        "free-limits-waves":
+          "Beide Konten sind kostenlos, und ihre Waves zusammen wären mehr, als ein kostenloses Konto fassen darf. Es wurde nichts geändert. Lösche einen Wave oder schließe ein Abo ab und verknüpfe dann erneut.",
+        "free-limits-people":
+          "Beide Konten sind kostenlos, und ihre Personen zusammen wären mehr, als ein kostenloses Konto fassen darf. Es wurde nichts geändert. Entferne eine Person oder eine Einladung oder schließe ein Abo ab und verknüpfe dann erneut.",
+        "free-limits-devices":
+          "Beide Konten sind kostenlos, und ihre Geräte zusammen wären mehr, als ein kostenloses Konto fassen darf. Es wurde nichts geändert. Entferne ein Gerät oder schließe ein Abo ab und verknüpfe dann erneut.",
       }) as Record<string, string>
     )[code] ?? "Das hat nicht funktioniert. Es wurde nichts geändert.",
 };

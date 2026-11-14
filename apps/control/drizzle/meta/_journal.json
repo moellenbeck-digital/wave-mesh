@@ -169,6 +169,13 @@
       "when": 1794661362696,
       "tag": "0023_device-identity-per-wave",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794666783249,
+      "tag": "0024_account-subscriptions",
+      "breakpoints": true
     }
   ]
 }

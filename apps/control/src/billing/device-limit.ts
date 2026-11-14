@@ -1,12 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { customerAccounts, nodes, waveBilling, waves } from "../db/schema.ts";
+import { nodes, waves } from "../db/schema.ts";
+import { logFreeDecision } from "./free-log.ts";
+import { accountPlan, DEFAULT_FREE_DEVICE_LIMIT, isFreePlan, lockAccount } from "./plan.ts";
 
-/**
- * How many distinct devices a free hosted account may register, across all its
- * waves. The server can change it with `WAVE_FREE_DEVICE_LIMIT`.
- */
-export const DEFAULT_FREE_DEVICE_LIMIT = 100;
+export { DEFAULT_FREE_DEVICE_LIMIT };
 
 /**
  * A free hosted account that has no room for another device.
@@ -28,7 +26,8 @@ export class DeviceLimitError extends Error {
  * Whether a device may still be put into this wave, as the rule of ticket #116:
  *
  * - A wave without `account_id` is self-hosted: no limit.
- * - An account is free when none of its waves has a `wave_billing` row.
+ * - An account is free when it has no live account subscription and none of its
+ *   waves has a `wave_billing` row (`billing/plan.ts`, ticket #117).
  * - A device is `distinct machine_key` over the nodes of all the account's
  *   waves. One that is already in the account takes no further place when it
  *   joins another wave.
@@ -54,12 +53,7 @@ export async function ensureDeviceSlot(
   const accountId = wave?.accountId;
   if (!accountId) return;
 
-  await db
-    .select({ id: customerAccounts.id })
-    .from(customerAccounts)
-    .where(eq(customerAccounts.id, accountId))
-    .limit(1)
-    .for("update");
+  await lockAccount(db, accountId);
 
   if (!(await accountIsFree(db, accountId))) return;
 
@@ -71,20 +65,16 @@ export async function ensureDeviceSlot(
     .limit(1);
   if (known) return;
 
-  if ((await accountDeviceCount(db, accountId)) >= input.limit) {
+  const have = await accountDeviceCount(db, accountId);
+  if (have >= input.limit) {
+    logFreeDecision("denied", { reason: "device-limit", account: accountId, limit: input.limit, have });
     throw new DeviceLimitError(accountId, input.limit);
   }
 }
 
-/** True when no wave of the account is paid for. */
+/** True when the account has no paid plan: no live account subscription, no wave with a `wave_billing` row. */
 async function accountIsFree(db: Database, accountId: string): Promise<boolean> {
-  const [billed] = await db
-    .select({ one: sql<number>`1` })
-    .from(waveBilling)
-    .innerJoin(waves, eq(waves.id, waveBilling.waveId))
-    .where(eq(waves.accountId, accountId))
-    .limit(1);
-  return !billed;
+  return isFreePlan(await accountPlan(db, accountId));
 }
 
 /** Distinct devices (`machine_key`) in all the waves of an account. */

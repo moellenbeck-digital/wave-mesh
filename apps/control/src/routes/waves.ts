@@ -8,11 +8,19 @@ import { previewPolicy } from "../acl/preview.ts";
 import { aclSubjects, getPolicy, invalidTags, removePolicy, setPolicy, setTags } from "../acl/store.ts";
 import { checkPolicy } from "../acl/validate.ts";
 import { audit, listAudit, userActor } from "../audit.ts";
-import { setPassword } from "../auth/password.ts";
+import { LoginThrottle, setPassword } from "../auth/password.ts";
 import type { OAuthProvider } from "../auth/providers.ts";
 import type { SessionUser } from "../auth/session.ts";
 import { createSession, setSessionCookie } from "../auth/session.ts";
-import { SeatLimitError } from "../billing/seats.ts";
+import {
+  type CreationDenial,
+  createWaveForUser,
+  creationPolicyOf,
+  NoWaveCapacityError,
+  waveCreationDenial,
+} from "../billing/free-account.ts";
+import { logFreeDecision } from "../billing/free-log.ts";
+import { AccountSeatLimitError, SeatLimitError } from "../billing/seats.ts";
 import { billingStateOf } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
 import { users, waves } from "../db/schema.ts";
@@ -20,6 +28,7 @@ import { configureDnsProvider, findDnsCredential, removeDnsCredential } from "..
 import { isAutomaticKind, isProviderKind, PROVIDER_KINDS } from "../dns/provider.ts";
 import type { Config } from "../env.ts";
 import { type Locale, localeOf } from "../i18n.ts";
+import { peerAddress } from "../net/peer.ts";
 import {
   acceptInvite,
   createInvite,
@@ -33,11 +42,9 @@ import { canManage, changeRole, listMembers, removeMember, roleOf } from "../wav
 import { ownerOfNode, removeNode, renameNode } from "../waves/nodes.ts";
 import { pierLeaving, unpublishLeavingPier } from "../waves/pier-dns.ts";
 import {
-  createWave,
   deleteWave,
   InvalidInputError,
   isPlaceholderSuffix,
-  mayCreateWaves,
   normaliseDnsSuffix,
   normaliseWaveName,
   renameWave,
@@ -61,7 +68,25 @@ export interface WaveRouteDeps {
   providers: Map<string, OAuthProvider>;
   /** For the DNS providers, so a test never reaches a real API. */
   dnsFetch?: typeof fetch;
+  /** Creation throttles of free accounts and waves, per user and per address; tests replace them. */
+  creationThrottles?: CreationThrottles;
 }
+
+/**
+ * How often one user, and one address, may try to create a wave on a hosted
+ * server (ticket #117): the existing `LoginThrottle`, counting every attempt.
+ * Ten an hour per user and twenty per address -- a free account holds three
+ * waves, so a person never needs more, and a shared address has room for a few.
+ */
+export interface CreationThrottles {
+  user: LoginThrottle;
+  ip: LoginThrottle;
+}
+
+export const newCreationThrottles = (): CreationThrottles => ({
+  user: new LoginThrottle(10, 60 * 60 * 1000),
+  ip: new LoginThrottle(20, 60 * 60 * 1000),
+});
 
 type Vars = { user: SessionUser | null };
 
@@ -76,9 +101,44 @@ type Vars = { user: SessionUser | null };
  * browser does not attach to a cross-site POST -- a forged form from another
  * origin arrives unauthenticated and is refused as such.
  */
-export function waveRoutes({ db, config, hub, providers, dnsFetch }: WaveRouteDeps) {
+export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrottles }: WaveRouteDeps) {
   const app = new Hono<{ Variables: Vars }>();
-  const canCreate = mayCreateWaves(config);
+  const policy = creationPolicyOf(config);
+  const throttles = creationThrottles ?? newCreationThrottles();
+  /** Decided per user, in one place (billing/free-account.ts): the same answer as /api/me and the login. */
+  const denialOf = (userId: string) => waveCreationDenial(db, policy, userId);
+
+  /**
+   * A refusal to create a wave, with its stable code: JSON for a client that
+   * asks for it, a page for a browser. `Retry-After` on a 429.
+   */
+  const creationRefusal = (
+    c: Context,
+    code: CreationDenial | "rate-limited" | "no-capacity",
+    extra: { wait?: number } = {},
+  ) => {
+    const status = code === "rate-limited" ? 429 : code === "no-capacity" ? 507 : 403;
+    const headers: Record<string, string> = extra.wait ? { "retry-after": String(extra.wait) } : {};
+    if ((c.req.header("accept") ?? "").includes("application/json")) {
+      return c.json(
+        {
+          error: code,
+          ...(extra.wait ? { retryAfter: extra.wait } : {}),
+          ...(code === "wave-limit" ? { limit: policy.limits.waves } : {}),
+        },
+        status,
+        headers,
+      );
+    }
+    const locale = localeOf(c);
+    const m = pageMessages(locale);
+    const title = m.waveDeniedTitle(code);
+    const body = m.waveDeniedBody(code, policy.limits.waves, extra.wait ?? 60);
+    return new Response(
+      `<!doctype html><html lang="${locale}" data-error="${code}"><h1>${Bun.escapeHTML(title)}</h1><p>${Bun.escapeHTML(body)}</p>`,
+      { status, headers: { "content-type": "text/html; charset=utf-8", ...headers } },
+    );
+  };
 
   /** The words of this request's language, for pages and JSON errors alike. */
   const say = (c: Context) => pageMessages(localeOf(c));
@@ -137,7 +197,7 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch }: WaveRouteDe
     status: 200 | 400 = 200,
   ) => {
     const m = say(c);
-    const setup = await waveSetup(db, user.id, user.email, canCreate);
+    const setup = await waveSetup(db, user.id, user.email, (await denialOf(user.id)) === null);
     const waiting =
       setup.state === "invited"
         ? html`<p>
@@ -203,14 +263,17 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch }: WaveRouteDe
       if (!user) return c.redirect(`/?next=${encodeURIComponent("/waves/new")}`);
 
       const m = say(c);
-      if (!canCreate) {
-        const setup = await waveSetup(db, user.id, user.email, canCreate);
+      const denial = await denialOf(user.id);
+      if (denial) {
+        const setup = await waveSetup(db, user.id, user.email, false);
         const waiting =
           setup.state === "invited" ? html`<p>${raw(m.invitationOnlyHtml(setup.wave))}</p>` : "";
-        return c.html(html`<h1>${m.noWaveCreation}</h1>
+        const title = m.waveDeniedTitle(denial);
+        const body = m.waveDeniedBody(denial, policy.limits.waves, 60);
+        return c.html(html`<h1 data-error="${denial}">${title}</h1>
           ${await plainLinkNotice(db, user, providers, m)}
           ${waiting}
-          <p>${m.noWaveCreationBody}</p>`);
+          <p>${body}</p>`);
       }
       const suggestion = suggestWave(user.email ?? user.name);
       return createForm(c, user, {
@@ -224,8 +287,6 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch }: WaveRouteDe
   app.post("/waves", async (c) => {
     const user = c.get("user");
     if (!user) return c.json({ error: say(c).apiUnauthenticated }, 401);
-    // The form is not offered here, but a POST needs no form.
-    if (!canCreate) return page(c, (m) => [m.noWaveCreation, m.noWaveCreationBody], 403);
 
     const form = await c.req.formData();
     const typed = { name: String(form.get("name") ?? ""), suffix: String(form.get("suffix") ?? "") };
@@ -251,16 +312,61 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch }: WaveRouteDe
     }
     if (errors.name || errors.suffix) return createForm(c, user, { ...typed, next }, errors, 400);
 
-    const created = await createWave(db, {
-      userId: user.id,
-      name,
-      dnsSuffix,
-      container: config.ipv4Container,
-    });
+    // On a hosted server every attempt is counted, per user and per address, and
+    // a blocked one is told how long to wait (ticket #117). The attempt counts
+    // before the decision: a refusal is as much an attempt as a success.
+    const source = peerAddress(c) ?? "unknown";
+    if (policy.hosted) {
+      const wait = Math.max(
+        throttles.user.retryAfterSeconds(user.id, "wave-create"),
+        throttles.ip.retryAfterSeconds("ip", source),
+      );
+      if (wait > 0) {
+        logFreeDecision("denied", { reason: "rate-limit", user: user.id, ip: source, wait });
+        return creationRefusal(c, "rate-limited", { wait });
+      }
+      throttles.user.hit(user.id, "wave-create");
+      throttles.ip.hit("ip", source);
+    }
+
+    let created: Awaited<ReturnType<typeof createWaveForUser>>;
+    try {
+      created = await createWaveForUser(db, policy, {
+        userId: user.id,
+        name,
+        dnsSuffix,
+        container: config.ipv4Container,
+      });
+    } catch (error) {
+      if (error instanceof NoWaveCapacityError) {
+        // Loud, like the billing API: nothing a retry changes.
+        console.error(`waves: NO CAPACITY: every address block is taken, ${user.id} got no wave`);
+        return creationRefusal(c, "no-capacity");
+      }
+      throw error;
+    }
+    if (created.kind === "denied") {
+      logFreeDecision("denied", {
+        reason: created.denial,
+        user: user.id,
+        ip: source,
+        ...(created.denial === "wave-limit" ? { limit: policy.limits.waves } : {}),
+      });
+      return creationRefusal(c, created.denial);
+    }
     // Two waves under one zone would answer for the same names, and a device in
     // both could not tell whose `laptop` it reached.
-    if ("conflict" in created) {
+    if (created.kind === "conflict") {
       return page(c, (m) => [m.domainTaken, m.domainTakenBody(dnsSuffix)], 409);
+    }
+    if (created.free && created.accountId) {
+      const event = created.newAccount ? "created" : "wave-created";
+      logFreeDecision(event, { user: user.id, account: created.accountId, wave: created.waveId, ip: source });
+      await audit(db, created.waveId, userActor(user), {
+        action: `free-account.${event}`,
+        target: created.accountId,
+        detail: { plan: "free" },
+      });
     }
 
     // The new wave is the one to show: the start page has one card at a time
@@ -377,6 +483,13 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch }: WaveRouteDe
         baseUrl: config.baseUrl,
       });
     } catch (error) {
+      if (error instanceof AccountSeatLimitError) {
+        return page(
+          c,
+          (m) => [m.accountNoSeatLeft, m.accountNoSeatLeftBody(error.limit, error.plan === "free")],
+          409,
+        );
+      }
       if (error instanceof SeatLimitError) {
         return page(c, (m) => [m.noSeatLeft, m.noSeatLeftBody(error.seats)], 409);
       }

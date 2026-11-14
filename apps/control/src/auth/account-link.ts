@@ -1,5 +1,6 @@
 import { and, asc, count, eq, gt, inArray, isNull, lt, ne } from "drizzle-orm";
-import { moveAccounts } from "../billing/accounts.ts";
+import { type MergeRefusal, moveAccounts } from "../billing/accounts.ts";
+import { DEFAULT_FREE_LIMITS, type FreeLimits } from "../billing/plan.ts";
 import type { Database } from "../db/client.ts";
 import {
   accountLinks,
@@ -506,7 +507,12 @@ export type MergeResult =
   | { kind: "gone" }
   | { kind: "changed" }
   /** The second proof is missing: the confirmation is not reachable before it. */
-  | { kind: "not-controlled" };
+  | { kind: "not-controlled" }
+  /**
+   * Both accounts have a free customer account and what they hold does not fit
+   * one (ticket #117). Nothing was written; the person is told which limit.
+   */
+  | ({ kind: "free-limits" } & MergeRefusal);
 
 /**
  * Step three, after the POST: moves everything from B to A and deletes B.
@@ -522,6 +528,7 @@ export async function mergeAccounts(
   linkId: string,
   userId: string,
   now: Date = new Date(),
+  limits: FreeLimits = DEFAULT_FREE_LIMITS,
 ): Promise<MergeResult> {
   const peek = await db.select().from(accountLinks).where(eq(accountLinks.id, linkId)).limit(1);
   const email = peek[0]?.email;
@@ -545,6 +552,19 @@ export async function mergeAccounts(
       .orderBy(asc(users.id))
       .for("update");
 
+    // Before anything is written: two free accounts become one only if they fit
+    // the free limits, and a refusal must leave no trace (ticket #117).
+    const accounts = await moveAccounts(t, userId, targetId, limits);
+    if (!accounts.ok) {
+      return {
+        kind: "free-limits",
+        reason: accounts.reason,
+        have: accounts.have,
+        limit: accounts.limit,
+        into: accounts.into,
+      } as const;
+    }
+
     const summary = await describeMerge(t, link, now);
     const ownedIds = summary.ownedWaves.map((w) => w.id);
     const waveIds = new Set<string>(ownedIds);
@@ -560,9 +580,8 @@ export async function mergeAccounts(
         .set({ role: "owner" })
         .where(and(eq(waveMembers.userId, targetId), inArray(waveMembers.waveId, ownedIds)));
     }
-    // B's customer accounts (billing units, not users) go to A as well, or
-    // deleting B below would take them along; their waves stay where they are.
-    await moveAccounts(t, userId, targetId);
+    // B's customer accounts (billing units, not users) went to A above, or
+    // deleting B below would have taken them along; their waves stay where they are.
     const mine = await t.select().from(waveMembers).where(eq(waveMembers.userId, userId));
     for (const member of mine) {
       waveIds.add(member.waveId);

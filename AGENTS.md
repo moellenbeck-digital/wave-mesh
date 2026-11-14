@@ -1376,12 +1376,15 @@ Verwaltungs-API (`apps/control/src/routes/billing.ts`, `src/billing/`):
 ```bash
 WAVE_BILLING_TOKEN=…              # ≥ 32 Zeichen; ohne ihn gibt es /api/billing/* nicht (404)
 WAVE_BILLING_RETENTION_DAYS=30    # so lange bleibt ein gekündigter Wave stehen; leer = 30, mindestens 1
+WAVE_FREE_MAX_WAVES=3             # Waves je Gratis-Konto; leer = 3, mindestens 1 (Ticket #117)
+WAVE_FREE_BLOCKED_EMAIL_DOMAINS=  # optional, Komma-Liste (Wegwerf-Domains); sperrt nur den Gratis-Start
 ```
 
 | Aufruf | Wirkung |
 |---|---|
 | `PUT /api/billing/subscriptions/:id` `{ email?, name?, seats, state, asOf? }` | Wave des Abos so stellen, wie gesagt (`active`, `suspended`, `ended`); Antwort mit `members` |
 | `POST /api/billing/subscriptions/:id/owner-link` `{ key? }` | Link, mit dem der Eigentümer sein erstes Passwort setzt (oder `url: null`), dazu `signInUrl` |
+| `PUT /api/billing/account-subscriptions/:id` `{ email?, seats, state, asOf? }` | Abo eines ganzen **Kundenkontos** (Ticket #117, siehe „Das Kundenkonto“ und `docs/ACCOUNT-SUBSCRIPTIONS.md`) |
 
 Antworten, auf die sich die Seite verlässt: `404 {"error":"unknown-subscription"}`
 (nie gesehen und nicht genug gesagt), `409 {"error":"ended"}` (für immer
@@ -1512,19 +1515,22 @@ Was daran festliegt:
   das Präfix mit derselben schlichten 404 wie jeder unbekannte Pfad, und mit
   Token geht ein unbekannter Pfad darunter nicht an den Proxy — samt
   `Authorization`-Header.
-- **Wo Waves verkauft werden, legt niemand selbst einen an.** Ist
-  `WAVE_BILLING_TOKEN` gesetzt, verweigert `POST /waves` mit 403, `/waves/new`
-  zeigt statt des Formulars den Grund, `/api/me` sagt `canCreateWave: false`
-  und `wave-admin set-password` legt keinen Platzhalter-Wave an
-  (`mayCreateWaves()` in `waves/provision.ts`, die eine Stelle). Sonst konnte
-  jedes Konto — wer auf einem gebuchten Platz sitzt, und erst recht, wer davon
-  entfernt wurde — sich nebenher einen Wave aufmachen, mit denselben Geräten
-  und ohne Rechnung. Ein Wave entsteht dort über die Abrechnungs-API — oder
-  ausdrücklich durch den Operator mit `wave-admin create-wave <email> <name>
-  [domain]`, auf jedem Server. Ausdrücklich deshalb, weil `set-password` ihn
-  nebenbei anlegte: ein neues Passwort für jemanden, der von einem gebuchten
-  Platz entfernt wurde, wäre sonst still ein Gratis-Wave. Ein so angelegter
-  Wave hat keine Abrechnungszeile, also keine Platzgrenze und keine Pause.
+- **Wo Waves verkauft werden, entscheidet sich das Anlegen je Benutzer** (Ticket #117; vorher:
+  „Billing konfiguriert = niemand legt selbst an“). Mit `WAVE_BILLING_TOKEN` darf ein **bestätigter**
+  Benutzer Waves über `POST /waves` anlegen, solange sein Konto unter der Wave-Grenze liegt; das
+  Konto entsteht mit dem ersten Wave (`createWaveForUser()` in `billing/free-account.ts`). Die eine
+  Stelle der Entscheidung ist `waveCreationDenial()`: `/api/me` (`canCreateWave`,
+  `waveCreation.reason`), `/waves/new`, der Login-Redirect und das POST fragen dieselbe Funktion
+  (das POST noch einmal unter den Sperren). Die alte Begründung galt dem Fall, dass jemand von einem
+  gebuchten Platz entfernt wird und sich nebenher einen Wave mit denselben Geräten aufmacht, ohne
+  Rechnung. Der Fall bleibt abgedeckt, weil die Grenzen jetzt am Konto hängen und nicht am Server:
+  ein so angelegter Wave gehört zu einem Gratis-Konto mit 3 Waves, 3 Personen und 100 Geräten über
+  alle seine Waves, und der Eigentümer des bezahlten Kontos bleibt davon unberührt. Ohne
+  `WAVE_BILLING_TOKEN` (selbst betriebener Server) ändert sich nichts: kein Konto, keine Grenze.
+  `wave-admin create-wave <email> <name> [domain]` bleibt der ausdrückliche Weg des Operators;
+  `wave-admin set-password` legt weiter keinen Platzhalter-Wave an (`mayCreateWaves()`, nur noch
+  für diesen Shell-Pfad). Ein so angelegter Operator-Wave hat keine Abrechnungszeile, also keine
+  Platzgrenze und keine Pause.
 - **Ein selbst betriebener Wave hat keine Abrechnungszeile**, und für ihn gilt
   nichts davon: keine Grenze, keine Pause, kein Löschen.
 - **Der Token wird als Hash verglichen**, damit der Vergleich für jede Länge
@@ -1552,8 +1558,9 @@ eines Benutzers). Die ID ist dauerhaft (`ca_…`). Ein selbst betriebener Server
 
 - **Das Kontingent ist ein Modell, keine Spalte.** Es ist die Summe der
   `wave_billing.seats` der Waves des Kontos (`accountQuota()`): keine zweite Zahl, die von
-  dem abweichen könnte, was Stripe sagt. **Durchgesetzt wird es noch nicht** —
-  `ensureSeatFor()` zählt weiter je Wave.
+  dem abweichen könnte, was Stripe sagt. Durchgesetzt wird es konto-weit nur dort, wo ein Wave
+  keine eigene `wave_billing`-Zeile hat (siehe „Gratis-Konto und Tarifwechsel“); für Waves mit
+  Zeile zählt `ensureSeatFor()` wie bisher je Wave.
 - **Additiv.** Migration `0022_customer-accounts`: neue Tabelle und eine nullable
   Spalte `waves.account_id`, nichts an `waves`, `wave_billing`, `nodes`, Schlüsseln oder
   Prefixen geändert. `owner_user_id` kaskadiert (ein gelöschter Benutzer nimmt seine
@@ -1597,6 +1604,65 @@ eines Benutzers). Die ID ist dauerhaft (`ca_…`). Ein selbst betriebener Server
   `createNode()` — dem einen Weg für Pre-Auth-Key, Connector und Browser-Freigabe. Was ein Gerät
   ist, wie Anfragen die Wave wählen (`X-Wave-Id`) und warum `nodes` je Wave statt global
   eindeutig ist (Migration `0023`): [`docs/DEVICE-IDENTITY.md`](docs/DEVICE-IDENTITY.md).
+
+### Gratis-Konto und Tarifwechsel (Ticket #117, `billing/plan.ts`, `billing/free-account.ts`)
+
+**Der Tarif wird abgeleitet, nicht gespeichert** (`accountPlan()`): *bezahlt*, wenn das Konto ein
+nicht beendetes Konto-Abo hat (`account_subscriptions`) oder einer seiner Waves eine
+`wave_billing`-Zeile hat (auch eine beendete, wie bisher); sonst *Gratis*. Ein Abo, das endet,
+lässt das Konto deshalb in Gratis zurückfallen, ohne dass Waves, Schlüssel, Adressen, Geräte oder
+Verbindungen angefasst werden — die Grenzen sagen nur zu **Neuem** nein, was da ist, bleibt.
+
+- **Gratis-Grenzen je Konto, über alle Waves:** 3 Personen (verschiedene Benutzer plus offene
+  Einladungen an noch nicht beteiligte Adressen; eine Einladung an eine Adresse, die schon Mitglied
+  oder anderswo eingeladen ist, kostet nichts), 100 Geräte (`WAVE_FREE_DEVICE_LIMIT`, #116) und 3 Waves
+  (`WAVE_FREE_MAX_WAVES`). Geprüft in `ensureSeatFor()` (Personen, der eine Weg für `createInvite()`
+  und `wave-admin add-member`), `createNode()` (Geräte) und `createWaveForUser()` (Waves), jeweils
+  unter einer Sperre auf der Kontozeile. Sperrreihenfolge: Wave, dann Konto (wie `createNode`);
+  beim Anlegen: Adresse, Benutzerzeile, Konto.
+- **Bezahlte Konten:** keine Wave-Grenze außer der Serverkapazität (`507 no-capacity`), keine
+  Gerätegrenze. Personen: In einem Wave **ohne** eigene `wave_billing`-Zeile gilt konto-weit
+  - mit Konto-Abo: `seats` des Abos plus Summe der `wave_billing.seats` des Kontos, gezählt als
+    verschiedene Personen (wie Gratis);
+  - nur über `wave_billing` bezahlt: die Summe aller `seats` der Zeilen des Kontos, gezählt wie
+    `accountQuota()` (Mitgliedschaften plus offene Einladungen, eine Person in zwei Waves zählt
+    zweimal).
+  Für Waves **mit** Zeile bleibt `ensureSeatFor` je Wave unverändert, und `PUT
+  /api/billing/subscriptions/:id` verhält sich wie bisher.
+- **Gratis-Start:** nur mit bestätigter Adresse. Eigene, stabile Codes: `placeholder` (Konto
+  einer Zahlung, niemand hat die Adresse bewiesen), `unverified-email`, `email-domain`
+  (`WAVE_FREE_BLOCKED_EMAIL_DOMAINS`), `wave-limit`. `ensureAccountFor()` gibt demselben Benutzer
+  immer dasselbe Konto; dieselbe Pocket-ID-Identität ist derselbe Benutzer, weil `resolveUser()`
+  jede Anmeldung einer Identität unter einem Advisory-Lock (`identity:<provider>:<subject>`)
+  macht, bevor es die Adresse sperrt — zwei gleichzeitige Erstanmeldungen ergeben einen Benutzer,
+  nicht einen zweiten Gratis-Topf.
+- **Konten verknüpfen** (`moveAccounts()`, aufgerufen von `mergeAccounts` und `moveTo`): nie zwei
+  Gratis-Konten. Ein bezahltes Konto des zweiten geht unverändert zum ersten. Ein Gratis-Konto des
+  zweiten, wenn der erste schon eins hat: seine Waves gehen in das des ersten, **wenn** Waves,
+  Personen (der zweite Benutzer zählt als der erste) und Geräte (verschiedene Maschinen) zusammen in
+  die Grenzen passen, und die leere Kontozeile verschwindet. Passt es nicht, wird nichts
+  geschrieben (der Aufruf liegt vor allen anderen Schreibzugriffen der Verknüpfung), die Verknüpfung
+  endet mit `free-limits-waves|people|devices` und einer Meldung, welche Grenze es wäre — nie still
+  zusammengeführt. Das Verfahren steht in `test/free-accounts.test.ts` und `test/account-link.test.ts`.
+- **Missbrauchsschutz:** `POST /waves` zählt je Benutzer (10/Stunde) und je Peer-Adresse (20/Stunde)
+  mit der vorhandenen `LoginThrottle` (`hit()`, `retryAfterSeconds()`); jeder Versuch zählt, auch ein
+  abgelehnter. Nur auf gehosteten Servern. Antwort `429` mit `Retry-After` und, für Clients mit
+  `Accept: application/json`, `{"error":"rate-limited","retryAfter":<s>}`; Browser bekommen eine Seite
+  mit `data-error="rate-limited"`. Die Zähler leben im Prozess (wie beim Login).
+- **Audit und Log:** jede Entscheidung schreibt eine Logzeile `free-account.created|wave-created|denied`
+  (`key=value`, `billing/free-log.ts`); Gründe von `denied`: `placeholder`, `unverified-email`,
+  `email-domain`, `wave-limit`, `rate-limit`, `people-limit`, `device-limit`, `merge-limit`.
+  `created`/`wave-created` stehen zusätzlich im Audit-Log des neuen Waves (`free-account.created`,
+  Ziel = Konto-ID); ein `denied` hat keinen Wave, an dem es hängen könnte.
+- **Konto-Abo (Migration `0024_account-subscriptions`, additiv):** Tabelle `account_subscriptions`
+  (`subscription_id` unique, `account_id`, `seats`, `state`, `state_as_of`, `delete_after`,
+  Zeitstempel), ein partieller Unique-Index lässt je Konto höchstens ein nicht beendetes zu. Nichts
+  Bestehendes ändert sich; **das alte Control-Image läuft gegen dieses Schema weiter** (kein
+  `down`-Schritt, Tag zurück), `test/customer-accounts-rollback.test.ts` belegt es mit den
+  Anweisungen des alten Images, auch für das Löschen von Benutzer und Konto mit Konto-Abo-Zeilen
+  (Kaskade). Die Aufrufe, die die Seite dafür braucht: `docs/ACCOUNT-SUBSCRIPTIONS.md`. Die Seite
+  (`wave-mesh-site`) ruft den Endpunkt erst in einem Folgeticket; einen weiteren Schreibweg
+  (Operator-CLI, Oberfläche) gibt es nicht.
 
 Offen und nicht Teil davon: ein **eigener Control-Server je Geschäftskunde**
 (ein Eintrag in einer ArgoCD-ApplicationSet, daraus Namespace, Overlay,

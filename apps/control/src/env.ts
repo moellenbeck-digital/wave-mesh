@@ -2,6 +2,7 @@ import { Relay, UpdateChannel } from "@wave/proto";
 import { z } from "zod";
 import { LETSENCRYPT_STAGING } from "./acme/client.ts";
 import { DEFAULT_FREE_DEVICE_LIMIT } from "./billing/device-limit.ts";
+import { DEFAULT_FREE_MAX_WAVES, parseBlockedDomains } from "./billing/plan.ts";
 
 const EnvSchema = z.object({
   WAVE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -103,6 +104,19 @@ const EnvSchema = z.object({
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.coerce.number().int().min(1).default(DEFAULT_FREE_DEVICE_LIMIT),
   ),
+  /**
+   * How many waves a free hosted account may hold (billing/plan.ts). Empty is
+   * the default, not zero, for the same reason as above.
+   */
+  WAVE_FREE_MAX_WAVES: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(1).default(DEFAULT_FREE_MAX_WAVES),
+  ),
+  /**
+   * Comma-separated email domains (throwaway providers) that cannot start a
+   * free hosted account. Optional; empty blocks nothing.
+   */
+  WAVE_FREE_BLOCKED_EMAIL_DOMAINS: z.string().optional(),
   /** Password-free login for local development. Refused in production. */
   WAVE_DEV_AUTH: z
     .string()
@@ -172,6 +186,10 @@ export type Config = {
   billing?: { token: string; retentionDays: number };
   /** Distinct devices a free hosted account may register; see billing/device-limit.ts. */
   freeDeviceLimit: number;
+  /** Waves a free hosted account may hold; see billing/plan.ts. */
+  freeMaxWaves: number;
+  /** Lowercased domains that cannot start a free account. */
+  freeBlockedEmailDomains: string[];
   updates: {
     /** At least one; the first is the default. */
     channels: UpdateChannel[];
@@ -250,6 +268,8 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     secureCookies: raw.WAVE_BASE_URL.startsWith("https://"),
     billing: billingConfig(raw.WAVE_BILLING_TOKEN, raw.WAVE_BILLING_RETENTION_DAYS),
     freeDeviceLimit: raw.WAVE_FREE_DEVICE_LIMIT,
+    freeMaxWaves: raw.WAVE_FREE_MAX_WAVES,
+    freeBlockedEmailDomains: parseBlockedDomains(raw.WAVE_FREE_BLOCKED_EMAIL_DOMAINS),
     updates: {
       channels: parseUpdateChannels(raw.WAVE_UPDATE_CHANNELS),
       repo: raw.WAVE_UPDATE_REPO,

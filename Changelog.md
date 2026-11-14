@@ -6,6 +6,22 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Gratis-Start für gehostete Konten (#117):** Wer seine E-Mail-Adresse bestätigt hat, legt ohne
+  Zahlung ein Konto mit bis zu 3 Waves an. Das Konto entsteht mit dem ersten Wave. Ein kostenloses
+  Konto fasst höchstens 3 Personen (Mitglieder und offene Einladungen) und 100 Geräte über alle seine
+  Waves. Ein späteres Abo hebt die Grenzen an; eine Kündigung bringt das Konto zurück in den
+  Gratis-Tarif, ohne dass sich an Waves, Schlüsseln, Adressen oder Verbindungen etwas ändert.
+- **Waves ohne Stripe:** Wo Waves verkauft werden, entscheidet sich das Anlegen je Benutzer statt für
+  den ganzen Server. Unbestätigte Adressen, Platzhalter-Konten und gesperrte Wegwerf-Domains
+  bekommen eine eigene, verständliche Meldung.
+- **Konten verknüpfen:** Zwei Gratis-Konten werden nie zu zwei. Passen die Waves des zweiten in die
+  Grenzen des ersten, gehen sie dorthin; sonst bricht die Verknüpfung mit der Meldung ab, welche
+  Grenze überschritten würde. Es wird nichts geändert.
+- **Missbrauchsschutz:** Das Anlegen von Waves ist je Benutzer und je Adresse begrenzt (Antwort 429
+  mit Wartezeit). Jede Entscheidung steht im Log.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.7 (14.11.2026)
