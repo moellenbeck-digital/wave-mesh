@@ -118,10 +118,10 @@ const create = (jar: CookieJar, name: string, json = false) =>
 const accounts = () => db.select().from(customerAccounts);
 const waveRows = () => db.select().from(waves).orderBy(waves.name);
 
-let logs: ReturnType<typeof spyOn>;
+let logs: { mock: { calls: unknown[][] }; mockRestore: () => void };
 const logged = (): string[] => logs.mock.calls.map((call) => String(call[0]));
 beforeEach(() => {
-  logs?.mockRestore?.();
+  logs?.mockRestore();
   logs = spyOn(console, "log").mockImplementation(() => {});
 });
 

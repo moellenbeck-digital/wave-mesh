@@ -65,6 +65,11 @@ export interface Me {
    * an older server, which never refused -- so absent counts as true.
    */
   canCreateWave?: boolean;
+  /**
+   * Why not, when `canCreateWave` is false: `placeholder`, `unverified-email`,
+   * `email-domain` or `wave-limit` (with the limit). Missing from an older server.
+   */
+  waveCreation?: { allowed: boolean; reason: string | null; limit?: number };
 }
 
 export interface Member {

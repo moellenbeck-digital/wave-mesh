@@ -58,9 +58,25 @@ const en = {
   noWaveText:
     "No network has been set up for this account yet. A wave is not created on its own — you choose the domain the device names live under when you create it.",
   createWave: "Create wave",
-  noWaveBooked:
-    "On this server a wave is booked, not created. Ask the owner of a wave to invite you, or book one of your own.",
-  noWaveBookedTitle: "Waves come with a subscription",
+  noWaveBooked: "Ask the owner of a wave to invite you, or confirm your address and try again.",
+  noWaveBookedTitle: "You cannot create a wave here",
+  waveDenialTitle: (reason: string): string =>
+    ({
+      placeholder: "This account cannot create waves",
+      "unverified-email": "Confirm your address first",
+      "email-domain": "This address cannot start a free account",
+      "wave-limit": "Free limit reached",
+    })[reason] ?? "You cannot create a wave here",
+  waveDenialBody: (reason: string, limit: number): string =>
+    ({
+      placeholder:
+        "Nobody has confirmed the address of this account yet. Open the link that was mailed to it first.",
+      "unverified-email":
+        "Waves can only be created with a confirmed email address. Sign in with a provider that confirms addresses, or set a password through the link mailed to you.",
+      "email-domain":
+        "Addresses of this domain cannot start a free account. Use another address, or subscribe.",
+      "wave-limit": `A free account holds up to ${limit} waves. Delete one you no longer use, or subscribe to add more.`,
+    })[reason] ?? "Ask the owner of a wave to invite you.",
 
   // ---- login ----
   loginLead: "Your account is where you manage the devices in your wave.",
@@ -242,8 +258,25 @@ const de: typeof en = {
     "Für dieses Konto ist noch kein Netz eingerichtet. Ein Wave entsteht nicht von selbst — die Domain, unter der die Gerätenamen hängen, wählst du beim Anlegen.",
   createWave: "Wave anlegen",
   noWaveBooked:
-    "Auf diesem Server wird ein Wave gebucht, nicht angelegt. Lass dich vom Eigentümer eines Waves einladen oder buche einen eigenen.",
-  noWaveBookedTitle: "Waves gibt es mit einem Abo",
+    "Lass dich vom Eigentümer eines Waves einladen oder bestätige deine Adresse und versuche es dann erneut.",
+  noWaveBookedTitle: "Du kannst hier keinen Wave anlegen",
+  waveDenialTitle: (reason) =>
+    ({
+      placeholder: "Dieses Konto kann keine Waves anlegen",
+      "unverified-email": "Bestätige zuerst deine Adresse",
+      "email-domain": "Mit dieser Adresse geht kein kostenloses Konto",
+      "wave-limit": "Kostenlose Grenze erreicht",
+    })[reason] ?? "Du kannst hier keinen Wave anlegen",
+  waveDenialBody: (reason, limit) =>
+    ({
+      placeholder:
+        "Die Adresse dieses Kontos hat noch niemand bestätigt. Öffne zuerst den Link, der ihr geschickt wurde.",
+      "unverified-email":
+        "Waves legst du nur mit einer bestätigten E-Mail-Adresse an. Melde dich bei einem Anbieter an, der Adressen bestätigt, oder lege über den Link, der dir geschickt wurde, ein Passwort fest.",
+      "email-domain":
+        "Adressen dieser Domain können kein kostenloses Konto starten. Nimm eine andere Adresse oder schließe ein Abo ab.",
+      "wave-limit": `Ein kostenloses Konto fasst höchstens ${limit} Waves. Lösche einen, den du nicht mehr brauchst, oder schließe ein Abo ab.`,
+    })[reason] ?? "Lass dich vom Eigentümer eines Waves einladen.",
 
   loginLead: "Mit deinem Konto verwaltest du die Geräte in deinem Wave.",
   loginInvalid: "E-Mail oder Passwort stimmt nicht.",

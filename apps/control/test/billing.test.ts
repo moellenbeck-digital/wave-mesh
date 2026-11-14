@@ -849,7 +849,12 @@ describe("waves where they are sold", () => {
     expect(await waveCount()).toBe(2);
 
     const billed = (await db.select().from(waves).where(eq(waves.id, waveId)))[0];
-    const own = (await db.select().from(waves).where(eq(waves.ownerUserId, ben?.id ?? "")))[0];
+    const own = (
+      await db
+        .select()
+        .from(waves)
+        .where(eq(waves.ownerUserId, ben?.id ?? ""))
+    )[0];
     expect(own?.accountId).toBeTruthy();
     expect(own?.accountId).not.toBe(billed?.accountId ?? "");
     // The free wave has no billing row and the booked one keeps its row as it was.

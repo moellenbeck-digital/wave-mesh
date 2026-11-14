@@ -244,7 +244,7 @@ export function createApp({
       // instead of offering a form whose POST would be refused anyway. The code
       // says why (`placeholder`, `unverified-email`, `email-domain`, `wave-limit`).
       canCreateWave: denial === null,
-      waveCreation: { allowed: denial === null, reason: denial },
+      waveCreation: { allowed: denial === null, reason: denial, limit: creationPolicy.limits.waves },
     });
   });
 
