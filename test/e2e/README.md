@@ -128,6 +128,10 @@ drei Namespaces an einer Brücke:
   genau die Felder, die die Seite braucht), ein zweites Mal ist `created: false`.
 - Der Owner-Link setzt das Passwort, meldet an und bestätigt die Adresse; ein
   zweites Mal ist er weg (410), und neu gibt es keinen.
+- Auf dem Billing-Server legt eine bestätigte Adresse ein Gratis-Konto mit eigenem
+  Wave an (303, Rolle Owner); eine Adresse, die nie bestätigt wurde, bekommt 403
+  `unverified-email` (Ticket #117). Der Gratis-Wave hängt an einem anderen Konto und
+  berührt Plätze und Sweep des gekauften nicht.
 - Zwei Geräte treten bei und pingen sich. `suspended` leert die Netzkarte,
   kein Ping mehr, beide bleiben angemeldet; ein drittes Gerät kommt weder über
   den Browser (403 „This wave is paused") noch mit einem Pre-Auth-Key hinein.
@@ -146,11 +150,12 @@ drei Namespaces an einer Brücke:
 test/e2e/docker/run.sh billing.sh
 ```
 
-Sweep und Pre-Auth-Key gehen über zwei Test-Routen des E2E-Servers
-(`POST /__e2e/billing/sweep`, `POST /__e2e/auth-key?wave=…`): das Postgres
+Sweep, Pre-Auth-Key und die Sitzung einer unbestätigten Adresse gehen über drei
+Test-Routen des E2E-Servers (`POST /__e2e/billing/sweep`, `POST /__e2e/auth-key?wave=…`,
+`POST /__e2e/unverified-session?email=…`; der Dev-Login bestätigt jede Adresse): das Postgres
 lebt dort im Prozess, `wave-admin` kommt nicht heran, und auf den stündlichen
 Sweep zu warten ist keine Option. Der Server, den ein Deployment fährt, hat
-beide nicht.
+keine davon.
 
 ## `mobile-services.sh` — Dienste eines Clusters auf dem Telefon
 

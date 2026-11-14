@@ -6,6 +6,13 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Technisch
+
+- **E2E-Test `billing.sh` (#117, Nacharbeit):** Der Test erwartete noch, dass ein Konto auf einem
+  Billing-Server keinen eigenen Wave anlegen darf (403). Seit dem Gratis-Start darf das jede bestätigte
+  Adresse. Der Test prüft jetzt stattdessen: eine bestätigte Adresse legt ein Gratis-Konto mit Wave an,
+  eine unbestätigte bekommt 403 `unverified-email`. Das Verhalten der Anwendung ist unverändert.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.8 (14.11.2026)
