@@ -66,12 +66,12 @@ export default async function ChooseWavePage({
               </div>
             </>
           ) : (
-            waves.map((wave, index) => (
+            waves.map((wave) => (
               <label
                 key={wave.id}
                 className="flex cursor-pointer items-center gap-3 rounded-lg border border-line p-4"
               >
-                <input type="radio" name="wave" value={wave.id} defaultChecked={index === 0} required />
+                <input type="radio" name="wave" value={wave.id} required />
                 <span className="min-w-0">
                   <span className="block truncate font-medium text-navy text-body-sm">{wave.name}</span>
                   <span className="block truncate font-mono text-caption text-slate">{wave.dnsSuffix}</span>

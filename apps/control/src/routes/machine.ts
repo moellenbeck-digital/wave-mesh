@@ -439,8 +439,8 @@ export function machineRoutes({
       ? html`<input type="hidden" name="wave" value="${only.id}" />
           <p>${raw(m.willJoinHtml(only.name))}</p>`
       : html`${candidates.map(
-          (wave, index) => html`<label>
-            <input type="radio" name="wave" value="${wave.id}" ${index === 0 ? raw("checked") : ""} />
+          (wave) => html`<label>
+            <input type="radio" name="wave" value="${wave.id}" required />
             ${wave.name}
           </label><br />`,
         )}`;
