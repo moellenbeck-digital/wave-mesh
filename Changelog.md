@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.10 (14.11.2026)
+
 ### Neue Funktionen
 
 - **Mehr Platz für Gratis-Waves (#118):** Neue Gratis-Waves bekommen ein kleineres Adressnetz (`/24`,
