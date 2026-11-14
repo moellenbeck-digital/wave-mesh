@@ -52,7 +52,15 @@ export default async function NewWavePage({
           </p>
         ) : null}
         <p className="mt-3 text-body-sm text-slate" data-error={reason ?? undefined}>
-          {reason ? t.waveDenialBody(reason, me.waveCreation?.limit ?? 3) : t.noWaveBooked}
+          {reason
+            ? rich(t.waveDenialBody(reason, me.waveCreation?.limit ?? 3, me.account?.usage?.waves), {
+                upgrade: (
+                  <a href="/account#plan" className="text-accent">
+                    /account#plan
+                  </a>
+                ),
+              })
+            : t.noWaveBooked}
         </p>
       </div>
     );

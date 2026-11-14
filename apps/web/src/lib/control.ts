@@ -129,6 +129,12 @@ export interface Membership {
   userId?: string;
   members: Member[];
   invites: WaveInvite[];
+  /**
+   * What the account this wave belongs to holds against its plan: the numbers
+   * for the invitation hint. Only from a hosted server and for a wave with an
+   * account; missing from a self-hosted one and from an older control server.
+   */
+  account?: Pick<AccountPlanView, "plan" | "limits" | "usage">;
 }
 
 /** What the invited person is being offered, before they are signed in. */

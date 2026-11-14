@@ -125,6 +125,46 @@ describe("the plan block", () => {
     expect(text(de)).toContain("Es wird nichts entfernt");
   });
 
+  test("each tile reads 'used of allowed', and the free note names the same numbers as the API", async () => {
+    const tree = await AccountUsage({ plan: free({ usage: { waves: 3, people: 2, devices: 41 } }) });
+    const usage = attr(tree, "data-usage").map((e) => text(e));
+    expect(usage[0]).toBe("Waves3 of 3 used");
+    expect(usage[1]).toBe("People2 of 3 used");
+    expect(usage[2]).toBe("Devices41 of 100 used");
+    const all = text(tree);
+    expect(all).toContain("Free means 3 waves, 3 people and 100 devices across all waves of the account");
+    expect(all).toContain("An open invitation reserves a place");
+    expect(all).toContain("counts once");
+    expect(attr(tree, "data-counting")).toHaveLength(1);
+
+    locale = "de";
+    const de = await AccountUsage({ plan: free({ usage: { waves: 3, people: 2, devices: 41 } }) });
+    const deUsage = attr(de, "data-usage").map((e) => text(e));
+    expect(deUsage[1]).toBe("Personen2 von 3 belegt");
+    expect(deUsage[2]).toBe("Geräte41 von 100 belegt");
+    expect(text(de)).toContain("Gratis heißt 3 Waves, 3 Personen und 100 Geräte über alle Waves des Kontos");
+    expect(text(de)).toContain("zählt einmal");
+  });
+
+  test("the numbers are the limits the server sent, not constants of the page", async () => {
+    const tree = await AccountUsage({
+      plan: free({ limits: { waves: 1, people: 2, devices: 5 }, usage: { waves: 1, people: 1, devices: 0 } }),
+    });
+    expect(text(tree)).toContain("Free means 1 waves, 2 people and 5 devices");
+    expect(attr(tree, "data-usage").map((e) => text(e))[2]).toBe("Devices0 of 5 used");
+  });
+
+  test("a paid account has no counting note: its seats are what limits people", async () => {
+    const paid = free({
+      plan: "paid",
+      limits: { waves: null, people: 10, devices: null },
+      usage: { waves: 7, people: 4, devices: 300 },
+    });
+    const tree = await AccountUsage({ plan: paid });
+    expect(attr(tree, "data-counting")).toHaveLength(0);
+    expect(attr(tree, "data-usage").map((e) => text(e))[0]).toBe("Waves7 used, no limit");
+  });
+
   test("nothing for a server that sends no plan", async () => {
     expect(await AccountUsage({ plan: undefined })).toBeNull();
   });
