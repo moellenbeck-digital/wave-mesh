@@ -26,6 +26,7 @@ import {
 } from "./auth/session.ts";
 import { creationPolicyOf, waveCreationDenial } from "./billing/free-account.ts";
 import { sweepEndedWaves } from "./billing/subscriptions.ts";
+import { accountOverviewOf } from "./billing/usage.ts";
 import { CertificateService } from "./certs/issue.ts";
 import type { Database } from "./db/client.ts";
 import { waveMembers, waves } from "./db/schema.ts";
@@ -226,7 +227,14 @@ export function createApp({
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, name: user.name },
       // Which logins this account has, and whether the guided link of a split-off
       // account is on offer (a provider that did not vouch for the address).
-      account: await accountView(db, user, providers),
+      //
+      // On a hosted server it also carries the customer account's plan, limits,
+      // usage and overhang (ticket #117): what the owner holds against what the
+      // plan allows. Absent on a self-hosted server.
+      account: {
+        ...(await accountView(db, user, providers)),
+        ...(creationPolicy.hosted ? await accountOverviewOf(db, user.id, creationPolicy.limits) : {}),
+      },
       waves: await wavesOf(db, user.id),
       // Why an account can sit here without a wave of its own: it was invited
       // into someone else's and has not opened the link yet. Without this the

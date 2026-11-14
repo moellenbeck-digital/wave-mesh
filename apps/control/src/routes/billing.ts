@@ -1,12 +1,16 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { html } from "hono/html";
 import { z } from "zod";
 import { createSession, setSessionCookie } from "../auth/session.ts";
 import { applyAccountSubscription } from "../billing/account-subscriptions.ts";
+import { freeLimitsOf } from "../billing/plan.ts";
 import { loadSetup, ownerAccess, redeemSetup } from "../billing/setup-links.ts";
 import { applySubscription, billedWave, NoCapacityError } from "../billing/subscriptions.ts";
+import { downgradeCheck } from "../billing/usage.ts";
 import type { Database } from "../db/client.ts";
+import { customerAccounts } from "../db/schema.ts";
 import type { Config } from "../env.ts";
 import { localeOf } from "../i18n.ts";
 import type { NetmapHub } from "./control-ws.ts";
@@ -157,6 +161,26 @@ export function billingRoutes({ db, config, hub }: BillingRouteDeps) {
     if (result.kind === "ended") return c.json({ error: "ended" }, 409);
     if (result.kind === "conflict") return c.json({ error: result.reason }, 409);
     return c.json(result.view);
+  });
+
+  /**
+   * May this account go back to free as it is? (ticket #117, Nacharbeit)
+   *
+   * What the site asks before it lets a customer cancel: the answer is judged
+   * against the *free* limits whatever the account's plan is now, with the
+   * numbers behind it. Read-only; cancelling stays the site's decision and
+   * deletes nothing here. `404 {"error":"unknown-account"}` for an id that is
+   * no customer account.
+   */
+  app.get("/api/billing/accounts/:accountId/downgrade-check", async (c) => {
+    const accountId = c.req.param("accountId");
+    const [account] = await db
+      .select({ id: customerAccounts.id })
+      .from(customerAccounts)
+      .where(eq(customerAccounts.id, accountId))
+      .limit(1);
+    if (!account) return c.json({ error: "unknown-account" }, 404);
+    return c.json(await downgradeCheck(db, accountId, freeLimitsOf(config)));
   });
 
   app.post("/api/billing/subscriptions/:subscriptionId/owner-link", async (c) => {
