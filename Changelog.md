@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.12 (14.11.2026)
+
 ### Fehlerbehebungen
 
 - **Personengrenze im Gratis-Konto lückenlos (#115):** Die Grenze von drei Personen gilt jetzt zentral für jedes
