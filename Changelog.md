@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.8 (14.11.2026)
+
 ### Neue Funktionen
 
 - **Gratis-Start für gehostete Konten (#117):** Wer seine E-Mail-Adresse bestätigt hat, legt ohne
