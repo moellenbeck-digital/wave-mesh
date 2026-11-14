@@ -3,6 +3,13 @@ import { z } from "zod";
 import { LETSENCRYPT_STAGING } from "./acme/client.ts";
 import { DEFAULT_FREE_DEVICE_LIMIT } from "./billing/device-limit.ts";
 import { DEFAULT_FREE_MAX_WAVES, parseBlockedDomains } from "./billing/plan.ts";
+import { parseIpv4Cidr, RESOLVER_OFFSET, usableAddresses } from "./net/addressing.ts";
+
+/** Free waves get a /24 unless WAVE_FREE_IPV4_PREFIX_LENGTH says otherwise. */
+export const DEFAULT_FREE_IPV4_PREFIX_LENGTH = 24;
+
+/** /16 blocks kept free for billed waves: 4 of the 64 in the default container. */
+export const DEFAULT_CAPACITY_RESERVE = 4;
 
 const EnvSchema = z.object({
   WAVE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -113,6 +120,24 @@ const EnvSchema = z.object({
     z.coerce.number().int().min(1).default(DEFAULT_FREE_MAX_WAVES),
   ),
   /**
+   * Prefix length of the address block a new **free** wave gets (ticket #118).
+   * Billed waves stay /16. Existing waves are never renumbered. Checked at
+   * start against WAVE_FREE_DEVICE_LIMIT (see checkFreePrefixLength).
+   */
+  WAVE_FREE_IPV4_PREFIX_LENGTH: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(16).max(30).default(DEFAULT_FREE_IPV4_PREFIX_LENGTH),
+  ),
+  /**
+   * How many whole /16 blocks must stay free in the container after a free
+   * wave is numbered. Below it a free sign-up is refused (the paying customer
+   * still gets a block) and every new wave logs a warning. 0 turns it off.
+   */
+  WAVE_CAPACITY_RESERVE: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(0).default(DEFAULT_CAPACITY_RESERVE),
+  ),
+  /**
    * Comma-separated email domains (throwaway providers) that cannot start a
    * free hosted account. Optional; empty blocks nothing.
    */
@@ -190,6 +215,10 @@ export type Config = {
   freeMaxWaves: number;
   /** Lowercased domains that cannot start a free account. */
   freeBlockedEmailDomains: string[];
+  /** Prefix length of the block a new free wave gets; billed waves are /16. */
+  freeIpv4PrefixLength: number;
+  /** Whole /16 blocks that stay free for billed waves; see WAVE_CAPACITY_RESERVE. */
+  capacityReserve: number;
   updates: {
     /** At least one; the first is the default. */
     channels: UpdateChannel[];
@@ -221,6 +250,35 @@ export function parseUpdateChannels(value: string): UpdateChannel[] {
   return channels;
 }
 
+/**
+ * Refused at start: a block that cannot hold the devices a free account may
+ * register, or cannot spare the resolver's address, would hand out waves that
+ * break only once somebody uses them.
+ */
+export function checkFreePrefixLength(prefixLength: number, deviceLimit: number, container: string): void {
+  const name = `WAVE_FREE_IPV4_PREFIX_LENGTH=${prefixLength}`;
+  const { usable, resolverFits } = usableAddresses(prefixLength);
+  if (!resolverFits) {
+    throw new Error(
+      `${name} is too small: a /${prefixLength} cannot hold the wave's resolver address (offset ${RESOLVER_OFFSET}); use /26 or larger`,
+    );
+  }
+  if (usable < deviceLimit) {
+    throw new Error(
+      `${name} is too small: it leaves ${usable} usable addresses (without network, broadcast and resolver address), WAVE_FREE_DEVICE_LIMIT=${deviceLimit} needs at least that many`,
+    );
+  }
+  let size: number;
+  try {
+    size = parseIpv4Cidr(container).size;
+  } catch {
+    return; // not ours to judge here; the allocator says so when it is used
+  }
+  if (2 ** (32 - prefixLength) > size) {
+    throw new Error(`${name} does not fit inside WAVE_IPV4_CONTAINER=${container}`);
+  }
+}
+
 export function loadConfig(source: Record<string, string | undefined> = process.env): Config {
   const raw = EnvSchema.parse(source);
   const google =
@@ -235,6 +293,12 @@ export function loadConfig(source: Record<string, string | undefined> = process.
   if (raw.WAVE_ENV === "production" && !raw.WAVE_NETMAP_SIGNING_KEY) {
     throw new Error("WAVE_NETMAP_SIGNING_KEY is required in production; clients pin it to verify netmaps");
   }
+
+  checkFreePrefixLength(
+    raw.WAVE_FREE_IPV4_PREFIX_LENGTH,
+    raw.WAVE_FREE_DEVICE_LIMIT,
+    raw.WAVE_IPV4_CONTAINER,
+  );
 
   const relays = raw.WAVE_RELAYS ? z.array(Relay).parse(JSON.parse(raw.WAVE_RELAYS)) : [];
 
@@ -270,6 +334,8 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     freeDeviceLimit: raw.WAVE_FREE_DEVICE_LIMIT,
     freeMaxWaves: raw.WAVE_FREE_MAX_WAVES,
     freeBlockedEmailDomains: parseBlockedDomains(raw.WAVE_FREE_BLOCKED_EMAIL_DOMAINS),
+    freeIpv4PrefixLength: raw.WAVE_FREE_IPV4_PREFIX_LENGTH,
+    capacityReserve: raw.WAVE_CAPACITY_RESERVE,
     updates: {
       channels: parseUpdateChannels(raw.WAVE_UPDATE_CHANNELS),
       repo: raw.WAVE_UPDATE_REPO,

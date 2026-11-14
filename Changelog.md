@@ -6,6 +6,22 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Mehr Platz für Gratis-Waves (#118):** Neue Gratis-Waves bekommen ein kleineres Adressnetz (`/24`,
+  einstellbar mit `WAVE_FREE_IPV4_PREFIX_LENGTH`), neue abgerechnete Waves behalten ein `/16`. So passen
+  deutlich mehr Waves auf einen Control-Server. Bestehende Waves, Geräteadressen, Namen und Tunnel
+  bleiben unverändert.
+- **Kapazitätsbericht:** `wave-admin capacity` zeigt belegte und freie Adressblöcke je Größe. Eine
+  Reserve ganzer `/16` für abgerechnete Waves (`WAVE_CAPACITY_RESERVE`, Standard 4) bleibt frei; wird
+  sie unterschritten, steht eine Warnung im Log und neue Gratis-Anmeldungen werden mit der Meldung
+  „keine Wave-Kapazität“ abgelehnt, ohne dass ein Konto ohne Wave entsteht.
+
+### Technisch
+
+- Die Adressvergabe behandelt gemischte Blockgrößen und läuft serialisiert, sodass parallele
+  Anlagen nie überlappende Netze erzeugen.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.9 (14.11.2026)

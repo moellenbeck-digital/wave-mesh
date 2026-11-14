@@ -179,6 +179,11 @@ wave up
 
 - IPv4: `10.64.0.0/10`, **pro Wave ein `/16`**, pro Node ein `/32`. Das ergibt
   64 Waves je Control-Server zu je 65 534 Nodes.
+  Seit #118 bekommen neue Gratis-Waves ein `/24` (`WAVE_FREE_IPV4_PREFIX_LENGTH`), abgerechnete
+  bleiben `/16`; bestehende Präfixe ändern sich nicht. Reverse-DNS bleibt auf den `/16`-Zonen:
+  ein Wave beantwortet PTR nur aus eigenen Records, Adressen anderer Waves im selben `/16` ergeben
+  NXDOMAIN. Bekannte Grenze: ein Gerät in zwei Waves desselben `/16` bekommt für die Adressen des
+  zweiten NXDOMAIN statt Weiterleitung (Fix später: signiertes Präfix im Netmap).
 - **Nicht CGNAT (`100.64.0.0/10`), so verlockend es ist.** Wo ein anderes
   Mesh-VPN läuft, *benutzt* es diesen Bereich unter Umständen nicht nur, es
   setzt eine Firewall-Regel,

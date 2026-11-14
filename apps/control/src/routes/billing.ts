@@ -95,6 +95,7 @@ export function billingRoutes({ db, config, hub }: BillingRouteDeps) {
       result = await applySubscription(db, subscriptionId, parsed.data, {
         retentionDays: billing?.retentionDays,
         container: config.ipv4Container,
+        capacityReserve: config.capacityReserve,
       });
     } catch (error) {
       // An address that is none is the caller's mistake; anything else is ours

@@ -2,7 +2,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { nodes, users, waveBilling, waveMembers, wavePiers, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
-import { allocatePrefix } from "../net/addressing.ts";
+import { allocatePrefix, ContainerFullError, freeBlocks } from "../net/addressing.ts";
 import { invitesFor } from "./invites.ts";
 import { type FoundWave, isAmbiguous, resolveWave } from "./lookup.ts";
 import { findPierHost, pierZone } from "./piers.ts";
@@ -30,12 +30,16 @@ import { findPierHost, pierZone } from "./piers.ts";
 export const IPV4_CONTAINER = "10.64.0.0/10";
 
 /**
- * /16 per wave: 65 534 nodes in a wave, 64 waves on a server. Changing it later
- * means renumbering every wave but the first, so it is not a knob to turn
- * lightly -- if the number of waves ever matters more than their size, a /20
- * would give 1024 waves of 4094 nodes.
+ * /16 for a **billed** wave: 65 534 nodes in a wave, 64 waves on a server.
+ * Changing it for existing waves means renumbering them, which is not done;
+ * what grows the number of waves is the smaller block of the free ones
+ * (WAVE_FREE_IPV4_PREFIX_LENGTH, a /24 by default: 16 384 free waves of 253
+ * devices in the default container). The allocator numbers the two sizes from
+ * opposite ends of the container so the small ones do not break up the /16s
+ * (see `allocatePrefix`). Billed waves keep this length whatever the free ones
+ * use.
  */
-const IPV4_PREFIX_LENGTH = 16;
+export const IPV4_PREFIX_LENGTH = 16;
 
 /** Random ULA /48 per wave, so addresses stay distinct if two are ever bridged. */
 function randomIpv6Prefix(): string {
@@ -197,6 +201,28 @@ export async function waveSetup(
 export type WaveCreation = { waveId: string } | { conflict: "suffix" };
 
 /**
+ * How much of the container must stay free for billed waves: `blocks` whole
+ * /16s after the new wave is numbered. `enforce` refuses the wave that would
+ * go below it (a free sign-up); without it the wave is made and a warning
+ * goes to the log (a customer who has paid, the operator's shell).
+ */
+export interface CapacityReserve {
+  blocks: number;
+  enforce: boolean;
+}
+
+/** The container is not full, but what is left is held back for billed waves. */
+export class CapacityReserveError extends ContainerFullError {
+  constructor(message: string) {
+    super(message);
+    this.name = "CapacityReserveError";
+  }
+}
+
+/** One lock for every numbering of a wave: see `createWave`. */
+const PREFIX_LOCK = "wave-ipv4-prefix-allocation";
+
+/**
  * Creates a wave with the name and DNS suffix its owner chose.
  *
  * The suffix is what every node name in the wave hangs under, so it is asked
@@ -204,39 +230,64 @@ export type WaveCreation = { waveId: string } | { conflict: "suffix" };
  * to sit under a publicly registered domain (D6/D7), and renaming a zone later
  * renames every device in it. The placeholder under `wave.internal` is only
  * the answer for someone who does not have a domain yet.
+ *
+ * Choosing the block and inserting the wave happen under one advisory lock,
+ * taken last and held to the end of the surrounding transaction. The unique
+ * index on `ipv4_prefix` only stops two identical blocks; a /24 inside a /16
+ * another request has just taken is a different string and would be accepted,
+ * two waves with overlapping addresses. The lock makes the second request wait
+ * until the first is committed and then read its block. Ordinary Postgres and
+ * PGlite both have `pg_advisory_xact_lock`. Callers already in a transaction
+ * keep the lock until it ends -- that is the point, so they must not take
+ * another lock afterwards that a creator may hold while waiting for this one.
  */
 export async function createWave(
   db: Database,
-  input: { userId: string; name: string; dnsSuffix: string; container?: string; accountId?: string },
+  input: {
+    userId: string;
+    name: string;
+    dnsSuffix: string;
+    container?: string;
+    accountId?: string;
+    /** Block size; billed waves' /16 unless the caller says it is a free one. */
+    prefixLength?: number;
+    reserve?: CapacityReserve;
+  },
 ): Promise<WaveCreation> {
   const waveId = newId("w");
   const container = input.container ?? IPV4_CONTAINER;
+  const prefixLength = input.prefixLength ?? IPV4_PREFIX_LENGTH;
 
-  // The prefix is re-read on every attempt: two waves created at once would
-  // otherwise pick the same free block, and the unique index -- not the query
-  // -- is what settles it. That race is worth retrying; a taken suffix is not,
-  // because it never comes free by trying again. So the two are told apart
-  // rather than both being retried into a misleading error.
+  // The prefix is read again on every attempt, under the lock. What the loop
+  // is still for is the other conflict, a name or suffix somebody else just
+  // took: the insert says so by returning nothing, and a taken suffix never
+  // comes free by trying again, so the two are told apart rather than both
+  // being retried into a misleading error.
   for (let attempt = 0; attempt < 5; attempt++) {
-    const inserted = await db
-      .insert(waves)
-      .values({
-        id: waveId,
-        name: input.name,
-        dnsSuffix: input.dnsSuffix,
-        ownerUserId: input.userId,
-        // Only a billed wave has a customer account; a self-hosted one never does.
-        ...(input.accountId ? { accountId: input.accountId } : {}),
-        ipv4Prefix: await allocateWavePrefix(db, container),
-        ipv6Prefix: randomIpv6Prefix(),
-      })
-      .onConflictDoNothing()
-      .returning({ id: waves.id });
+    const inserted = await db.transaction(async (tx) => {
+      const t = tx as unknown as Database;
+      await t.execute(sql`select pg_advisory_xact_lock(hashtext(${PREFIX_LOCK}))`);
+      const made = await t
+        .insert(waves)
+        .values({
+          id: waveId,
+          name: input.name,
+          dnsSuffix: input.dnsSuffix,
+          ownerUserId: input.userId,
+          // Only a billed wave has a customer account; a self-hosted one never does.
+          ...(input.accountId ? { accountId: input.accountId } : {}),
+          ipv4Prefix: await allocateWavePrefix(t, container, prefixLength, input.reserve),
+          ipv6Prefix: randomIpv6Prefix(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: waves.id });
+      if (made[0]) {
+        await t.insert(waveMembers).values({ waveId, userId: input.userId, role: "owner" });
+      }
+      return made[0];
+    });
 
-    if (inserted[0]) {
-      await db.insert(waveMembers).values({ waveId, userId: input.userId, role: "owner" });
-      return { waveId };
-    }
+    if (inserted) return { waveId };
     if (await suffixTaken(db, input.dnsSuffix)) return { conflict: "suffix" };
   }
   throw new Error(`could not allocate a prefix for ${input.name} in ${container}`);
@@ -295,14 +346,28 @@ export async function ensureWaveForUser(
   throw new Error("could not allocate a unique wave name");
 }
 
-/** The lowest block of the given range no wave holds yet. */
-async function allocateWavePrefix(db: Database, container: string): Promise<string> {
-  const held = await db.select({ prefix: waves.ipv4Prefix }).from(waves);
-  return allocatePrefix(
-    container,
-    IPV4_PREFIX_LENGTH,
-    held.map((row) => row.prefix),
-  );
+/**
+ * A block of the given size no wave overlaps, and -- when asked -- whether
+ * enough whole /16s stay free behind it. Called with the prefix lock held.
+ */
+async function allocateWavePrefix(
+  db: Database,
+  container: string,
+  prefixLength: number,
+  reserve?: CapacityReserve,
+): Promise<string> {
+  const held = (await db.select({ prefix: waves.ipv4Prefix }).from(waves)).map((row) => row.prefix);
+  const prefix = allocatePrefix(container, prefixLength, held);
+  if (!reserve || reserve.blocks <= 0) return prefix;
+
+  const left = freeBlocks(container, IPV4_PREFIX_LENGTH, [...held, prefix]);
+  // A container smaller than one billed block has nothing to reserve.
+  if (left >= reserve.blocks || freeBlocks(container, IPV4_PREFIX_LENGTH, []) === 0) return prefix;
+
+  const detail = `${left} whole /${IPV4_PREFIX_LENGTH} blocks of ${container} would be left after ${prefix}, the reserve is ${reserve.blocks}`;
+  console.warn(`waves: capacity below reserve: ${detail}`);
+  if (reserve.enforce) throw new CapacityReserveError(`address reserve reached: ${detail}`);
+  return prefix;
 }
 
 /**

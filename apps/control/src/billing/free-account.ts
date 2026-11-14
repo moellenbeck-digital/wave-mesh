@@ -2,8 +2,9 @@ import { eq } from "drizzle-orm";
 import { lockAddress } from "../auth/address-lock.ts";
 import type { Database } from "../db/client.ts";
 import { users } from "../db/schema.ts";
+import { DEFAULT_CAPACITY_RESERVE, DEFAULT_FREE_IPV4_PREFIX_LENGTH } from "../env.ts";
 import { ContainerFullError } from "../net/addressing.ts";
-import { createWave, type WaveCreation } from "../waves/provision.ts";
+import { createWave, IPV4_PREFIX_LENGTH, type WaveCreation } from "../waves/provision.ts";
 import { ensureAccountFor, oldestAccountOf } from "./accounts.ts";
 import {
   accountPlan,
@@ -35,6 +36,10 @@ export interface CreationPolicy {
   limits: FreeLimits;
   /** Lowercased domains that cannot start a free account. */
   blockedDomains: string[];
+  /** Prefix length of the block a free wave gets (billed waves: /16). */
+  freePrefixLength: number;
+  /** Whole /16s that stay free after a free wave is numbered; 0 is off. */
+  capacityReserve: number;
 }
 
 export const creationPolicyOf = (config: {
@@ -42,10 +47,14 @@ export const creationPolicyOf = (config: {
   freeMaxWaves: number;
   freeDeviceLimit: number;
   freeBlockedEmailDomains: string[];
+  freeIpv4PrefixLength?: number;
+  capacityReserve?: number;
 }): CreationPolicy => ({
   hosted: Boolean(config.billing),
   limits: freeLimitsOf(config),
   blockedDomains: config.freeBlockedEmailDomains,
+  freePrefixLength: config.freeIpv4PrefixLength ?? DEFAULT_FREE_IPV4_PREFIX_LENGTH,
+  capacityReserve: config.capacityReserve ?? DEFAULT_CAPACITY_RESERVE,
 });
 
 /**
@@ -128,9 +137,13 @@ export async function waveCreationDenial(
   return (await evaluate(db, policy, userId, false)).denial;
 }
 
-/** No address block is left for another wave on this server. */
+/**
+ * No address block is left for another wave on this server -- or, for a free
+ * one, what is left is the reserve held back for billed waves. `detail` says
+ * which, for the log; the message the person sees does not change.
+ */
 export class NoWaveCapacityError extends Error {
-  constructor() {
+  constructor(readonly detail?: string) {
     super("no address block left for another wave");
     this.name = "NoWaveCapacityError";
   }
@@ -149,7 +162,8 @@ export type WaveCreationForUser =
  * time, and the same Pocket-ID identity is the same user, so one person never
  * gets a second free pot: the locks (address, then the user's row, then the
  * account's) make two simultaneous requests one after the other. Throws
- * `NoWaveCapacityError` when every address block is taken (507).
+ * `NoWaveCapacityError` when every address block is taken, or when a free wave
+ * would leave fewer than the reserve of whole /16s for billed ones (507).
  */
 export async function createWaveForUser(
   db: Database,
@@ -157,7 +171,11 @@ export async function createWaveForUser(
   input: { userId: string; name: string; dnsSuffix: string; container?: string },
 ): Promise<WaveCreationForUser> {
   if (!policy.hosted) {
-    const made = await createWaveChecked(db, { ...input });
+    // Self-hosted: nobody is refused, the log is told when the container runs low.
+    const made = await createWaveChecked(db, {
+      ...input,
+      reserve: { blocks: policy.capacityReserve, enforce: false },
+    });
     return "conflict" in made
       ? { kind: "conflict", conflict: "suffix" }
       : { kind: "created", waveId: made.waveId, accountId: null, newAccount: false, free: false };
@@ -171,7 +189,16 @@ export async function createWaveForUser(
 
       const newAccount = decided.accountId === null;
       const accountId = decided.accountId ?? (await ensureAccountFor(t, input.userId));
-      const made = await createWaveChecked(t, { ...input, accountId });
+      // A free wave gets the small block and may not eat into the reserve held
+      // back for billed ones; the check runs under the allocation lock in
+      // createWave(), so two sign-ups at the limit cannot both pass. A throw
+      // rolls back the account made above: no account without a wave.
+      const made = await createWaveChecked(t, {
+        ...input,
+        accountId,
+        prefixLength: decided.free ? policy.freePrefixLength : IPV4_PREFIX_LENGTH,
+        reserve: { blocks: policy.capacityReserve, enforce: decided.free },
+      });
       if ("conflict" in made) {
         // The transaction is not rolled back by returning, so a new account must not stay behind.
         if (newAccount) throw new SuffixTaken();
@@ -189,7 +216,7 @@ class SuffixTaken extends Error {}
 
 async function createWaveChecked(
   db: Database,
-  input: { userId: string; name: string; dnsSuffix: string; container?: string; accountId?: string },
+  input: Parameters<typeof createWave>[1],
 ): Promise<WaveCreation> {
   try {
     return await createWave(db, input);
@@ -198,7 +225,7 @@ async function createWaveChecked(
       error instanceof ContainerFullError ||
       (error instanceof Error && error.message.startsWith("could not allocate a prefix"))
     ) {
-      throw new NoWaveCapacityError();
+      throw new NoWaveCapacityError(error.message);
     }
     throw error;
   }

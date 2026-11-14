@@ -340,7 +340,9 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
     } catch (error) {
       if (error instanceof NoWaveCapacityError) {
         // Loud, like the billing API: nothing a retry changes.
-        console.error(`waves: NO CAPACITY: every address block is taken, ${user.id} got no wave`);
+        console.error(
+          `waves: NO CAPACITY: ${user.id} got no wave (${error.detail ?? "every address block is taken"})`,
+        );
         return creationRefusal(c, "no-capacity");
       }
       throw error;

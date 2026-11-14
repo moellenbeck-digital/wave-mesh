@@ -1,5 +1,6 @@
 import type { Locale, Messages } from "@wave/i18n";
 import type { Counts, ProblemReason } from "./billing/migrate-accounts.ts";
+import type { ServerCapacity } from "./net/capacity.ts";
 
 /**
  * What `wave-admin` says, in the language of the machine it runs on.
@@ -203,6 +204,19 @@ a device put names through it, deny-pier takes its names back.`,
       `  wave_billing                  ${c.waveBilling}`,
       `  customer accounts             ${c.customerAccounts}`,
       `  waves without account         ${c.wavesWithoutAccount} (booked ones: ${c.billedWavesWithoutAccount})`,
+    ].join("\n"),
+  capacity: (c: ServerCapacity) =>
+    [
+      `address container ${c.container}: ${(c.usedShare * 100).toFixed(2)}% taken (${c.usedAddresses} of ${c.totalAddresses} addresses)`,
+      "blocks held:",
+      ...(c.used.length === 0 ? ["  none"] : c.used.map((e) => `  /${e.prefixLength}: ${e.blocks}`)),
+      "blocks still free (not additive: a free /16 is also 256 free /24s):",
+      ...c.free.map((e) => `  /${e.prefixLength}: ${e.blocks} of ${e.total}`),
+      `reserve for billed waves: ${c.reserve.blocks} whole /16 -- ${c.reserve.free} free now`,
+      ...(c.outside > 0 ? [`${c.outside} wave(s) lie outside the container and are not counted`] : []),
+      c.reserve.below
+        ? "BELOW RESERVE: free sign-ups are refused until blocks are freed or WAVE_IPV4_CONTAINER is enlarged"
+        : "reserve holds",
     ].join("\n"),
   migrateBefore: "before",
   migrateAfter: "after",
@@ -425,6 +439,21 @@ allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie
       `  wave_billing                  ${c.waveBilling}`,
       `  Kundenkonten                  ${c.customerAccounts}`,
       `  Waves ohne Konto              ${c.wavesWithoutAccount} (davon gebucht: ${c.billedWavesWithoutAccount})`,
+    ].join("\n"),
+  capacity: (c) =>
+    [
+      `Adresscontainer ${c.container}: ${(c.usedShare * 100).toFixed(2)} % belegt (${c.usedAddresses} von ${c.totalAddresses} Adressen)`,
+      "Belegte Blöcke:",
+      ...(c.used.length === 0 ? ["  keine"] : c.used.map((e) => `  /${e.prefixLength}: ${e.blocks}`)),
+      "Noch freie Blöcke (nicht addierbar: ein freies /16 sind auch 256 freie /24):",
+      ...c.free.map((e) => `  /${e.prefixLength}: ${e.blocks} von ${e.total}`),
+      `Reserve für abgerechnete Waves: ${c.reserve.blocks} ganze /16 -- jetzt frei: ${c.reserve.free}`,
+      ...(c.outside > 0
+        ? [`${c.outside} Wave(s) liegen außerhalb des Containers und sind nicht mitgezählt`]
+        : []),
+      c.reserve.below
+        ? "UNTER DER RESERVE: Gratis-Anmeldungen werden abgelehnt, bis Blöcke frei werden oder WAVE_IPV4_CONTAINER größer wird"
+        : "Reserve ist eingehalten",
     ].join("\n"),
   migrateBefore: "vorher",
   migrateAfter: "nachher",
