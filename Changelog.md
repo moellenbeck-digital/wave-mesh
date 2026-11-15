@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.14 (15.11.2026)
+
 ### Neue Funktionen
 
 - **Registrierung mit E-Mail und Passwort auf `/signup` (#150):** Die Seite bietet neben den OIDC-Anbietern immer auch
