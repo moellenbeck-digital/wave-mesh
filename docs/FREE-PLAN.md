@@ -95,12 +95,15 @@ a hosting offer of your own.
 | `WAVE_FREE_DEVICE_LIMIT` | 100 | devices per free account (at least 1) |
 | People | 3, fixed | **no** environment variable; the constant `FREE_PEOPLE_LIMIT` in `billing/plan.ts` |
 | `WAVE_SIGNUP_ENABLED` | off | sign-up page `/signup` (#147); only `true` or `1` turns it on. Hosted deployments set it, self-hosting leaves it off |
+| `WAVE_SMTP_URL`, `WAVE_MAIL_FROM` | unset | outgoing mail (#150), `smtp://user:pass@host:587` or `smtps://host:465`, and the sender; the sign-up form with email and password exists only with them |
 
 **Sign-up (`/signup`).** The operator of a hosted server can offer prospects a page that explains the free plan
 (waves, people and devices, with the numbers of the server) and offers registration through the configured
-OIDC providers. The first login creates the account, and the next stop is `/waves/new`. Only an account with a
-**confirmed** email address (`email_verified`) can create a wave; the page says so. The page creates **no
-password accounts**: those still come only from a setup or invitation link. `WAVE_SIGNUP_ENABLED` is **off by
+OIDC providers and, where the server can send mail, with email and password (#150). The first login creates the
+account, and the next stop is `/waves/new`. Only an account with a **confirmed** email address (`email_verified`)
+can create a wave; the page says so. A password registration makes **no account until the link in the
+confirmation mail is used** (once, within 24 hours); without `WAVE_SMTP_URL` the form is not there at all. An
+address that already has an account gets the same answer and a mail saying so, never a merge. `WAVE_SIGNUP_ENABLED` is **off by
 default**: `/signup` then answers 404, the login page shows no "Create account" link, and everything behaves as
 before. Self-hosting leaves the switch off.
 

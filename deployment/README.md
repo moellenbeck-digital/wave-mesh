@@ -194,7 +194,9 @@ Waves) gelten nur auf einem **gehosteten** Server, der mit `WAVE_BILLING_TOKEN` 
 
 Die Registrierungsseite `/signup` schaltet `WAVE_SIGNUP_ENABLED` ein: **Standard aus** (dann 404 und kein Link
 „Konto erstellen“ auf der Login-Seite). Gehostete Deployments setzen `WAVE_SIGNUP_ENABLED=true`; die Beispiele
-in diesem Verzeichnis sind Selfhosting und führen den Schalter deshalb nicht.
+in diesem Verzeichnis sind Selfhosting und führen den Schalter deshalb nicht. Das Formular für E-Mail und Passwort
+auf `/signup` (#150) braucht zusätzlich einen Mailserver: `WAVE_SMTP_URL` und `WAVE_MAIL_FROM` gehören in `secret.env`
+(die URL trägt die Zugangsdaten); ohne sie gibt es das Formular nicht.
 
 **English:** These trees run a **self-hosted** server, and that is unlimited: without `WAVE_BILLING_TOKEN` there
 is no plan, no free limit and no quota hint in the interface; waves, people and devices are not counted. The
@@ -206,7 +208,9 @@ bills with `WAVE_BILLING_TOKEN`; there they can be set with `WAVE_FREE_MAX_WAVES
 
 The sign-up page `/signup` is switched on by `WAVE_SIGNUP_ENABLED`: **off by default** (then 404 and no "Create
 account" link on the login page). Hosted deployments set `WAVE_SIGNUP_ENABLED=true`; the examples in this
-directory are self-hosting and therefore do not carry the switch.
+directory are self-hosting and therefore do not carry the switch. The form for email and password on `/signup`
+(#150) also needs a mail server: `WAVE_SMTP_URL` and `WAVE_MAIL_FROM` belong in `secret.env` (the URL carries the
+credentials); without them there is no form.
 
 **Lizenz:** Selfhosting ist kostenlos, der Code ist quelloffen und einsehbar. Er steht unter der
 [Elastic License 2.0](../LICENSE) (ELv2, <https://www.elastic.co/licensing/elastic-license>). Benutzen,
