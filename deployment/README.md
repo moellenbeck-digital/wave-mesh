@@ -57,8 +57,9 @@ kubectl apply -k .
 kubectl -n wave-mesh port-forward svc/wave-control 8080:8080
 ```
 
-Ein Konto entsteht nur auf der Shell — eine Registrierungsseite gibt es
-absichtlich nicht:
+Ein Konto entsteht hier nur auf der Shell — die Registrierungsseite `/signup` ist
+beim Selfhosting aus (`WAVE_SIGNUP_ENABLED`, Standard aus; nur gehostete
+Deployments schalten sie an, siehe „Gratis-Grenzen“ unten):
 
 ```bash
 kubectl -n wave-mesh exec -it deploy/wave-control -- \
@@ -191,6 +192,10 @@ Waves) gelten nur auf einem **gehosteten** Server, der mit `WAVE_BILLING_TOKEN` 
 `secret.env` setzt, schaltet sie damit ein. Siehe [`docs/GRATIS-TARIF.md`](../docs/GRATIS-TARIF.md) und
 [`docs/ACCOUNT-SUBSCRIPTIONS.md`](../docs/ACCOUNT-SUBSCRIPTIONS.md).
 
+Die Registrierungsseite `/signup` schaltet `WAVE_SIGNUP_ENABLED` ein: **Standard aus** (dann 404 und kein Link
+„Konto erstellen“ auf der Login-Seite). Gehostete Deployments setzen `WAVE_SIGNUP_ENABLED=true`; die Beispiele
+in diesem Verzeichnis sind Selfhosting und führen den Schalter deshalb nicht.
+
 **English:** These trees run a **self-hosted** server, and that is unlimited: without `WAVE_BILLING_TOKEN` there
 is no plan, no free limit and no quota hint in the interface; waves, people and devices are not counted. The
 limits (3 waves, 3 people and 100 devices per account across all waves) apply only on a **hosted** server that
@@ -198,6 +203,10 @@ bills with `WAVE_BILLING_TOKEN`; there they can be set with `WAVE_FREE_MAX_WAVES
 (the people limit is fixed). Setting the token in `secret.env` turns them on. See
 [`docs/FREE-PLAN.md`](../docs/FREE-PLAN.md) and
 [`docs/ACCOUNT-SUBSCRIPTIONS.en.md`](../docs/ACCOUNT-SUBSCRIPTIONS.en.md).
+
+The sign-up page `/signup` is switched on by `WAVE_SIGNUP_ENABLED`: **off by default** (then 404 and no "Create
+account" link on the login page). Hosted deployments set `WAVE_SIGNUP_ENABLED=true`; the examples in this
+directory are self-hosting and therefore do not carry the switch.
 
 **Lizenz:** Selfhosting ist kostenlos, der Code ist quelloffen und einsehbar. Er steht unter der
 [Elastic License 2.0](../LICENSE) (ELv2, <https://www.elastic.co/licensing/elastic-license>). Benutzen,

@@ -98,6 +98,15 @@ Freigabe für ein eigenes Hosting-Angebot.
 | `WAVE_FREE_MAX_WAVES` | 3 | Waves je Gratis-Konto (mindestens 1) |
 | `WAVE_FREE_DEVICE_LIMIT` | 100 | Geräte je Gratis-Konto (mindestens 1) |
 | Personen | 3, fest | **kein** Env; die Konstante `FREE_PEOPLE_LIMIT` in `billing/plan.ts` |
+| `WAVE_SIGNUP_ENABLED` | aus | Registrierungsseite `/signup` (#147); nur `true` oder `1` schaltet sie an. Hosted-Deployments setzen sie an, Selfhosting lässt sie aus |
+
+**Registrierung (`/signup`).** Wer einen gehosteten Server betreibt, kann Interessenten eine Seite anbieten,
+die den Gratis-Tarif erklärt (Waves, Personen und Geräte stehen mit den Zahlen des Servers darauf) und die
+Registrierung über die eingerichteten OIDC-Anbieter anbietet. Der erste Login legt das Konto an, danach geht es
+nach `/waves/new`. Waves anlegen kann nur, wer eine **bestätigte** E-Mail-Adresse hat (`email_verified`);
+die Seite sagt das. Die Seite legt **keine Passwort-Konten** an, die entstehen weiter nur über Setup- oder
+Einladungslink. `WAVE_SIGNUP_ENABLED` steht **standardmäßig aus**: dann liefert `/signup` 404 und die
+Login-Seite zeigt keinen Link „Konto erstellen“, das Verhalten ist wie zuvor. Selfhosting lässt den Schalter aus.
 
 Mehr dazu, auch zu `WAVE_FREE_IPV4_PREFIX_LENGTH` und `WAVE_FREE_BLOCKED_EMAIL_DOMAINS`:
 [`ACCOUNT-SUBSCRIPTIONS.md`](ACCOUNT-SUBSCRIPTIONS.md).

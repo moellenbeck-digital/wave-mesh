@@ -161,6 +161,7 @@ self-hosted server and for a wave without an account; the interface then shows n
 | People | 3, fixed | **no environment variable:** the constant `FREE_PEOPLE_LIMIT` in `apps/control/src/billing/plan.ts` |
 | `WAVE_FREE_IPV4_PREFIX_LENGTH` | `/24` | address block of a new free wave (#118); has to leave room for `WAVE_FREE_DEVICE_LIMIT` |
 | `WAVE_FREE_BLOCKED_EMAIL_DOMAINS` | empty | comma list; blocks only the free start |
+| `WAVE_SIGNUP_ENABLED` | off | sign-up page `/signup` (#147); only `true` or `1` turns it on, empty or unknown is off. Changes no limit, only whether the page and the "Create account" link exist; `/api/auth/providers` reports it as `signup` (with `freePlan` when on) |
 | `WAVE_BASE_URL` | | basis of the `upgradeUrl` in the errors (`<WAVE_BASE_URL>/account#plan`) |
 
 The limits apply only with `WAVE_BILLING_TOKEN` (hosted). Without it, that is with self-hosting, waves are

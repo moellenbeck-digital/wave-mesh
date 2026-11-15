@@ -6,6 +6,15 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Registrierungsseite `/signup`, per Konfiguration abschaltbar (#147):** Die Seite erklärt den Gratis-Tarif
+  (Waves, Personen, Geräte), weist auf die bestätigte E-Mail-Adresse (`email_verified`) hin und bietet die
+  Registrierung über die eingerichteten OIDC-Anbieter an; der erste Login legt das Konto an. Die Anmeldeseite
+  zeigt den Link „Konto erstellen“. `WAVE_SIGNUP_ENABLED` steht standardmäßig **aus** (nur `true` oder `1`
+  schaltet an): dann 404 und kein Link, alles wie bisher. Passwort-Konten entstehen weiter nur über Setup- oder
+  Einladungslink.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.12 (14.11.2026)

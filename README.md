@@ -71,8 +71,8 @@ Ein Konto anlegen und `http://localhost:8080` öffnen:
 cd apps/control && bun src/admin.ts set-password du@example.com
 ```
 
-Anmeldung mit E-Mail und Passwort (Argon2id, keine Registrierungsseite —
-Konten legt der Betreiber an). Alternativ Google-OIDC über
+Anmeldung mit E-Mail und Passwort (Argon2id, keine Passwort-Registrierung —
+Konten legt der Betreiber an; die OIDC-Registrierung `/signup` ist standardmäßig aus, `WAVE_SIGNUP_ENABLED`). Alternativ Google-OIDC über
 `GOOGLE_CLIENT_ID`/`SECRET`. Der Entwicklungs-Login mit `WAVE_DEV_AUTH=1`
 akzeptiert dagegen jede eingegebene Adresse und gehört nur an einen Port, der
 nicht öffentlich steht — `WAVE_DEV_AUTH_FROM` beschränkt ihn auf genannte

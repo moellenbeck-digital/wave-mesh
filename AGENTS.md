@@ -3367,7 +3367,8 @@ Was daran festliegt:
 - **`WAVE_ACME_DIRECTORY` steht hier bewusst auf dem echten Verzeichnis.** Ohne
   die Zeile wäre es Let's Encrypts Staging. Damit gilt das Rate Limit der
   Domain: ein Fehlversuch kostet eine Woche.
-- **Konten entstehen nur auf der Shell.** Es gibt keine Registrierungsseite; die
+- **Konten entstehen nur auf der Shell.** Es gibt keine Passwort-Registrierung (`/signup` gibt es nur mit
+  `WAVE_SIGNUP_ENABLED=true`, bietet nur OIDC an und ist hier aus); die
   Anmeldeseite trägt Argon2id und die Login-Drossel, der Dev-Login ist unter
   `WAVE_ENV=production` ohnehin aus. Angelegt wird mit
   `kubectl exec … -- wave-admin set-password`.
