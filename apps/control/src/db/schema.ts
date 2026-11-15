@@ -739,6 +739,35 @@ export const passwordSetups = pgTable(
 );
 
 /**
+ * A registration waiting for its confirmation mail (ticket #150): the address
+ * and the Argon2id hash of the password chosen at `/signup`.
+ *
+ * Deliberately not a row in `users`: an account that exists can sign in, and an
+ * unconfirmed address must not. The account is made when the link of the mail
+ * is used (auth/signup-password.ts), and not before. Only the SHA-256 of the
+ * token is stored, like a setup link; a new registration of the same address
+ * revokes the older ones.
+ */
+export const signupVerifications = pgTable(
+  "signup_verifications",
+  {
+    id: text("id").primaryKey(),
+    /** Lowercased, as `users.email`. */
+    email: text("email").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("signup_verifications_token_idx").on(t.tokenHash),
+    index("signup_verifications_email_idx").on(t.email),
+  ],
+);
+
+/**
  * A guided link of two accounts that one person ended up with: B, the account
  * a provider login made because the provider did not vouch for the address,
  * into A, the verified account that holds the address.
