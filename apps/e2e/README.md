@@ -15,6 +15,8 @@ Aufruf durch das Dev-Team: `e2e-test ausfuehren <nr>` im Worktree. Es setzt `APP
 - Hilfen für Konten, Einladungen und Wave-Aufbau: `tests/helpers.ts`.
 - Konten lassen sich in der Oberfläche nicht löschen. Zweitkonten haben deshalb feste Adressen
   (`t<nr>-…@example.test`) mit abgeleitetem Passwort und werden bei jedem Lauf wiederverwendet.
+  Ausnahme: Seit #31 geht es über `/account/delete`; `t31-konto-loeschen.e2e.ts` legt seine Konten je Lauf neu an
+  (Adresse mit Lauf-Kennung) und löscht sie im Test.
 
 ## Lokal
 

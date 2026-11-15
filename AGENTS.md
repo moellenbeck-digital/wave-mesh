@@ -617,6 +617,18 @@ Was daran festliegt (`apps/control/src/auth/two-factor.ts`, `totp.ts`):
 Daten; `GET /api/me/delete-preview` sagt vorher, was es täte
 (`apps/control/src/auth/delete-account.ts`, Route in `routes/account.ts`).
 
+- **Die Seite** ist `/account/delete` (feste Adresse, die Hilfe-Seite verlinkt darauf;
+  `apps/web/src/app/account/delete/page.tsx`, Formular `components/delete-account.tsx`,
+  Texte `i18n/delete-account.ts`, Lesen und Entscheiden `lib/delete-account.ts`). Ohne
+  Sitzung geht sie über `/login?next=/account/delete` und kommt zurück. Sie lädt die
+  Vorschau und zeigt vor der Bestätigung die Folgen je Wave (mitgelöscht, übergeben,
+  verlassen), abgerechnete Waves mit dem Hinweis auf das Kundenportal und, bei einem
+  verhindernden Wave, nur die Sperrmeldung mit den Namen bei gesperrtem Formular. Die
+  Seite entscheidet nichts: Jeder Fehlercode des Servers (`confirmation-mismatch`,
+  `invalid-code`, `code-required`, `throttled`, `last-admin`) hat einen eigenen Satz.
+  Nach Erfolg zeigt sie „Konto gelöscht“ ohne Sitzung. Einstieg: Abschnitt auf `/account`.
+  Oberflächentest: `apps/e2e/tests/t31-konto-loeschen.e2e.ts` (Marke `@t31`), die Konten
+  entstehen über Einladungen und löschen sich im Test selbst.
 - **Bestätigung:** die eigene Adresse (Groß-/Kleinschreibung egal); ein Konto ohne
   Adresse (Instagram) tippt im selben Feld `DELETE`. Mit aktivem TOTP ist ein Code
   oder Wiederherstellungscode Pflicht, geprüft und gedrosselt wie bei `/api/me/2fa/disable`.

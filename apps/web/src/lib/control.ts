@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { type AuthOptions, type AuthProvider, parseAuthOptions } from "./auth-options";
+import { type DeletePreview, readPreview } from "./delete-account";
 
 /**
  * The frontend never touches the database. Everything it shows comes from the
@@ -289,6 +290,14 @@ export async function fetchTwoFactor(): Promise<TwoFactorStatus | null> {
   if (res.status === 401) return null;
   if (!res.ok) throw new Error(`control server answered ${res.status} for /api/me/2fa`);
   return (await res.json()) as TwoFactorStatus;
+}
+
+/** What deleting the account would do (`GET /api/me/delete-preview`); null means "not signed in". */
+export async function fetchDeletePreview(): Promise<DeletePreview | null> {
+  const res = await controlFetch("/api/me/delete-preview");
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`control server answered ${res.status} for /api/me/delete-preview`);
+  return readPreview(await res.json());
 }
 
 export type { AuthOptions, AuthProvider, FreePlan } from "./auth-options";
