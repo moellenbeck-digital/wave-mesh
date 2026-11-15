@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.15 (15.11.2026)
+
 ### Neue Funktionen
 
 - **Konto selbst löschen (#31, Pflicht für Google Play und DSGVO Art. 17):** Auf der neuen Seite `/account/delete`
