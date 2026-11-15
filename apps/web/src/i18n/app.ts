@@ -82,6 +82,21 @@ const en = {
   loginLead: "Your account is where you manage the devices in your wave.",
   loginInvalid: "Email or password is incorrect.",
   loginThrottled: "Too many attempts. Please try again later.",
+  /** The link on the login page, shown only where sign-up is switched on (ticket #147). */
+  createAccount: "Create account",
+
+  // ---- sign-up ----
+  signupTitle: "Start for free",
+  signupLead: "Create an account and set up your first wave in a few minutes.",
+  signupFreePlan: (waves: number, people: number, devices: number) =>
+    `The free plan includes ${waves} waves, ${people} people and ${devices} devices across your account.`,
+  signupHow:
+    "Sign up with one of the providers below. Your first login creates the account, and you land on the form for your first wave.",
+  signupVerified:
+    "Your provider has to confirm your email address (email_verified). Without a confirmed address you can sign in, but you cannot create a wave.",
+  signupWith: (provider: string) => `Sign up with ${provider}`,
+  signupNoProvider: "No sign-in provider is configured on this server, so nobody can sign up here yet.",
+  signupHaveAccount: "Already have an account?",
 
   // ---- device approval ----
   chooseOne: (host: string) => `Add ${host}?`,
@@ -281,6 +296,22 @@ const de: typeof en = {
   loginLead: "Mit deinem Konto verwaltest du die Geräte in deinem Wave.",
   loginInvalid: "E-Mail oder Passwort stimmt nicht.",
   loginThrottled: "Zu viele Versuche. Bitte später erneut probieren.",
+  /** Der Link auf der Anmeldeseite, nur wo die Registrierung eingeschaltet ist (Ticket #147). */
+  createAccount: "Konto erstellen",
+
+  // ---- Registrierung ----
+  signupTitle: "Gratis starten",
+  signupLead: "Erstelle ein Konto und richte in wenigen Minuten deinen ersten Wave ein.",
+  signupFreePlan: (waves, people, devices) =>
+    `Der Gratis-Tarif umfasst ${waves} Waves, ${people} Personen und ${devices} Geräte im ganzen Konto.`,
+  signupHow:
+    "Registriere dich über einen der Anbieter unten. Der erste Login legt das Konto an, danach landest du im Formular für deinen ersten Wave.",
+  signupVerified:
+    "Dein Anbieter muss deine E-Mail-Adresse bestätigen (email_verified). Ohne bestätigte Adresse kannst du dich anmelden, aber keinen Wave anlegen.",
+  signupWith: (provider) => `Mit ${provider} registrieren`,
+  signupNoProvider:
+    "Auf diesem Server ist kein Anmeldeanbieter eingerichtet, deshalb kann sich hier noch niemand registrieren.",
+  signupHaveAccount: "Du hast schon ein Konto?",
 
   chooseOne: (host) => `${host} aufnehmen?`,
   chooseMany: (host) => `In welchen Wave soll ${host}?`,

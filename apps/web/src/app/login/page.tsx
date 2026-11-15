@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
+import { SignupLink } from "@/components/signup-panel";
 import { type AccountMessages, accountMessages } from "@/i18n/account";
 import { type AppMessages, appMessages, providerName } from "@/i18n/app";
-import { fetchMe, fetchProviders } from "@/lib/control";
+import { fetchAuthOptions, fetchMe } from "@/lib/control";
 import { getLocale } from "@/lib/i18n";
 
 /** The codes the control server redirects back with, never its own wording. */
@@ -33,7 +34,7 @@ export default async function LoginPage({
   const me = await fetchMe();
   if (me) redirect(next ?? "/");
 
-  const providers = await fetchProviders();
+  const { providers, signup } = await fetchAuthOptions();
   const suffix = next ? `?next=${encodeURIComponent(next)}` : "";
 
   return (
@@ -114,6 +115,8 @@ export default async function LoginPage({
             </div>
           </>
         ) : null}
+
+        <SignupLink signup={signup} locale={locale} />
       </section>
     </div>
   );
