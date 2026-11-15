@@ -6,6 +6,15 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Konto selbst löschen (#31, Pflicht für Google Play und DSGVO Art. 17):** Ein angemeldeter Benutzer kann über die Schnittstelle sein
+  Konto samt Daten löschen. Bestätigt wird mit der eigenen Adresse (ohne Adresse, etwa bei Instagram, mit dem Wort
+  `DELETE`), bei aktiver Zwei-Faktor-Anmeldung zusätzlich mit einem Code. Waves, in denen man allein ist, werden
+  mitgelöscht; Waves mit anderen Mitgliedern bleiben bestehen und gehen an einen anderen Administrator. Ist man
+  dort der letzte Administrator, wird das Löschen abgelehnt und der Wave genannt. Ein laufendes Abo wird nicht
+  automatisch gekündigt, sondern vorher angezeigt und muss im Kundenportal gekündigt werden.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.14 (15.11.2026)

@@ -611,6 +611,33 @@ Was daran festliegt (`apps/control/src/auth/two-factor.ts`, `totp.ts`):
 - **`set-password` lässt den zweiten Faktor, wie er ist.** Ein neues Passwort ist
   kein Grund, den Code abzuschalten — dafür gibt es `disable-2fa`.
 
+## Konto löschen (DSGVO Art. 17, Google Play)
+
+`POST /api/me/delete` (JSON `{ email, code? }`) löscht das angemeldete Konto samt
+Daten; `GET /api/me/delete-preview` sagt vorher, was es täte
+(`apps/control/src/auth/delete-account.ts`, Route in `routes/account.ts`).
+
+- **Bestätigung:** die eigene Adresse (Groß-/Kleinschreibung egal); ein Konto ohne
+  Adresse (Instagram) tippt im selben Feld `DELETE`. Mit aktivem TOTP ist ein Code
+  oder Wiederherstellungscode Pflicht, geprüft und gedrosselt wie bei `/api/me/2fa/disable`.
+- **Waves** (`waves.owner_user_id` kaskadiert, ein bloßes Löschen des Benutzers risse
+  jeden eigenen Wave samt Mitgliedern mit): einziges Mitglied → der Wave geht mit
+  (`deleteWave`, Pier-DNS wie sonst); weitere Mitglieder und ein anderer Admin →
+  Übergabe an den Owner bzw. ältesten Admin, der Wave bleibt; weitere Mitglieder und
+  der Benutzer ist der letzte Owner/Admin → 409 `last-admin` mit den Waves, nichts
+  wird geschrieben. Geräte gehen überall, die Netzkarten der bleibenden Waves werden
+  neu verteilt.
+- **Abrechnung verhindert nichts.** Das Abo gehört dem Zahlungsdienst, nicht diesem
+  Server: es läuft nach dem Löschen weiter, bis der Kunde es im Kundenportal kündigt.
+  Die Vorschau nennt die betroffenen Waves (`billed`), die Logzeile
+  `account-delete: subscription <id> … of wave <id>` hält es für den Betreiber fest
+  (ohne Personenbezug). Ein übergebener Wave behält seine `wave_billing`-Zeile, verliert
+  aber das Kundenkonto (`account_id` wird `null`).
+- **Audit:** jeder bleibende Wave bekommt `account.delete` (Rolle, Zahl entfernter
+  Geräte; `actor` = `deleted-account`, kein Benutzer, keine Adresse). Frühere Einträge
+  mit der Person als `actor` oder `target` werden anonymisiert, offene Einladungen an
+  ihre Adresse zurückgezogen.
+
 ## Anmeldung über OIDC (Pocket ID)
 
 Neben Passwort und Google gibt es einen OpenID-Connect-Provider, geschrieben
