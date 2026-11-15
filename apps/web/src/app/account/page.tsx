@@ -3,6 +3,7 @@ import { AccountUsage } from "@/components/account-usage";
 import { LinkNotice } from "@/components/link-notice";
 import { TwoFactorPanel } from "@/components/two-factor";
 import { accountMessages } from "@/i18n/account";
+import { deleteAccountMessages } from "@/i18n/delete-account";
 import { rich } from "@/i18n/rich";
 import { type AccountPlanView, fetchMe, fetchTwoFactor, type Me } from "@/lib/control";
 import { getLocale } from "@/lib/i18n";
@@ -26,7 +27,9 @@ export default async function AccountPage() {
   if (!me) redirect("/login?next=/account");
   const status = await fetchTwoFactor();
   if (!status) redirect("/login?next=/account");
-  const t = accountMessages(await getLocale());
+  const locale = await getLocale();
+  const t = accountMessages(locale);
+  const d = deleteAccountMessages(locale);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -77,6 +80,18 @@ export default async function AccountPage() {
             ),
           })}
         </p>
+      </section>
+
+      <section
+        id="konto-loeschen"
+        className="wc-card animate-slide-up relative mt-8 scroll-mt-24 rounded-lg p-8"
+      >
+        <div className="absolute top-0 right-0 left-0 h-1 rounded-t-lg bg-accent" />
+        <h2 className="wc-section-title">{d.entryTitle}</h2>
+        <p className="text-body-sm text-slate">{d.entryIntro}</p>
+        <a href="/account/delete" className="wc-btn wc-btn-secondary mt-4 inline-flex">
+          {d.entryLink}
+        </a>
       </section>
     </div>
   );
