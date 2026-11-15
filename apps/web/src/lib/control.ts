@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
+import { type AuthOptions, type AuthProvider, parseAuthOptions } from "./auth-options";
 
 /**
  * The frontend never touches the database. Everything it shows comes from the
@@ -290,18 +291,17 @@ export async function fetchTwoFactor(): Promise<TwoFactorStatus | null> {
   return (await res.json()) as TwoFactorStatus;
 }
 
-/** A way to sign in besides the password, with what the control server calls it. */
-export interface AuthProvider {
-  id: string;
-  /** Set by the operator for an OIDC provider ("Pocket ID"); missing from an older server. */
-  label: string | null;
+export type { AuthOptions, AuthProvider, FreePlan } from "./auth-options";
+
+/** What the login and sign-up pages need from `/api/auth/providers`. */
+export async function fetchAuthOptions(): Promise<AuthOptions> {
+  const res = await controlFetch("/api/auth/providers");
+  if (!res.ok) throw new Error(`control server answered ${res.status} for /api/auth/providers`);
+  return parseAuthOptions((await res.json()) as Parameters<typeof parseAuthOptions>[0]);
 }
 
 export async function fetchProviders(): Promise<AuthProvider[]> {
-  const res = await controlFetch("/api/auth/providers");
-  if (!res.ok) throw new Error(`control server answered ${res.status} for /api/auth/providers`);
-  const body = (await res.json()) as { providers: string[]; labels?: Record<string, string> };
-  return body.providers.map((id) => ({ id, label: body.labels?.[id] ?? null }));
+  return (await fetchAuthOptions()).providers;
 }
 
 export async function fetchMembers(waveId: string): Promise<Membership> {

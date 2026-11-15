@@ -142,12 +142,27 @@ const EnvSchema = z.object({
    * free hosted account. Optional; empty blocks nothing.
    */
   WAVE_FREE_BLOCKED_EMAIL_DOMAINS: z.string().optional(),
+  /**
+   * Whether the sign-up page `/signup` exists (ticket #147). Off by default: a
+   * self-hosted server has no use for a public way in, and hosted deployments
+   * switch it on. Only `true` or `1` (any case, surrounding blanks ignored)
+   * turns it on. Empty, unset or anything else is off -- never an error and
+   * never "on", so a template that renders the variable empty keeps the page
+   * closed (same care as WAVE_FREE_MAX_WAVES).
+   */
+  WAVE_SIGNUP_ENABLED: z.string().optional().transform(parseFlag),
   /** Password-free login for local development. Refused in production. */
   WAVE_DEV_AUTH: z
     .string()
     .optional()
     .transform((v) => v === "1" || v === "true"),
 });
+
+/** `true` and `1` are on; empty, missing and unknown are off. Never throws. */
+export function parseFlag(value: string | undefined): boolean {
+  const v = (value ?? "").trim().toLowerCase();
+  return v === "true" || v === "1";
+}
 
 export interface OidcConfig {
   issuer: string;
@@ -213,6 +228,8 @@ export type Config = {
   freeDeviceLimit: number;
   /** Waves a free hosted account may hold; see billing/plan.ts. */
   freeMaxWaves: number;
+  /** Whether `/signup` is served and offered on the login page; see WAVE_SIGNUP_ENABLED. */
+  signupEnabled: boolean;
   /** Lowercased domains that cannot start a free account. */
   freeBlockedEmailDomains: string[];
   /** Prefix length of the block a new free wave gets; billed waves are /16. */
@@ -333,6 +350,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     billing: billingConfig(raw.WAVE_BILLING_TOKEN, raw.WAVE_BILLING_RETENTION_DAYS),
     freeDeviceLimit: raw.WAVE_FREE_DEVICE_LIMIT,
     freeMaxWaves: raw.WAVE_FREE_MAX_WAVES,
+    signupEnabled: raw.WAVE_SIGNUP_ENABLED,
     freeBlockedEmailDomains: parseBlockedDomains(raw.WAVE_FREE_BLOCKED_EMAIL_DOMAINS),
     freeIpv4PrefixLength: raw.WAVE_FREE_IPV4_PREFIX_LENGTH,
     capacityReserve: raw.WAVE_CAPACITY_RESERVE,

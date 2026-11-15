@@ -24,7 +24,9 @@ import {
   type SessionUser,
   setSessionCookie,
 } from "./auth/session.ts";
+import { SIGNUP_NEXT, signupProviders } from "./auth/signup.ts";
 import { creationPolicyOf, waveCreationDenial } from "./billing/free-account.ts";
+import { freeLimitsOf } from "./billing/plan.ts";
 import { sweepEndedWaves } from "./billing/subscriptions.ts";
 import { accountOverviewOf } from "./billing/usage.ts";
 import { CertificateService } from "./certs/issue.ts";
@@ -194,7 +196,9 @@ export function createApp({
             (p) => html`<li><a href="/auth/${p.id}/start${suffix}">${m.signInWith(p.label)}</a></li>`,
           ),
         ];
-        return c.html(html`<h1>wave-mesh</h1><ul>${links}</ul>`);
+        // The way to a first account, only where the operator opened it (#147).
+        const signup = config.signupEnabled ? html`<p><a href="/signup">${m.createAccount}</a></p>` : "";
+        return c.html(html`<h1>wave-mesh</h1><ul>${links}</ul>${signup}`);
       }
       const membership = await db
         .select({ name: waves.name, dnsSuffix: waves.dnsSuffix })
@@ -211,6 +215,27 @@ export function createApp({
         ${linkable ? html`<p><a href="/account/link">${m.linkTitle}</a></p>` : ""}
         ${body}
         <form method="post" action="/auth/logout"><button type="submit">${m.logOut}</button></form>`);
+    });
+  }
+
+  // The plain sign-up page. With a frontend the proxy takes the request to the
+  // page there, which asks /api/auth/providers whether sign-up is on. Off, this
+  // route does not exist: 404, like any other address nobody serves (#147).
+  if (!config.webUrl && config.signupEnabled) {
+    app.get("/signup", (c) => {
+      const m = pageMessages(localeOf(c));
+      const limits = freeLimitsOf(config);
+      const offered = signupProviders(providers);
+      const buttons = offered.map(
+        (p) =>
+          html`<li><a href="/auth/${p.id}/start?next=${encodeURIComponent(SIGNUP_NEXT)}" data-provider="${p.id}">${m.signupWith(p.label)}</a></li>`,
+      );
+      return c.html(html`<h1>${m.signupTitle}</h1>
+        <p data-signup="plan">${m.signupFreePlan(limits)}</p>
+        <p data-signup="how">${m.signupHow}</p>
+        <p data-signup="verified">${m.signupVerified}</p>
+        ${offered.length > 0 ? html`<ul>${buttons}</ul>` : html`<p data-signup="no-provider">${m.signupNoProvider}</p>`}
+        <p>${m.signupHaveAccount} <a href="/">${m.signIn}</a></p>`);
     });
   }
 
@@ -260,6 +285,11 @@ export function createApp({
   app.get("/api/auth/providers", (c) =>
     c.json({
       providers: [...providers.keys()],
+      // Whether /signup exists (ticket #147). An older server leaves the field
+      // out, and a frontend reads a missing field as off. When on, the plan
+      // limits ride along so the page never states a number of its own.
+      signup: config.signupEnabled,
+      ...(config.signupEnabled ? { freePlan: freeLimitsOf(config) } : {}),
       // Beside the ids rather than instead of them: an older frontend reads
       // only the list. An OIDC provider is named by whoever set it up.
       labels: Object.fromEntries([...providers.values()].map((p) => [p.id, p.label])),

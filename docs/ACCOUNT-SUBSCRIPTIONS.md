@@ -162,6 +162,7 @@ Hinweis.
 | Personen | 3, fest | **kein Env:** die Konstante `FREE_PEOPLE_LIMIT` in `apps/control/src/billing/plan.ts` |
 | `WAVE_FREE_IPV4_PREFIX_LENGTH` | `/24` | Adressblock eines neuen Gratis-Waves (#118); muss für `WAVE_FREE_DEVICE_LIMIT` Platz lassen |
 | `WAVE_FREE_BLOCKED_EMAIL_DOMAINS` | leer | Komma-Liste; sperrt nur den Gratis-Start |
+| `WAVE_SIGNUP_ENABLED` | aus | Registrierungsseite `/signup` (#147); nur `true` oder `1` schaltet an, leer oder unbekannt ist aus. Ändert keine Grenze, nur ob die Seite und der Link „Konto erstellen“ da sind; `/api/auth/providers` meldet es als `signup` (mit `freePlan`, wenn an) |
 | `WAVE_BASE_URL` | | Grundlage der `upgradeUrl` in den Fehlern (`<WAVE_BASE_URL>/account#plan`) |
 
 Die Grenzen gelten nur mit `WAVE_BILLING_TOKEN` (gehostet). Ohne ihn, also beim Selfhosting, werden Waves
