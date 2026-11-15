@@ -296,7 +296,7 @@ describe("through the server", () => {
 
   test("the button is named, and a first sign-in makes a verified account", async () => {
     const listed = await (await app.request("/api/auth/providers")).json();
-    expect(listed).toEqual({ providers: ["oidc"], labels: { oidc: "Pocket ID" } });
+    expect(listed).toEqual({ providers: ["oidc"], labels: { oidc: "Pocket ID" }, signup: false });
 
     const jar = new CookieJar();
     const start = await app.request("/auth/oidc/start");

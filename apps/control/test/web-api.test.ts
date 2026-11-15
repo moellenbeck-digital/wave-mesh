@@ -90,7 +90,11 @@ describe("the frontend's API", () => {
     const res = await app.request("/api/auth/providers");
     expect(res.status).toBe(200);
     // The ids as before, for an older frontend; the names beside them.
-    expect(await res.json()).toEqual({ providers: ["dev"], labels: { dev: "Dev login" } });
+    expect(await res.json()).toEqual({
+      providers: ["dev"],
+      labels: { dev: "Dev login" },
+      signup: false,
+    });
   });
 
   test("hands out a wave's nodes to its members", async () => {
