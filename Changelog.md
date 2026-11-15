@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.17.0-develop.13 (15.11.2026)
+
 ### Neue Funktionen
 
 - **Registrierungsseite `/signup`, per Konfiguration abschaltbar (#147):** Die Seite erklärt den Gratis-Tarif
