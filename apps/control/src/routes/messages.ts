@@ -114,11 +114,29 @@ const en = {
   signupFreePlan: (l: { waves: number; people: number; devices: number }) =>
     `The free plan includes ${l.waves} waves, ${l.people} people and ${l.devices} devices across your account.`,
   signupHow:
-    "Sign up with one of the providers below. Your first login creates the account, and you land on the form for your first wave.",
+    "Your first sign-in creates the account, and you land on the form for your first wave. Sign up with email and password below, or with one of the providers.",
   signupVerified:
-    "Your provider has to confirm your email address (email_verified). Without a confirmed address you can sign in, but you cannot create a wave.",
+    "Your email address has to be confirmed: by the link in the mail we send you, or by your provider (email_verified). Without a confirmed address you cannot create a wave.",
   signupWith: (provider: string) => `Sign up with ${provider}`,
-  signupNoProvider: "No sign-in provider is configured on this server, so nobody can sign up here yet.",
+  signupNothing:
+    "Nobody can sign up here yet: this server has neither a mail server nor a sign-in provider configured.",
+  signupPasswordHint: (n: number) =>
+    `At least ${n} characters. We send a link to confirm the address; the account exists once you use it.`,
+  signupSubmit: "Create account",
+  signupInvalidEmail: "That does not look like an email address.",
+  signupPasswordTooLong: (n: number) => `Use at most ${n} characters.`,
+  signupMailFailed: "The confirmation mail could not be sent. Try again later.",
+  signupSentTitle: "The mail is on its way",
+  signupSentBody:
+    "Open the link in it to confirm your address. It can take a few minutes, and it may be in the spam folder. The link works once.",
+  signupConfirmTitle: "Confirm your address",
+  signupConfirmBody: "One click creates your account.",
+  signupConfirmButton: "Confirm and create account",
+  signupConfirmedTitle: "Address confirmed",
+  signupConfirmedBody: "Your account exists. Sign in to set up your first wave.",
+  signupGoneTitle: "This link no longer works",
+  signupGoneBody:
+    "It was used already or has expired, or the address has an account by now. Sign in, or sign up again for a new link.",
   signupHaveAccount: "Already have an account?",
   signedInAs: (who: string) => `Signed in as ${who}`,
   noWaveYetHtml: 'No wave yet. <a href="/waves/new">Create one</a>.',
@@ -353,12 +371,29 @@ const de: typeof en = {
   signupFreePlan: (l) =>
     `Der Gratis-Tarif umfasst ${l.waves} Waves, ${l.people} Personen und ${l.devices} Geräte im ganzen Konto.`,
   signupHow:
-    "Registriere dich über einen der Anbieter unten. Der erste Login legt das Konto an, danach landest du im Formular für deinen ersten Wave.",
+    "Der erste Login legt das Konto an, danach landest du im Formular für deinen ersten Wave. Registriere dich unten mit E-Mail und Passwort oder über einen der Anbieter.",
   signupVerified:
-    "Dein Anbieter muss deine E-Mail-Adresse bestätigen (email_verified). Ohne bestätigte Adresse kannst du dich anmelden, aber keinen Wave anlegen.",
+    "Deine E-Mail-Adresse muss bestätigt werden: über den Link in der Mail, die wir dir schicken, oder durch deinen Anbieter (email_verified). Ohne bestätigte Adresse kannst du keinen Wave anlegen.",
   signupWith: (provider) => `Mit ${provider} registrieren`,
-  signupNoProvider:
-    "Auf diesem Server ist kein Anmeldeanbieter eingerichtet, deshalb kann sich hier noch niemand registrieren.",
+  signupNothing:
+    "Hier kann sich noch niemand registrieren: Auf diesem Server sind weder ein Mailserver noch ein Anmeldeanbieter eingerichtet.",
+  signupPasswordHint: (n) =>
+    `Mindestens ${n} Zeichen. Wir schicken einen Link zur Bestätigung der Adresse; das Konto entsteht erst, wenn du ihn benutzt.`,
+  signupSubmit: "Konto erstellen",
+  signupInvalidEmail: "Das sieht nicht nach einer E-Mail-Adresse aus.",
+  signupPasswordTooLong: (n) => `Nimm höchstens ${n} Zeichen.`,
+  signupMailFailed: "Die Bestätigungsmail ließ sich nicht senden. Versuch es später noch einmal.",
+  signupSentTitle: "Die Mail ist unterwegs",
+  signupSentBody:
+    "Öffne den Link darin, um deine Adresse zu bestätigen. Das kann ein paar Minuten dauern, und die Mail kann im Spam-Ordner liegen. Der Link gilt einmal.",
+  signupConfirmTitle: "Adresse bestätigen",
+  signupConfirmBody: "Ein Klick legt dein Konto an.",
+  signupConfirmButton: "Bestätigen und Konto anlegen",
+  signupConfirmedTitle: "Adresse bestätigt",
+  signupConfirmedBody: "Dein Konto besteht. Melde dich an, um deinen ersten Wave einzurichten.",
+  signupGoneTitle: "Dieser Link gilt nicht mehr",
+  signupGoneBody:
+    "Er wurde schon benutzt oder ist abgelaufen, oder die Adresse hat inzwischen ein Konto. Melde dich an, oder registriere dich noch einmal für einen neuen Link.",
   signupHaveAccount: "Du hast schon ein Konto?",
   signedInAs: (who) => `Angemeldet als ${who}`,
   noWaveYetHtml: 'Noch kein Wave. <a href="/waves/new">Leg einen an</a>.',

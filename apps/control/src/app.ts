@@ -24,7 +24,6 @@ import {
   type SessionUser,
   setSessionCookie,
 } from "./auth/session.ts";
-import { SIGNUP_NEXT, signupProviders } from "./auth/signup.ts";
 import { creationPolicyOf, waveCreationDenial } from "./billing/free-account.ts";
 import { freeLimitsOf } from "./billing/plan.ts";
 import { sweepEndedWaves } from "./billing/subscriptions.ts";
@@ -34,6 +33,7 @@ import type { Database } from "./db/client.ts";
 import { waveMembers, waves } from "./db/schema.ts";
 import type { Config } from "./env.ts";
 import { localeOf } from "./i18n.ts";
+import { createSmtpMailer, type Mailer } from "./mail.ts";
 import { isWithin } from "./net/addressing.ts";
 import { peerAddress } from "./net/peer.ts";
 import type { SigningKey } from "./netmap/build.ts";
@@ -49,6 +49,7 @@ import { safeNext } from "./routes/next.ts";
 import { passwordRoutes } from "./routes/password.ts";
 import { pierRoutes } from "./routes/piers.ts";
 import { serviceRoutes } from "./routes/services.ts";
+import { passwordSignupOffered, type SignupThrottles, signupRoutes } from "./routes/signup.ts";
 import { updateRoutes } from "./routes/update.ts";
 import { type CreationThrottles, waveRoutes } from "./routes/waves.ts";
 import { websocket } from "./routes/ws.ts";
@@ -80,6 +81,13 @@ export interface AppDeps {
   dnsFetch?: typeof fetch;
   /** Throttles for creating waves on a hosted server (ticket #117). Only the tests replace them. */
   creationThrottles?: CreationThrottles;
+  /**
+   * How mail goes out (ticket #150). Built from WAVE_SMTP_URL by default; the
+   * tests pass a sink. Without either, the password registration does not exist.
+   */
+  mailer?: Mailer;
+  /** Throttles of the password registration. Only the tests replace them. */
+  signupThrottles?: SignupThrottles;
 }
 
 type Vars = { user: SessionUser | null };
@@ -100,8 +108,11 @@ export function createApp({
   releases,
   dnsFetch,
   creationThrottles,
+  mailer: givenMailer,
+  signupThrottles,
 }: AppDeps) {
   const app = new Hono<{ Variables: Vars }>();
+  const mailer = givenMailer ?? (config.smtp ? createSmtpMailer(config.smtp) : undefined);
 
   /**
    * The development login trusts whatever address is typed into it, so on a
@@ -218,26 +229,12 @@ export function createApp({
     });
   }
 
-  // The plain sign-up page. With a frontend the proxy takes the request to the
-  // page there, which asks /api/auth/providers whether sign-up is on. Off, this
-  // route does not exist: 404, like any other address nobody serves (#147).
-  if (!config.webUrl && config.signupEnabled) {
-    app.get("/signup", (c) => {
-      const m = pageMessages(localeOf(c));
-      const limits = freeLimitsOf(config);
-      const offered = signupProviders(providers);
-      const buttons = offered.map(
-        (p) =>
-          html`<li><a href="/auth/${p.id}/start?next=${encodeURIComponent(SIGNUP_NEXT)}" data-provider="${p.id}">${m.signupWith(p.label)}</a></li>`,
-      );
-      return c.html(html`<h1>${m.signupTitle}</h1>
-        <p data-signup="plan">${m.signupFreePlan(limits)}</p>
-        <p data-signup="how">${m.signupHow}</p>
-        <p data-signup="verified">${m.signupVerified}</p>
-        ${offered.length > 0 ? html`<ul>${buttons}</ul>` : html`<p data-signup="no-provider">${m.signupNoProvider}</p>`}
-        <p>${m.signupHaveAccount} <a href="/">${m.signIn}</a></p>`);
-    });
-  }
+  // The sign-up page and its registration with email and password (#147, #150).
+  // With a frontend the proxy takes the page requests to the pages there, which
+  // ask /api/auth/providers whether sign-up is on and whether the form is. Off,
+  // the page does not exist -- 404, like any other address nobody serves --
+  // and neither do the two endpoints behind the form.
+  app.route("/", signupRoutes({ db, config, providers, mailer, throttles: signupThrottles }));
 
   // Whether a user may create a wave is decided per user, in one place, and every
   // answer below -- /api/me, the login redirect -- takes it from there (ticket #117).
@@ -289,6 +286,10 @@ export function createApp({
       // out, and a frontend reads a missing field as off. When on, the plan
       // limits ride along so the page never states a number of its own.
       signup: config.signupEnabled,
+      // Whether the form for email and password is on offer (ticket #150):
+      // sign-up is on and the server can send the confirmation mail. Without
+      // that no address can be confirmed, so there is no registration at all.
+      passwordSignup: passwordSignupOffered(config, mailer),
       ...(config.signupEnabled ? { freePlan: freeLimitsOf(config) } : {}),
       // Beside the ids rather than instead of them: an older frontend reads
       // only the list. An OIDC provider is named by whoever set it up.

@@ -13,8 +13,9 @@
  * - S1 „Schalter an“: `/signup` antwortet mit 200 und zeigt den Gratis-Tarif mit den Zahlen aus
  *   `/api/auth/providers` (`freePlan`), den Hinweis auf die bestätigte Adresse (`email_verified`) und je
  *   konfiguriertem Anbieter (ohne `dev`) einen Knopf nach `/auth/<anbieter>/start?next=/waves/new`;
- *   ohne Anbieter steht stattdessen der Hinweis dafür da. Kein Passwortfeld. Die Login-Seite zeigt den
- *   Link „Create account“, und er führt auf `/signup`.
+ *   steht weder ein Formular (`passwordSignup`, Ticket #150) noch ein Anbieter zur Wahl, steht stattdessen
+ *   der Hinweis dafür da. Das Passwortfeld gibt es nur mit `passwordSignup` (geprüft in t150). Die
+ *   Login-Seite zeigt den Link „Create account“, und er führt auf `/signup`.
  * - S2 „Schalter aus“: `/signup` und `/register` liefern 404, die Login-Seite hat keinen Link auf
  *   `/signup`, und `/api/auth/providers` meldet `signup: false`.
  *
@@ -31,6 +32,7 @@ import { newSession } from "./helpers.ts";
 interface Options {
   providers: string[];
   signup?: boolean;
+  passwordSignup?: boolean;
   freePlan?: { waves: number; people: number; devices: number };
 }
 
@@ -83,7 +85,7 @@ test.describe("Registrierungsseite /signup", () => {
 
     // Ein Knopf je konfiguriertem Anbieter, `dev` ist keine Registrierung.
     const offered = options.providers.filter((id) => id !== "dev");
-    if (offered.length === 0) {
+    if (offered.length === 0 && options.passwordSignup !== true) {
       await expect(page.locator('[data-signup="no-provider"]')).toBeVisible();
     }
     for (const id of offered) {
@@ -92,8 +94,8 @@ test.describe("Registrierungsseite /signup", () => {
       await expect(button).toHaveAttribute("href", `/auth/${id}/start?next=%2Fwaves%2Fnew`);
     }
 
-    // Keine Passwort-Registrierung.
-    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    // Das Passwortfeld gibt es genau dann, wenn der Server die Registrierung mit E-Mail anbietet (#150).
+    await expect(page.locator('input[type="password"]')).toHaveCount(options.passwordSignup === true ? 1 : 0);
 
     // Die Login-Seite führt hierher.
     await openLogin(page);

@@ -7,10 +7,12 @@ import { newId } from "../ids.ts";
  * Local accounts: an email address and a password, for deployments that do not
  * want to depend on an external identity provider.
  *
- * Passwords are hashed with Argon2id. There is no self-service signup -- an
- * account is created by the operator with `bun src/admin.ts set-password`,
- * which keeps a publicly reachable server from being a place where anyone can
- * make themselves a user.
+ * Passwords are hashed with Argon2id. An account is created by the operator
+ * with `bun src/admin.ts set-password`, by a setup or invitation link, or --
+ * only where `/signup` is on and the server can send mail (ticket #150) -- by
+ * the confirmation link of a registration (auth/signup-password.ts). Never
+ * before the address was confirmed: a publicly reachable server must not be a
+ * place where anyone can make themselves a user.
  */
 
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();

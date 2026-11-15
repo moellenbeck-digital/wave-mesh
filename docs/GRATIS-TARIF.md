@@ -99,13 +99,16 @@ Freigabe für ein eigenes Hosting-Angebot.
 | `WAVE_FREE_DEVICE_LIMIT` | 100 | Geräte je Gratis-Konto (mindestens 1) |
 | Personen | 3, fest | **kein** Env; die Konstante `FREE_PEOPLE_LIMIT` in `billing/plan.ts` |
 | `WAVE_SIGNUP_ENABLED` | aus | Registrierungsseite `/signup` (#147); nur `true` oder `1` schaltet sie an. Hosted-Deployments setzen sie an, Selfhosting lässt sie aus |
+| `WAVE_SMTP_URL`, `WAVE_MAIL_FROM` | leer | ausgehende Mail (#150), `smtp://user:pass@host:587` oder `smtps://host:465`, und der Absender; das Registrierungsformular mit E-Mail und Passwort gibt es nur mit beiden |
 
 **Registrierung (`/signup`).** Wer einen gehosteten Server betreibt, kann Interessenten eine Seite anbieten,
 die den Gratis-Tarif erklärt (Waves, Personen und Geräte stehen mit den Zahlen des Servers darauf) und die
-Registrierung über die eingerichteten OIDC-Anbieter anbietet. Der erste Login legt das Konto an, danach geht es
-nach `/waves/new`. Waves anlegen kann nur, wer eine **bestätigte** E-Mail-Adresse hat (`email_verified`);
-die Seite sagt das. Die Seite legt **keine Passwort-Konten** an, die entstehen weiter nur über Setup- oder
-Einladungslink. `WAVE_SIGNUP_ENABLED` steht **standardmäßig aus**: dann liefert `/signup` 404 und die
+Registrierung über die eingerichteten OIDC-Anbieter und, wo der Server Mail senden kann, mit E-Mail und
+Passwort anbietet (#150). Der erste Login legt das Konto an, danach geht es nach `/waves/new`. Waves anlegen
+kann nur, wer eine **bestätigte** E-Mail-Adresse hat (`email_verified`); die Seite sagt das. Eine Registrierung
+mit Passwort ergibt **kein Konto, bis der Link aus der Bestätigungsmail benutzt wurde** (einmal, innerhalb von
+24 Stunden); ohne `WAVE_SMTP_URL` gibt es das Formular gar nicht. Eine Adresse, die schon ein Konto hat, bekommt
+dieselbe Antwort und eine Mail, die das sagt, nie eine Zusammenführung. `WAVE_SIGNUP_ENABLED` steht **standardmäßig aus**: dann liefert `/signup` 404 und die
 Login-Seite zeigt keinen Link „Konto erstellen“, das Verhalten ist wie zuvor. Selfhosting lässt den Schalter aus.
 
 Mehr dazu, auch zu `WAVE_FREE_IPV4_PREFIX_LENGTH` und `WAVE_FREE_BLOCKED_EMAIL_DOMAINS`:

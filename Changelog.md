@@ -6,6 +6,18 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Registrierung mit E-Mail und Passwort auf `/signup` (#150):** Die Seite bietet neben den OIDC-Anbietern immer auch
+  ein Formular für E-Mail und Passwort an; ohne Anbieter steht nur das Formular da. Das Konto entsteht erst, wenn der
+  Link aus der Bestätigungsmail benutzt wurde (einmal gültig, 24 Stunden); vorher gibt es weder Anmeldung noch
+  Wave. Danach folgt die Anmeldung und das Formular für den ersten Wave. Eine Adresse, die schon ein Konto hat,
+  bekommt dieselbe Antwort wie eine neue und eine Mail „Du hast bereits ein Konto“ mit Link zur Anmeldung;
+  Konten werden nie zusammengeführt. Die Registrierung ist gegen Dauerversuche gedrosselt. Sie braucht einen
+  Mailserver (`WAVE_SMTP_URL`, `WAVE_MAIL_FROM`); ohne ihn fehlen das Formular und der Endpunkt, und
+  `/api/auth/providers` meldet `passwordSignup: false`. `WAVE_SIGNUP_ENABLED` bleibt maßgeblich: aus heißt 404 für
+  die Seite und die Endpunkte.
+
 ---
 
 ## 🔬 Development v0.17.0-develop.13 (15.11.2026)

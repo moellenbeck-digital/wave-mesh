@@ -657,6 +657,63 @@ Was daran festliegt (`apps/control/src/auth/oidc.ts`):
   geholt, nicht beim Start — ein Control-Server startet auch, wenn Pocket ID
   gerade nicht da ist.
 
+## Registrierung mit E-Mail und Passwort (`/signup`, #150)
+
+`/signup` (nur mit `WAVE_SIGNUP_ENABLED`) bietet neben den OIDC-Anbietern immer
+auch E-Mail und Passwort an -- ohne Anbieter steht nur das Formular da. Das
+Konto entsteht erst, wenn der Link aus der Bestätigungsmail benutzt wurde.
+
+```bash
+WAVE_SMTP_URL=smtp://user:pass@mail.example.com:587   # smtps://host:465 für TLS von Anfang an
+WAVE_MAIL_FROM="wave-mesh <noreply@example.com>"      # Pflicht mit WAVE_SMTP_URL
+```
+
+Was daran festliegt (`auth/signup-password.ts`, `routes/signup.ts`, `mail.ts`):
+
+- **Ohne `WAVE_SMTP_URL` gibt es keine Passwort-Registrierung.** Kein Formular
+  auf `/signup`, `POST /auth/signup` und `/auth/signup/confirm` antworten 404,
+  `/api/auth/providers` meldet `passwordSignup: false`. Es gibt keinen Weg, eine
+  Adresse zu bestätigen, also darf es auch kein Konto ergeben. Eine URL ohne
+  Absender (`WAVE_MAIL_FROM`) oder mit anderem Schema verweigert `loadConfig()`
+  beim Start. Der Versand ist ein `Mailer` (`mail.ts`, nodemailer); `createApp`
+  nimmt einen anderen entgegen, die Tests einen Sammler (`test/mail-sink.ts`).
+  Scheitert der Versand, antwortet die Registrierung mit 503 -- gleich für
+  bekannte und unbekannte Adressen.
+- **Eine Registrierung ist keine Zeile in `users`.** Ein Konto, das es gibt,
+  kann sich anmelden; eine unbestätigte Adresse darf das nicht. Adresse und
+  Argon2id-Hash des Passworts stehen in `signup_verifications`, vom Token nur
+  dessen SHA-256 (wie bei `password_setups`, deren Tabelle nicht passt: dort
+  gibt es das Konto schon und der Link setzt nur das Passwort). Den Link löst
+  `confirm()` ein: erst dann entsteht der Benutzer, `email_verified` gesetzt,
+  mit der Identität `password`. Der Link gilt einmal und 24 Stunden.
+- **Das Öffnen des Links legt nichts an.** `GET /signup/confirm?token=…` zeigt nur
+  einen Knopf; der POST macht das Konto. Sonst verbrauchte der Scanner einer
+  Mailbox, der jeden Link abruft, das Token vor seinem Besitzer. Angemeldet wird
+  nicht automatisch: danach folgt der Login (`?next=/waves/new`), wie beim
+  OIDC-Erstlogin, und der Link allein ist keine Sitzung.
+- **Gleiche Antwort für jede Adresse.** Status, Weiterleitung auf `/signup/sent`
+  und Seite sind für neue und vergebene Adressen gleich, ebenso der Fehlerfall
+  (Rate-Limit, Mail-Fehler). Das Passwort wird immer gehasht, auch wenn die
+  Adresse vergeben ist, und es geht immer genau eine Mail raus. Gehört die Adresse
+  einem OIDC- oder Passwort-Konto (oder einem unbestätigten Anbieter-Konto), ist
+  das die Mail „Du hast bereits ein Konto“ mit Login-Link: **keine
+  Zusammenführung**, nichts wird geändert. Eine Adresse mit unbestätigter
+  Registrierung bekommt eine neue Mail, das alte Token ist ungültig, und es
+  bleibt bei einem Konto. Ein Platzhalter aus einer Zahlung (unbestätigt, ohne
+  Passwort und Login) zählt als frei und wird bei der Bestätigung übernommen, wie
+  bei einem ersten Anbieter-Login (`auth/identity.ts`). Entsteht zwischen
+  Registrierung und Klick ein Konto zur Adresse, verbraucht der Link sich ohne
+  Wirkung: das gewählte Passwort wird nie ein Zugang zu einem fremden Konto.
+- **Drei Drosseln**, im Prozess gezählt wie `LoginThrottle`: je Adresse und
+  Quelle (5 in 15 Minuten), je Adresse von überall (5 in der Stunde, begrenzt
+  die Mails an ein fremdes Postfach) und je Quelle (20 in der Stunde). Jede
+  Anfrage zählt, auch die abgelehnte, und gezählt wird vor jeder Prüfung --
+  die Ablehnung hängt an den Anfragen, nie an der Adresse.
+- **Mit Frontend** (`WAVE_WEB_URL`) gehören die Seiten (`/signup`, `/signup/sent`,
+  `/signup/confirm`) dem Frontend; Control nimmt nur die POSTs und leitet mit
+  einem Code im Query zurück (`/signup?error=password-too-short`, `…confirm?state=done|gone`).
+  Selektoren der Oberfläche: `data-signup`, `data-field`, `data-action`.
+
 ## Getrennte Konten verknüpfen (`auth/account-link.ts`)
 
 `resolveUser` verknüpft nur auf eine Adresse, die der Anbieter als bestätigt
@@ -3368,7 +3425,7 @@ Was daran festliegt:
   die Zeile wäre es Let's Encrypts Staging. Damit gilt das Rate Limit der
   Domain: ein Fehlversuch kostet eine Woche.
 - **Konten entstehen nur auf der Shell.** Es gibt keine Passwort-Registrierung (`/signup` gibt es nur mit
-  `WAVE_SIGNUP_ENABLED=true`, bietet nur OIDC an und ist hier aus); die
+  `WAVE_SIGNUP_ENABLED=true`, braucht für E-Mail und Passwort zusätzlich `WAVE_SMTP_URL` und ist hier aus); die
   Anmeldeseite trägt Argon2id und die Login-Drossel, der Dev-Login ist unter
   `WAVE_ENV=production` ohnehin aus. Angelegt wird mit
   `kubectl exec … -- wave-admin set-password`.

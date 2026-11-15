@@ -151,6 +151,15 @@ const EnvSchema = z.object({
    * closed (same care as WAVE_FREE_MAX_WAVES).
    */
   WAVE_SIGNUP_ENABLED: z.string().optional().transform(parseFlag),
+  /**
+   * The outgoing mail server, as a URL: `smtp://user:pass@host:587` (STARTTLS
+   * when the server offers it) or `smtps://host:465`. Without it the server
+   * sends no mail, and the password registration on `/signup` (ticket #150) is
+   * not available: no way to confirm an address, so no account. Empty is unset.
+   */
+  WAVE_SMTP_URL: z.string().optional(),
+  /** The sender of those mails, `wave-mesh <noreply@example.com>` or a bare address. Required with WAVE_SMTP_URL. */
+  WAVE_MAIL_FROM: z.string().optional(),
   /** Password-free login for local development. Refused in production. */
   WAVE_DEV_AUTH: z
     .string()
@@ -162,6 +171,34 @@ const EnvSchema = z.object({
 export function parseFlag(value: string | undefined): boolean {
   const v = (value ?? "").trim().toLowerCase();
   return v === "true" || v === "1";
+}
+
+export interface SmtpConfig {
+  url: string;
+  from: string;
+}
+
+/**
+ * Reads WAVE_SMTP_URL and WAVE_MAIL_FROM. A server without a sender address is
+ * refused at start rather than failing on the first registration, and a URL of
+ * another kind is refused rather than guessed at. Empty values are unset.
+ */
+export function parseSmtp(raw: { WAVE_SMTP_URL?: string; WAVE_MAIL_FROM?: string }): SmtpConfig | undefined {
+  const url = raw.WAVE_SMTP_URL?.trim();
+  const from = raw.WAVE_MAIL_FROM?.trim();
+  if (!url) return undefined;
+  if (!from) throw new Error("WAVE_SMTP_URL needs WAVE_MAIL_FROM, the sender address of the mails");
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("WAVE_SMTP_URL is not a URL (smtp://user:password@host:587 or smtps://host:465)");
+  }
+  if (parsed.protocol !== "smtp:" && parsed.protocol !== "smtps:") {
+    throw new Error(`WAVE_SMTP_URL must be smtp:// or smtps:// (got ${parsed.protocol}//)`);
+  }
+  if (!parsed.hostname) throw new Error("WAVE_SMTP_URL has no host");
+  return { url, from };
 }
 
 export interface OidcConfig {
@@ -230,6 +267,8 @@ export type Config = {
   freeMaxWaves: number;
   /** Whether `/signup` is served and offered on the login page; see WAVE_SIGNUP_ENABLED. */
   signupEnabled: boolean;
+  /** Where mail goes out (WAVE_SMTP_URL, WAVE_MAIL_FROM); undefined sends none. */
+  smtp?: SmtpConfig;
   /** Lowercased domains that cannot start a free account. */
   freeBlockedEmailDomains: string[];
   /** Prefix length of the block a new free wave gets; billed waves are /16. */
@@ -351,6 +390,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     freeDeviceLimit: raw.WAVE_FREE_DEVICE_LIMIT,
     freeMaxWaves: raw.WAVE_FREE_MAX_WAVES,
     signupEnabled: raw.WAVE_SIGNUP_ENABLED,
+    smtp: parseSmtp(raw),
     freeBlockedEmailDomains: parseBlockedDomains(raw.WAVE_FREE_BLOCKED_EMAIL_DOMAINS),
     freeIpv4PrefixLength: raw.WAVE_FREE_IPV4_PREFIX_LENGTH,
     capacityReserve: raw.WAVE_CAPACITY_RESERVE,

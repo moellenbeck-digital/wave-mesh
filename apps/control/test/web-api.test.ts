@@ -94,6 +94,7 @@ describe("the frontend's API", () => {
       providers: ["dev"],
       labels: { dev: "Dev login" },
       signup: false,
+      passwordSignup: false,
     });
   });
 
