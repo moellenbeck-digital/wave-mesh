@@ -147,9 +147,9 @@ export function createApp({
   const throttle = new LoginThrottle();
   const codeThrottle = new LoginThrottle(10);
   app.route("/", passwordRoutes({ db, config, throttle, codeThrottle }));
-  app.route("/", accountRoutes({ db }));
 
   const hub = new NetmapHub(db, signingKey, config.relays);
+  app.route("/", accountRoutes({ db, hub, config, dnsFetch }));
   // The same events, told to the other audience: nodes get a signed netmap,
   // browsers get the device list they are rendering.
   const feed = new DeviceFeed(db, hub);
