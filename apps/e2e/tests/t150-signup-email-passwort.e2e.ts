@@ -1,6 +1,9 @@
 /**
  * Ticket #150: `/signup` bietet immer auch E-Mail und Passwort an (Registrierung mit Bestätigungsmail).
  *
+ * Voraussetzung für P6/P7: `MAILPIT_URL` (HTTP-API von Mailpit, z. B. `http://localhost:8025`), an das der Server
+ * seine Mail schickt (`WAVE_SMTP_URL=smtp://<mailpit>:1025`). Fehlt sie, überspringen beide mit Grund.
+ *
  * Zustand und Voraussetzung: Wie in t147 entscheidet das Testsystem, nicht dieser Test. Er liest ohne
  * Anmeldung `GET /api/auth/providers` (`signup`, `passwordSignup`) und führt nur die Fälle des
  * vorgefundenen Zustands aus; die anderen überspringen mit Grund. `passwordSignup` ist wahr, wenn
@@ -19,15 +22,22 @@
  * - P4 „Registrierung abgeschickt“: ein gültiges Paar führt auf die Seite „Mail ist unterwegs“
  *   (`data-signup="sent"`); danach geht die Anmeldung mit genau diesem Paar nicht (kein Konto ohne
  *   Bestätigung) und es gibt keine Sitzung (`/api/me` 401).
+ * - P6 „Kernpfad“: Registrierung mit frischer Adresse → Bestätigungsmail aus Mailpit → Link öffnen →
+ *   Knopf „Confirm and create account“ → `[data-signup="login"]` führt auf die Anmeldung mit
+ *   `next=/waves/new` → Anmeldung mit dem gewählten Passwort → Ziel `/waves/new` (Formular für den ersten Wave).
+ * - P7 „Bekannte Adresse“: Dieselbe, nun bestehende Adresse registriert sich noch einmal: dieselbe Seite „Mail
+ *   unterwegs“, aber die Mail „You already have a wave-mesh account“ ohne `/signup/confirm` im Text.
  * - P5 „Link ungültig“: `/signup/confirm?token=…` mit einem erfundenen Token endet auf der Seite
  *   „Link gilt nicht mehr“ (`data-signup="gone"`), im Frontend nach dem Klick auf den Bestätigungsknopf.
  * - S2 „Schalter aus“: `/signup`, `/register`, `/signup/confirm` liefern 404, `POST /auth/signup` und
  *   `POST /auth/signup/confirm` ebenso, die Login-Seite hat keinen Link, `signup: false` und
  *   `passwordSignup: false` in `/api/auth/providers`.
  *
+ * Aufräumen: Die Mails beider Adressen löscht der Test in Mailpit wieder. Das angelegte Konto (P6) bleibt:
+ * Konten lassen sich weder in der Oberfläche noch über eine API löschen; die Adresse
+ * (`t150-flow-<Lauf>@example.test`) ist je Lauf neu und stört nichts.
+ *
  * Nicht über die Oberfläche prüfbar, mit Grund (Beleg: `apps/control/test/signup-password.test.ts`):
- * - Der Weg Mail → Link → Login → `/waves/new`: Der Test hat keinen Zugriff auf das Postfach des Systems.
- *   Belegt ist er dort mit einem In-Process-Mail-Sink („the whole way ends on /waves/new“).
  * - Einmaligkeit und Ablauf des Links, Verhalten bei bekannter Adresse (OIDC, Passwort, unbestätigte
  *   Registrierung: gleiche Antwort, Mail „Du hast bereits ein Konto“, keine Zusammenführung), Rate-Limit:
  *   Jede Probe würde Mails an fremde Postfächer schicken oder das geteilte System sperren.
@@ -49,6 +59,66 @@ let options: Options;
 
 const RUN = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const ADDRESS = `t150-${RUN}@example.test`;
+/** Die Adresse des Kernpfads (P6/P7): hier entsteht ein Konto, deshalb eigene Adresse je Lauf. */
+const FLOW_ADDRESS = `t150-flow-${RUN}@example.test`;
+const FLOW_PASSWORD = `t150-flow-${RUN}-passwort`;
+const MAILPIT_URL = process.env.MAILPIT_URL?.replace(/\/+$/, "");
+const NO_MAILPIT =
+  "MAILPIT_URL ist nicht gesetzt: ohne das Postfach des Systems ist der Mailweg nicht prüfbar.";
+
+interface MailpitMessage {
+  ID: string;
+  Subject: string;
+}
+
+/** Die Mails an eine Adresse aus Mailpit, neueste zuerst. */
+async function mailsTo(p: Page, address: string): Promise<MailpitMessage[]> {
+  const res = await p.request.get(`${MAILPIT_URL}/api/v1/search`, { params: { query: `to:"${address}"` } });
+  expect(res.status(), "Mailpit /api/v1/search").toBe(200);
+  return ((await res.json()) as { messages?: MailpitMessage[] }).messages ?? [];
+}
+
+/** Wartet auf die Mail mit diesem Betreff und liefert ihren Text. */
+async function mailText(p: Page, address: string, subject: string): Promise<string> {
+  let id = "";
+  await expect
+    .poll(
+      async () => {
+        id = (await mailsTo(p, address)).find((m) => m.Subject === subject)?.ID ?? "";
+        return id;
+      },
+      {
+        message: `Mail „${subject}“ an ${address} in Mailpit`,
+        timeout: 30_000,
+        intervals: [500, 1_000, 2_000],
+      },
+    )
+    .not.toBe("");
+  const res = await p.request.get(`${MAILPIT_URL}/api/v1/message/${id}`);
+  expect(res.status(), "Mailpit /api/v1/message").toBe(200);
+  return ((await res.json()) as { Text: string }).Text;
+}
+
+/** Löscht die Mails der Adressen wieder; Aufräumen scheitert nie den Fall. */
+async function deleteMails(p: Page, addresses: string[]): Promise<void> {
+  if (!MAILPIT_URL) return;
+  try {
+    const ids = (await Promise.all(addresses.map((a) => mailsTo(p, a)))).flat().map((m) => m.ID);
+    if (ids.length > 0) await p.request.delete(`${MAILPIT_URL}/api/v1/messages`, { data: { IDs: ids } });
+  } catch {
+    // Mailpit weg oder anders konfiguriert: nichts aufzuräumen.
+  }
+}
+
+/** Der Link aus dem Mailtext als Pfad mit Query: der Test öffnet ihn gegen `APP_URL`, nicht gegen `WAVE_BASE_URL`. */
+function confirmPath(text: string): string {
+  const found = text.match(/https?:\/\/\S+\/signup\/confirm\?token=[\w-]+/);
+  expect(found, "Bestätigungslink im Mailtext").toBeTruthy();
+  const url = new URL(found?.[0] ?? "");
+  return `${url.pathname}${url.search}`;
+}
+
+let flowConfirmed = false;
 const PASSWORD = `t150-${RUN}-passwort`;
 
 /** Die Login-Seite: `/login` im Frontend, sonst die schlichte Seite von Control auf `/`. */
@@ -77,6 +147,7 @@ test.describe("Registrierung mit E-Mail und Passwort", () => {
   });
 
   test.afterAll(async () => {
+    await deleteMails(page, [ADDRESS, FLOW_ADDRESS]);
     await ctx?.close();
   });
 
@@ -160,6 +231,63 @@ test.describe("Registrierung mit E-Mail und Passwort", () => {
     await page.locator('form[action="/auth/password/login"] button[type="submit"]').click();
     await expect(page.locator("#email")).toBeVisible();
     expect((await page.request.get("/api/me")).status()).toBe(401);
+  });
+
+  test("P6 Kernpfad: Registrierung → Mail → Link → Knopf → Anmeldung → /waves/new", {
+    tag: "@t150",
+  }, async () => {
+    test.skip(!MAILPIT_URL, NO_MAILPIT);
+    test.skip(options.passwordSignup !== true, "passwordSignup≠true: kein Formular, Fall P2 gilt.");
+
+    await page.goto("/signup");
+    await fillSignup(page, FLOW_ADDRESS, FLOW_PASSWORD);
+    await page.locator('[data-action="signup-submit"]').click();
+    await expect(page.locator('[data-signup="sent"]')).toBeVisible();
+
+    const text = await mailText(page, FLOW_ADDRESS, "Confirm your wave-mesh account");
+    await page.goto(confirmPath(text));
+    await page.locator('[data-action="signup-confirm"]').click();
+
+    // Bestätigt: der Link führt auf die Anmeldung und nimmt `/waves/new` als Ziel mit.
+    const login = page.locator('a[data-signup="login"]');
+    await expect(login).toBeVisible();
+    await login.click();
+    await page.waitForURL((url) => url.searchParams.get("next") === "/waves/new");
+    await page.locator("#email").fill(FLOW_ADDRESS);
+    await page.locator("#password").fill(FLOW_PASSWORD);
+    await page.locator('form[action="/auth/password/login"] button[type="submit"]').click();
+
+    await page.waitForURL((url) => url.pathname === "/waves/new");
+    await expect(page.locator('form[action="/waves"]')).toBeVisible();
+    flowConfirmed = true;
+
+    // Der Link ist verbraucht: ein zweites Öffnen und Absenden ändert nichts.
+    await page.goto(confirmPath(text));
+    const again = page.locator('[data-action="signup-confirm"]');
+    if ((await again.count()) > 0) await again.click();
+    await expect(page.locator('[data-signup="gone"]')).toBeVisible();
+  });
+
+  test("P7 Bekannte Adresse: gleiche Seite, Mail „bereits ein Konto“ ohne Bestätigungslink", {
+    tag: "@t150",
+  }, async () => {
+    test.skip(!MAILPIT_URL, NO_MAILPIT);
+    test.skip(!flowConfirmed, "Der Kernpfad (P6) hat kein Konto für die Adresse angelegt.");
+
+    // Ohne Sitzung: P6 hat sich angemeldet, `/signup` schickt Angemeldete weg.
+    await ctx.clearCookies();
+    await page.goto("/signup");
+    await fillSignup(page, FLOW_ADDRESS, `${FLOW_PASSWORD}-anders`);
+    await page.locator('[data-action="signup-submit"]').click();
+
+    // Dieselbe Seite wie bei einer neuen Adresse: von außen ist nicht zu sehen, dass es sie gibt.
+    await expect(page.locator('[data-signup="sent"]')).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/signup/sent");
+
+    const text = await mailText(page, FLOW_ADDRESS, "You already have a wave-mesh account");
+    expect(text).not.toContain("/signup/confirm");
+    expect(text).toContain("already has an account");
+    expect(text).toMatch(/https?:\/\/\S+/);
   });
 
   test("P5 Ungültiger Link endet auf „Link gilt nicht mehr“", { tag: "@t150" }, async () => {
