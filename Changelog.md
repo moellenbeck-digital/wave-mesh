@@ -8,6 +8,29 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## ✅ Stable v0.17.0 (16.11.2026)
+
+### Neue Funktionen
+
+- **Gratis-Tarif für gehostete Konten (#117, #116):** Wer seine E-Mail-Adresse bestätigt hat, legt ohne Zahlung ein Konto mit bis zu 3 Waves an. Ein kostenloses Konto fasst höchstens 3 Personen (Mitglieder und offene Einladungen) und 100 Geräte über alle seine Waves. Ein Gerät, das schon im Konto ist, belegt in einer weiteren Wave keinen zusätzlichen Platz. Ein späteres Abo hebt die Grenzen an; eine Kündigung bringt das Konto zurück in den Gratis-Tarif, ohne dass sich an Waves, Schlüsseln, Adressen oder Verbindungen etwas ändert. Zwei Gratis-Konten werden nie zu zwei: Passen die Waves des zweiten in die Grenzen des ersten, gehen sie dorthin, sonst bricht die Verknüpfung mit Nennung der überschrittenen Grenze ab. *(seit develop.6, develop.8)*
+- **Kundenkonto als Abrechnungseinheit (#114):** Ein Kundenkonto besitzt mehrere Waves; neue Bezahl-Waves landen im Konto ihres Eigentümers. Bestehende Waves ordnet `wave-admin migrate-accounts [--dry-run]` ohne neue Anmeldung der Geräte zu. *(seit develop.4)*
+- **Tarif und Nutzung im Konto (#119):** Die Kontoübersicht zeigt Tarif, Waves, Personen und Geräte als „belegt von erlaubt“ und erklärt, wie gezählt wird. Quotenmeldungen nennen die Zahlen und den nächsten Schritt; `wave up`, der Dienst und die DSM-Oberfläche zeigen die Gerätegrenze lesbar auf Deutsch oder Englisch. *(seit develop.8, develop.11)*
+- **Ein Gerät in mehreren Waves:** Der Geräteschlüssel gilt je Wave statt für den ganzen Server. Anfragen eines Geräts in mehreren Waves nennen ihre Wave im Header `X-Wave-Id`; bisherige Geräte und Clients sind nicht betroffen. *(seit develop.6)*
+- **Registrierungsseite `/signup` (#147, #150):** Die Seite erklärt den Gratis-Tarif und bietet die Registrierung über die eingerichteten Anbieter an, optional mit E-Mail und Passwort über den Link aus der Bestätigungsmail. Standardmäßig ist sie aus; `WAVE_SIGNUP_ENABLED=true` schaltet sie ein. *(seit develop.13, develop.14)*
+- **Konto selbst löschen (#31, Pflicht für Google Play und DSGVO Art. 17):** Auf `/account/delete` löscht ein angemeldeter Benutzer sein Konto samt Daten. Die Seite zeigt vorher, was geschieht: Waves, in denen man allein ist, werden gelöscht; Waves mit anderen Mitgliedern gehen an einen anderen Administrator. Ein laufendes Abo wird nicht automatisch gekündigt, die Seite weist darauf hin. *(seit develop.15)*
+
+### Fehlerbehebungen
+
+- **Personengrenze im Gratis-Konto lückenlos (#115):** Die Grenze von drei Personen gilt für jedes neue Mitglied, auch bei `wave-admin add-member`. Gleichzeitige Einladungen um den letzten Platz vergeben ihn nur einmal. Bestehende Mitglieder, Geräte und Einladungen bleiben auch über dem Limit unangetastet. *(seit develop.12)*
+- Bei einem Konto, das nur über Wave-Abos bezahlt ist, zählt die Personenanzeige wie die Grenze. *(seit develop.11)*
+
+### Technisch
+
+- **Adressnetze für mehr Gratis-Waves (#118):** Neue Gratis-Waves bekommen ein `/24` (`WAVE_FREE_IPV4_PREFIX_LENGTH`), neue abgerechnete Waves ein `/16`. Bestehende Waves, Adressen und Tunnel bleiben unverändert. `wave-admin capacity` zeigt die belegten und freien Blöcke; `WAVE_CAPACITY_RESERVE` (Standard 4) hält ganze `/16` für abgerechnete Waves frei. *(seit develop.10)*
+- Die Dokumentation zum Gratis-Tarif steht in `docs/GRATIS-TARIF.md` und `docs/FREE-PLAN.md`; das Selfhosting nennt die Elastic License 2.0 und ihre Einschränkung für gehostete Dienste. *(seit develop.11)*
+
+---
+
 ## 🔬 Development v0.17.0-develop.15 (15.11.2026)
 
 ### Neue Funktionen
