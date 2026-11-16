@@ -753,6 +753,48 @@ Was daran festliegt (`auth/signup-password.ts`, `routes/signup.ts`, `mail.ts`):
   einem Code im Query zurück (`/signup?error=password-too-short`, `…confirm?state=done|gone`).
   Selektoren der Oberfläche: `data-signup`, `data-field`, `data-action`.
 
+## Passwort vergessen (`/password/forgot`, #159)
+
+Wer ein Konto mit E-Mail und Passwort hat, wählt auf der Passwort-Anmeldung
+„Passwort vergessen“, bekommt per Mail einen einmaligen Link und stellt damit
+ein neues Passwort ein. Es gibt es **nur mit Mailserver** (`WAVE_SMTP_URL`,
+`WAVE_MAIL_FROM`, siehe oben), unabhängig von `WAVE_SIGNUP_ENABLED`: ohne ihn
+fehlt der Link auf der Anmeldung, `GET /password/forgot`, `/password/reset` und
+`POST /auth/password/forgot`, `/auth/password/reset` antworten 404, und
+`/api/auth/providers` meldet `passwordReset: false`. Selfhosting ohne SMTP bleibt
+unverändert. Code: `auth/password-reset.ts`, `auth/password-reset-mail.ts`,
+`routes/password-reset.ts`.
+
+- **Eigene Tabelle `password_resets`**, nicht `password_setups` (dort heißt
+  „hat schon Zugang“ 410, hier ist es der Normalfall). Vom Token nur der
+  SHA-256; gilt **einmal und 1 Stunde**. Eine neue Anfrage widerruft die offenen
+  Links der Adresse; ein eingelöster Link die übrigen des Kontos.
+- **Die Anfrage antwortet immer gleich** (Weiterleitung auf
+  `/password/forgot/sent`, derselbe Text), ob es ein Konto gibt oder nicht. Die
+  Mail geht erst **nach** der Antwort raus (Fehler nur ins Log, nie zur Person),
+  und die Antwort kommt frühestens nach `minDurationMs` (400 ms), damit die Laufzeit
+  nichts verrät. Mail mit Link nur an Adressen mit Passwort-Konto (das Konto, das
+  `verifyLogin` anmeldet); ein Konto nur mit Anbieter-Login bekommt eine Mail
+  ohne Link, Unbekannte und Zahlungs-Platzhalter nichts.
+- **Drei Drosseln** wie bei der Registrierung (je Adresse+Quelle 5/15 min, je
+  Adresse 5/h, je Quelle 20/h), eigene Zähler (`resetThrottles`); jede Anfrage
+  zählt vor jeder Prüfung. Ohne Frontend 429 mit Seite, mit Frontend eine
+  Weiterleitung mit `?error=throttled` (wie bei `/signup`).
+- **Das Öffnen des Links verbraucht nichts**: `GET /password/reset?token=…` prüft
+  (`isLive`) und zeigt das Formular; mit Frontend fragt dessen Seite
+  `GET /api/auth/password-reset/check?token=…`. Der POST prüft `sameOrigin`
+  (wie das Setup-Formular, `net/same-origin.ts`), Länge (`MIN_PASSWORD_LENGTH`
+  bis `MAX_PASSWORD_LENGTH`) und löst in **einer Transaktion** unter
+  `lockAddress` ein.
+- **Nach dem Reset:** Hash ersetzt, **alle Sitzungen des Kontos beendet** (und
+  halbe Logins mit zweitem Faktor), **keine automatische Anmeldung** -- die
+  Weiterleitung geht auf die Anmeldung mit `?notice=password-changed`, der
+  Zweitfaktor bleibt.
+- **Selektoren der Oberfläche:** `data-reset` (`request-form`, `sent`, `form`,
+  `gone`, `again`, `error`), `data-field`, `data-action` (`reset-request`,
+  `reset-submit`), `a[href="/password/forgot"]` (`data-field="forgot-link"`),
+  Hinweis auf der Anmeldung `data-login="notice"`.
+
 ## Getrennte Konten verknüpfen (`auth/account-link.ts`)
 
 `resolveUser` verknüpft nur auf eine Adresse, die der Anbieter als bestätigt

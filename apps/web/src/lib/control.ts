@@ -309,6 +309,17 @@ export async function fetchAuthOptions(): Promise<AuthOptions> {
   return parseAuthOptions((await res.json()) as Parameters<typeof parseAuthOptions>[0]);
 }
 
+/**
+ * Whether the link of a password reset mail is still good (ticket #159): asked
+ * before the page shows its form, without spending the link. Anything but a
+ * clear yes is a no.
+ */
+export async function fetchResetLinkLive(token: string): Promise<boolean> {
+  const res = await controlFetch(`/api/auth/password-reset/check?token=${encodeURIComponent(token)}`);
+  if (!res.ok) return false;
+  return ((await res.json()) as { valid?: unknown }).valid === true;
+}
+
 export async function fetchProviders(): Promise<AuthProvider[]> {
   return (await fetchAuthOptions()).providers;
 }

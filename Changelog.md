@@ -6,6 +6,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Passwort vergessen (#159):** Auf der Passwort-Anmeldung gibt es den Link „Passwort vergessen“. Wer ein Konto mit
+  E-Mail und Passwort hat, bekommt per Mail einen einmaligen Link (gilt 1 Stunde) und stellt damit ein neues Passwort
+  ein. Die Antwort ist für jede Adresse gleich („Falls es ein Konto gibt, wurde eine Mail gesendet“), die Anfrage ist
+  gegen Dauerversuche gedrosselt, eine neue Anfrage macht frühere Links ungültig. Nach dem Zurücksetzen sind alle
+  Sitzungen des Kontos beendet; angemeldet wird nicht automatisch, ein eingerichteter zweiter Faktor bleibt. Es braucht
+  einen Mailserver (`WAVE_SMTP_URL`, `WAVE_MAIL_FROM`); ohne ihn fehlen Link und Endpunkte, und
+  `/api/auth/providers` meldet `passwordReset: false` – Selfhosting ohne SMTP bleibt unverändert.
+
 ---
 
 ## ✅ Stable v0.17.0 (16.11.2026)

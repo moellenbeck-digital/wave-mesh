@@ -95,6 +95,7 @@ describe("the frontend's API", () => {
       labels: { dev: "Dev login" },
       signup: false,
       passwordSignup: false,
+      passwordReset: false,
     });
   });
 

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ForgotLink } from "@/components/password-reset-panel";
 import { SignupLink } from "@/components/signup-panel";
 import { type AccountMessages, accountMessages } from "@/i18n/account";
 import { type AppMessages, appMessages, providerName } from "@/i18n/app";
@@ -31,10 +32,13 @@ export default async function LoginPage({
   const error =
     typeof params.error === "string" ? ERRORS[params.error]?.(t, accountMessages(locale)) : undefined;
 
+  // After a password reset: said once, and only this one notice (ticket #159).
+  const notice = params.notice === "password-changed" ? t.passwordChanged : undefined;
+
   const me = await fetchMe();
   if (me) redirect(next ?? "/");
 
-  const { providers, signup } = await fetchAuthOptions();
+  const { providers, signup, passwordReset } = await fetchAuthOptions();
   const suffix = next ? `?next=${encodeURIComponent(next)}` : "";
 
   return (
@@ -51,6 +55,12 @@ export default async function LoginPage({
         style={{ animationDelay: "0.2s" }}
       >
         <div className="absolute top-0 right-0 left-0 h-1 rounded-t-lg bg-accent" />
+
+        {notice ? (
+          <p className="wc-alert-success mb-6" role="status" data-login="notice">
+            {notice}
+          </p>
+        ) : null}
 
         {error ? (
           <p className="wc-alert-error mb-6" role="alert">
@@ -93,6 +103,8 @@ export default async function LoginPage({
             {t.signIn}
           </button>
         </form>
+
+        <ForgotLink passwordReset={passwordReset} locale={locale} />
 
         {providers.length > 0 ? (
           <>

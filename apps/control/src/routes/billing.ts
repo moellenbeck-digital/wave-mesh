@@ -13,6 +13,7 @@ import type { Database } from "../db/client.ts";
 import { customerAccounts } from "../db/schema.ts";
 import type { Config } from "../env.ts";
 import { localeOf } from "../i18n.ts";
+import { sameOrigin } from "../net/same-origin.ts";
 import type { NetmapHub } from "./control-ws.ts";
 import { type PageMessages, pageMessages } from "./messages.ts";
 
@@ -263,18 +264,4 @@ export function billingRoutes({ db, config, hub }: BillingRouteDeps) {
   });
 
   return app;
-}
-
-/**
- * Whether a form post came from this server's own pages. Browsers send
- * `Sec-Fetch-Site` and, on a POST, `Origin`; a request with neither is not a
- * browser carrying someone's cookies, and is let through.
- */
-function sameOrigin(c: Context, baseUrl: string): boolean {
-  const site = c.req.header("sec-fetch-site");
-  if (site && site !== "same-origin" && site !== "none") return false;
-  const origin = c.req.header("origin");
-  if (origin && origin !== "null" && origin !== new URL(baseUrl).origin) return false;
-  if (origin === "null") return false;
-  return true;
 }

@@ -123,6 +123,34 @@ const en = {
   signupGoneBody:
     "It was used already or has expired, or the address has an account by now. Sign in, or sign up again for a new link.",
   signupHaveAccount: "Already have an account?",
+  // --- forgot password (ticket #159) ------------------------------------------
+  forgotLink: "Forgot password",
+  forgotTitle: "Forgot password",
+  forgotLead:
+    "Enter the email address of your account. If it has a password, we send a link to choose a new one.",
+  forgotSubmit: "Send link",
+  forgotSentTitle: "The mail is on its way",
+  forgotSentBody:
+    "If there is an account for this address, a mail with a link has been sent. It can take a few minutes, and it may be in the spam folder. The link works once and for 1 hour.",
+  resetTitle: "Choose a new password",
+  resetBody:
+    "Choose a new password for your account. You will be signed out everywhere and sign in again afterwards.",
+  resetButton: "Save password",
+  resetGoneTitle: "This link no longer works",
+  resetGoneBody: "It was used already or has expired, or a newer one replaced it. Ask for a new link.",
+  resetAskAgain: "Ask for a new link",
+  passwordChanged: "Password changed. Sign in with the new one.",
+  resetPasswordHint: (n: number) => `At least ${n} characters.`,
+  /** The codes `/auth/password/forgot` and `/auth/password/reset` redirect back with; empty for one it does not know. */
+  forgotError: (code: string) =>
+    (
+      ({
+        "invalid-email": "That does not look like an email address.",
+        throttled: "Too many attempts. Please try again later.",
+        "password-too-short": "That password is too short.",
+        "password-too-long": "That password is too long.",
+      }) as Record<string, string>
+    )[code] ?? "",
 
   // ---- device approval ----
   chooseOne: (host: string) => `Add ${host}?`,
@@ -362,6 +390,35 @@ const de: typeof en = {
   signupGoneBody:
     "Er wurde schon benutzt oder ist abgelaufen, oder die Adresse hat inzwischen ein Konto. Melde dich an, oder registriere dich noch einmal für einen neuen Link.",
   signupHaveAccount: "Du hast schon ein Konto?",
+  // --- forgot password (ticket #159) ------------------------------------------
+  forgotLink: "Passwort vergessen",
+  forgotTitle: "Passwort vergessen",
+  forgotLead:
+    "Gib die E-Mail-Adresse deines Kontos ein. Hat es ein Passwort, schicken wir dir einen Link, mit dem du ein neues wählst.",
+  forgotSubmit: "Link senden",
+  forgotSentTitle: "Die Mail ist unterwegs",
+  forgotSentBody:
+    "Falls es ein Konto zu dieser Adresse gibt, wurde eine Mail mit einem Link gesendet. Das kann ein paar Minuten dauern, und sie kann im Spam-Ordner landen. Der Link gilt einmal und 1 Stunde.",
+  resetTitle: "Neues Passwort wählen",
+  resetBody:
+    "Wähle ein neues Passwort für dein Konto. Du wirst überall abgemeldet und meldest dich danach neu an.",
+  resetButton: "Passwort speichern",
+  resetGoneTitle: "Dieser Link gilt nicht mehr",
+  resetGoneBody:
+    "Er wurde schon benutzt, ist abgelaufen oder durch einen neueren ersetzt. Fordere einen neuen Link an.",
+  resetAskAgain: "Neuen Link anfordern",
+  passwordChanged: "Passwort geändert. Melde dich mit dem neuen an.",
+  resetPasswordHint: (n) => `Mindestens ${n} Zeichen.`,
+  /** Die Codes, mit denen `/auth/password/forgot` und `/auth/password/reset` zurückleiten; leer bei einem unbekannten. */
+  forgotError: (code) =>
+    (
+      ({
+        "invalid-email": "Das sieht nicht wie eine E-Mail-Adresse aus.",
+        throttled: "Zu viele Versuche. Bitte später erneut probieren.",
+        "password-too-short": "Dieses Passwort ist zu kurz.",
+        "password-too-long": "Dieses Passwort ist zu lang.",
+      }) as Record<string, string>
+    )[code] ?? "",
 
   chooseOne: (host) => `${host} aufnehmen?`,
   chooseMany: (host) => `In welchen Wave soll ${host}?`,

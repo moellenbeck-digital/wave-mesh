@@ -29,6 +29,13 @@ export class MailSink implements Mailer {
     if (!found?.[1]) throw new Error(`no confirmation link in: ${mail?.text}`);
     return decodeURIComponent(found[1]);
   }
+
+  /** The token of the link in a password reset mail (ticket #159). */
+  static resetTokenOf(mail: Mail | undefined): string {
+    const found = mail?.text.match(/\/password\/reset\?token=([\w%-]+)/);
+    if (!found?.[1]) throw new Error(`no reset link in: ${mail?.text}`);
+    return decodeURIComponent(found[1]);
+  }
 }
 
 export interface ReceivedMessage {
