@@ -22,6 +22,11 @@ export interface AuthOptions {
    * is on and the server can send the confirmation mail. A missing field is off.
    */
   passwordSignup: boolean;
+  /**
+   * Whether "forgot password" exists (ticket #159): the server can send mail.
+   * A missing field is off -- the link and the pages stay away.
+   */
+  passwordReset: boolean;
   /** Only present when sign-up is on. */
   freePlan?: FreePlan;
 }
@@ -34,6 +39,7 @@ export function parseAuthOptions(body: {
   labels?: Record<string, string>;
   signup?: unknown;
   passwordSignup?: unknown;
+  passwordReset?: unknown;
   freePlan?: { waves?: unknown; people?: unknown; devices?: unknown } | null;
 }): AuthOptions {
   const providers = (body.providers ?? []).map((id) => ({ id, label: body.labels?.[id] ?? null }));
@@ -49,7 +55,9 @@ export function parseAuthOptions(body: {
     signup && waves !== undefined && people !== undefined && devices !== undefined
       ? { waves, people, devices }
       : undefined;
-  return { providers, signup, passwordSignup, ...(freePlan ? { freePlan } : {}) };
+  // Only a real `true`, like the others; independent of the sign-up switch.
+  const passwordReset = body.passwordReset === true;
+  return { providers, signup, passwordSignup, passwordReset, ...(freePlan ? { freePlan } : {}) };
 }
 
 /** The providers the sign-up page offers: the development login is no registration. */

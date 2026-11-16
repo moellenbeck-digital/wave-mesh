@@ -47,6 +47,7 @@ import { machineRoutes } from "./routes/machine.ts";
 import { pageMessages } from "./routes/messages.ts";
 import { safeNext } from "./routes/next.ts";
 import { passwordRoutes } from "./routes/password.ts";
+import { passwordResetOffered, passwordResetRoutes, type ResetThrottles } from "./routes/password-reset.ts";
 import { pierRoutes } from "./routes/piers.ts";
 import { serviceRoutes } from "./routes/services.ts";
 import { passwordSignupOffered, type SignupThrottles, signupRoutes } from "./routes/signup.ts";
@@ -88,6 +89,10 @@ export interface AppDeps {
   mailer?: Mailer;
   /** Throttles of the password registration. Only the tests replace them. */
   signupThrottles?: SignupThrottles;
+  /** Throttles of "forgot password" (ticket #159). Only the tests replace them. */
+  resetThrottles?: ResetThrottles;
+  /** The least a reset request takes (ms); the tests set it to 0. */
+  resetMinDurationMs?: number;
 }
 
 type Vars = { user: SessionUser | null };
@@ -110,6 +115,8 @@ export function createApp({
   creationThrottles,
   mailer: givenMailer,
   signupThrottles,
+  resetThrottles,
+  resetMinDurationMs,
 }: AppDeps) {
   const app = new Hono<{ Variables: Vars }>();
   const mailer = givenMailer ?? (config.smtp ? createSmtpMailer(config.smtp) : undefined);
@@ -146,7 +153,10 @@ export function createApp({
   // is made, and two counters would double what an attacker gets.
   const throttle = new LoginThrottle();
   const codeThrottle = new LoginThrottle(10);
-  app.route("/", passwordRoutes({ db, config, throttle, codeThrottle }));
+  app.route(
+    "/",
+    passwordRoutes({ db, config, throttle, codeThrottle, passwordReset: passwordResetOffered(mailer) }),
+  );
 
   const hub = new NetmapHub(db, signingKey, config.relays);
   app.route("/", accountRoutes({ db, hub, config, dnsFetch }));
@@ -236,6 +246,13 @@ export function createApp({
   // and neither do the two endpoints behind the form.
   app.route("/", signupRoutes({ db, config, providers, mailer, throttles: signupThrottles }));
 
+  // "Forgot password" (#159): a mailed one-time link to choose a new password.
+  // Not there -- 404 -- without a mailer, whatever WAVE_SIGNUP_ENABLED says.
+  app.route(
+    "/",
+    passwordResetRoutes({ db, config, mailer, throttles: resetThrottles, minDurationMs: resetMinDurationMs }),
+  );
+
   // Whether a user may create a wave is decided per user, in one place, and every
   // answer below -- /api/me, the login redirect -- takes it from there (ticket #117).
   const creationPolicy = creationPolicyOf(config);
@@ -290,6 +307,9 @@ export function createApp({
       // sign-up is on and the server can send the confirmation mail. Without
       // that no address can be confirmed, so there is no registration at all.
       passwordSignup: passwordSignupOffered(config, mailer),
+      // Whether "forgot password" exists (ticket #159): the server can send
+      // mail. A missing field is off, for the frontend and for an older server.
+      passwordReset: passwordResetOffered(mailer),
       ...(config.signupEnabled ? { freePlan: freeLimitsOf(config) } : {}),
       // Beside the ids rather than instead of them: an older frontend reads
       // only the list. An OIDC provider is named by whoever set it up.

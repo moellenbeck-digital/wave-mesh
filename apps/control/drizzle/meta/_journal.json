@@ -183,6 +183,13 @@
       "when": 1794746060605,
       "tag": "0025_signup-verifications",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794849592949,
+      "tag": "0026_password-resets",
+      "breakpoints": true
     }
   ]
 }

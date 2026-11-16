@@ -768,6 +768,37 @@ export const signupVerifications = pgTable(
 );
 
 /**
+ * A link to choose a new password after "forgot password" (ticket #159).
+ *
+ * Its own table, not `password_setups`: that one says "this account has no way
+ * in yet" (and answers 410 once it has), the reverse of what a reset is for.
+ * Only the SHA-256 of the token is stored. A link is good once and for an hour;
+ * a new request revokes the open links of the address, and spending a link
+ * revokes the rest of the account's.
+ */
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Lowercased, as `users.email`, when the link was issued. */
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("password_resets_token_idx").on(t.tokenHash),
+    index("password_resets_email_idx").on(t.email),
+    index("password_resets_user_idx").on(t.userId),
+  ],
+);
+
+/**
  * A guided link of two accounts that one person ended up with: B, the account
  * a provider login made because the provider did not vouch for the address,
  * into A, the verified account that holds the address.

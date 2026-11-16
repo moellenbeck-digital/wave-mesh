@@ -24,6 +24,8 @@ export interface PasswordRouteDeps {
   throttle?: LoginThrottle;
   /** Wrong second-factor codes, per account: see the comment on its use. */
   codeThrottle?: LoginThrottle;
+  /** Whether "forgot password" is on offer (ticket #159): the server can send mail. */
+  passwordReset?: boolean;
 }
 
 /** Carries a login between the password and the code. Not a session: it opens nothing else. */
@@ -55,11 +57,17 @@ const codeForm = (locale: Locale, error?: string) => {
   );
 };
 
-const loginForm = (locale: Locale, next: string | undefined, error?: string) => {
+const loginForm = (
+  locale: Locale,
+  next: string | undefined,
+  error?: string,
+  options: { notice?: string | undefined; passwordReset?: boolean | undefined } = {},
+) => {
   const m = pageMessages(locale);
   return page(
     locale,
     html`<h1>${m.signIn}</h1>
+    ${options.notice ? html`<p role="status" data-login="notice">${options.notice}</p>` : ""}
     <form method="post" action="/auth/password/login">
       ${next ? raw(`<input type="hidden" name="next" value="${Bun.escapeHTML(next)}" />`) : ""}
       <label for="email">${m.email}</label>
@@ -68,11 +76,12 @@ const loginForm = (locale: Locale, next: string | undefined, error?: string) => 
       <input id="password" name="password" type="password" autocomplete="current-password" required />
       <button type="submit">${m.signIn}</button>
       ${error ? html`<p class="error">${error}</p>` : ""}
-    </form>`,
+    </form>
+    ${options.passwordReset ? html`<p><a href="/password/forgot" data-field="forgot-link">${m.forgotLink}</a></p>` : ""}`,
   );
 };
 
-export function passwordRoutes({ db, config, throttle, codeThrottle }: PasswordRouteDeps) {
+export function passwordRoutes({ db, config, throttle, codeThrottle, passwordReset }: PasswordRouteDeps) {
   const app = new Hono();
   const limiter = throttle ?? new LoginThrottle();
   // Per account, not per challenge: whoever has the password can open as many
@@ -95,7 +104,13 @@ export function passwordRoutes({ db, config, throttle, codeThrottle }: PasswordR
 
   app.get("/auth/password/login", (c) => {
     const next = safeNext(c.req.query("next"));
-    return config.webUrl ? toLoginPage(c, next) : c.html(loginForm(localeOf(c), next));
+    const locale = localeOf(c);
+    // After a reset the person lands here: said once, and only that one notice.
+    const notice =
+      c.req.query("notice") === "password-changed" ? pageMessages(locale).passwordChanged : undefined;
+    return config.webUrl
+      ? toLoginPage(c, next)
+      : c.html(loginForm(locale, next, undefined, { notice, passwordReset }));
   });
 
   app.post("/auth/password/login", async (c) => {
@@ -107,7 +122,10 @@ export function passwordRoutes({ db, config, throttle, codeThrottle }: PasswordR
 
     if (limiter.blocked(email, source)) {
       if (config.webUrl) return toLoginPage(c, next, "throttled");
-      return c.html(loginForm(localeOf(c), next, pageMessages(localeOf(c)).tooManyAttempts), 429);
+      return c.html(
+        loginForm(localeOf(c), next, pageMessages(localeOf(c)).tooManyAttempts, { passwordReset }),
+        429,
+      );
     }
 
     const result = await verifyLogin(db, email, password);
@@ -115,7 +133,10 @@ export function passwordRoutes({ db, config, throttle, codeThrottle }: PasswordR
       limiter.fail(email, source);
       // One message for both causes: which addresses exist is not public.
       if (config.webUrl) return toLoginPage(c, next, "invalid");
-      return c.html(loginForm(localeOf(c), next, pageMessages(localeOf(c)).wrongCredentials), 401);
+      return c.html(
+        loginForm(localeOf(c), next, pageMessages(localeOf(c)).wrongCredentials, { passwordReset }),
+        401,
+      );
     }
     limiter.succeed(email, source);
 
@@ -163,7 +184,7 @@ export function passwordRoutes({ db, config, throttle, codeThrottle }: PasswordR
     if (!token || !challenge) {
       deleteCookie(c, CHALLENGE_COOKIE, { path: "/auth/password" });
       if (config.webUrl) return toLoginPage(c, undefined, "expired");
-      return c.html(loginForm(localeOf(c), undefined, m.challengeExpired), 401);
+      return c.html(loginForm(localeOf(c), undefined, m.challengeExpired, { passwordReset }), 401);
     }
     const next = safeNext(challenge.next ?? "") ?? "/";
 
