@@ -8,6 +8,15 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.18.0-develop.2 (16.11.2026)
+
+### Fehlerbehebungen
+
+- **Passwort vergessen: neues Passwort setzen klappt wieder:** Das Formular für das neue Passwort (Link aus der Mail)
+  wurde je nach Browser abgewiesen. Es nimmt die Eingaben jetzt an.
+
+---
+
 ## 🔬 Development v0.18.0-develop.1 (16.11.2026)
 
 ### Neue Funktionen
