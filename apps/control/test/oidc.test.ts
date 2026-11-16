@@ -301,6 +301,7 @@ describe("through the server", () => {
       labels: { oidc: "Pocket ID" },
       signup: false,
       passwordSignup: false,
+      passwordReset: false,
     });
 
     const jar = new CookieJar();
