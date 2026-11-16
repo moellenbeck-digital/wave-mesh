@@ -25,6 +25,14 @@ import type { SignupThrottles } from "./signup.ts";
  * after the answer. Throttles count every request, as the registration's do.
  */
 
+/**
+ * A transport error often quotes the recipient ("550 <robin@example.com>:
+ * rejected"). The log must not keep the address of a person who asked for a
+ * reset, so every address in the text goes before it is written.
+ */
+const withoutAddresses = (text: string): string =>
+  text.replace(/[^\s<>"',;()]+@[^\s<>"',;()]+/g, "<address>");
+
 /** The throttles of the request endpoint; the same shape as the registration's, but counted on their own. */
 export type ResetThrottles = SignupThrottles;
 
@@ -216,7 +224,7 @@ export function passwordResetRoutes({
     if (mail) {
       mailer.send(mail).catch((error: unknown) => {
         console.error(
-          `password reset: mail could not be sent: ${error instanceof Error ? error.message : error}`,
+          `password reset: mail could not be sent: ${withoutAddresses(error instanceof Error ? error.message : String(error))}`,
         );
       });
     }
