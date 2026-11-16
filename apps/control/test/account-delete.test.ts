@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { createApp } from "../src/app.ts";
 import { deleteAccount } from "../src/auth/delete-account.ts";
 import { setPassword } from "../src/auth/password.ts";
+import { requestReset } from "../src/auth/password-reset.ts";
 import { createSession } from "../src/auth/session.ts";
 import { newTotpSecret, TOTP_STEP_MS, totp } from "../src/auth/totp.ts";
 import { regenerateRecoveryCodes } from "../src/auth/two-factor.ts";
@@ -13,6 +14,7 @@ import {
   customerAccounts,
   identities,
   nodes,
+  passwordResets,
   sessions,
   totpRecoveryCodes,
   users,
@@ -343,6 +345,36 @@ describe("audit and what the address left behind", () => {
   });
 });
 
+describe("an open password reset", () => {
+  test("goes with the account: no row for the address, and no address in the audit or console log", async () => {
+    const id = await user("robin@example.com");
+    const other = await user("sam@example.com");
+    expect((await requestReset(db, { email: "robin@example.com" })).kind).toBe("pending");
+    // A link that was issued to the address under another user id (the address
+    // changed hands) is not removed by the cascade of the account's own rows.
+    await db.insert(passwordResets).values({
+      id: "pr_stale",
+      userId: other,
+      email: "robin@example.com",
+      tokenHash: "stale-hash",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    expect((await db.select().from(passwordResets)).length).toBe(2);
+
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    log.mockClear();
+    try {
+      expect((await post(await cookieOf(id), { email: "robin@example.com" })).status).toBe(200);
+      expect(log.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain("robin@example.com");
+    } finally {
+      log.mockRestore();
+    }
+    expect(await db.select().from(passwordResets)).toEqual([]);
+    expect(JSON.stringify(await db.select().from(auditLog))).not.toContain("robin@example.com");
+    expect(await exists(other)).toBe(true);
+  });
+});
+
 describe("a billed wave", () => {
   test("is deleted with the account, is named beforehand, and the orphaned subscription is logged without a person", async () => {
     const id = await user("robin@example.com");
@@ -363,6 +395,9 @@ describe("a billed wave", () => {
     expect(preview.accountSubscription).toBe(true);
 
     const log = spyOn(console, "log").mockImplementation(() => {});
+    // An earlier file may have left a spy on console.log; spyOn then returns
+    // that one with its calls. Only the lines of this request count.
+    log.mockClear();
     try {
       expect((await post(cookie, { email: "robin@example.com" })).status).toBe(200);
       const lines = log.mock.calls.map((call) => String(call[0]));

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/app.ts";
 import { LoginThrottle, setPassword } from "../src/auth/password.ts";
@@ -210,6 +210,26 @@ describe("the request is the same for every address", () => {
     const unknown = await shape(await forgot(app, "nobody@example.com"));
     expect(known).toEqual(unknown);
     expect(known.status).toBe(303);
+  });
+
+  test("a mail that cannot be sent is logged without the address the transport quotes", async () => {
+    const sink = new MailSink();
+    const { app } = await setup({ mailer: sink });
+    await account();
+    sink.failing = true;
+    sink.failure = `550 5.1.1 <${EMAIL}>: recipient rejected for ${EMAIL.toUpperCase()}`;
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    cleanup.push(() => errors.mockRestore());
+    errors.mockClear();
+    expect((await forgot(app, EMAIL)).status).toBe(303);
+    await Bun.sleep(20);
+    const lines = errors.mock.calls.map((call) => String(call[0]));
+    expect(
+      lines.some(
+        (l) => l.includes("password reset: mail could not be sent") && l.includes("recipient rejected"),
+      ),
+    ).toBe(true);
+    expect(lines.join("\n").toLowerCase()).not.toContain(EMAIL);
   });
 
   test("it takes at least as long as the floor, for an account and for nobody", async () => {

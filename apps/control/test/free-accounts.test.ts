@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { createApp } from "../src/app.ts";
 import type { ProviderClaims } from "../src/auth/identity.ts";
@@ -124,6 +124,9 @@ beforeEach(() => {
   logs?.mockRestore();
   logs = spyOn(console, "log").mockImplementation(() => {});
 });
+// The spy must not outlive the file: bun runs all files in one process, and a
+// spy left on console.log collects the lines of every later file too.
+afterEach(() => logs?.mockRestore());
 
 describe("the free start", () => {
   test("a confirmed user's first wave makes their customer account, with an audit entry and a log line", async () => {

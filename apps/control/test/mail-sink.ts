@@ -12,9 +12,11 @@ export class MailSink implements Mailer {
   readonly sent: Mail[] = [];
   /** Makes the next sends fail, like a relay that is down. */
   failing = false;
+  /** The text of the error a failing send throws. */
+  failure = "relay down";
 
   async send(mail: Mail): Promise<void> {
-    if (this.failing) throw new Error("relay down");
+    if (this.failing) throw new Error(this.failure);
     this.sent.push(mail);
   }
 
