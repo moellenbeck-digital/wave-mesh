@@ -94,8 +94,10 @@ export function passwordResetRoutes({
 
   const withoutCaching = (c: Context) => {
     c.header("Cache-Control", "no-store");
-    // The link carries its token in the query string.
-    c.header("Referrer-Policy", "no-referrer");
+    // The link carries its token in the query string, so no Referer goes to another
+    // site. Not `no-referrer`: with it Chromium sends `Origin: null` on the form post,
+    // which `sameOrigin()` refuses, and the password could never be set from a browser.
+    c.header("Referrer-Policy", "same-origin");
   };
 
   const wrap = (c: Context, body: ReturnType<typeof html>, status: 200 | 400 | 403 | 410 | 429 = 200) =>

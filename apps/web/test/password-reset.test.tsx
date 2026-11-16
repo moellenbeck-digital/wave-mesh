@@ -132,3 +132,14 @@ describe("what follows", () => {
     expect(text(ResetNotice({ kind: "gone", locale: "de" }))).toContain("Dieser Link gilt nicht mehr");
   });
 });
+
+describe("the reset page", () => {
+  // The page's source is read, not imported: importing it would pull in `@/lib/control`, which other
+  // test files replace for the whole process with stand-ins that lack the page's exports.
+  test("keeps the token from other sites, but not from its own form post", async () => {
+    const source = await Bun.file(new URL("../src/app/password/reset/page.tsx", import.meta.url)).text();
+    // `no-referrer` would make the browser post the form with `Origin: null`, and control refuses that.
+    expect(source).toMatch(/export const metadata: Metadata = \{ referrer: "same-origin" \};/);
+    expect(source).not.toContain('"no-referrer"');
+  });
+});

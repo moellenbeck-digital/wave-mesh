@@ -4,8 +4,12 @@ import { ResetNotice } from "@/components/password-reset-panel";
 import { fetchAuthOptions, fetchResetLinkLive } from "@/lib/control";
 import { getLocale } from "@/lib/i18n";
 
-/** The token is in the address; it must not travel on in a Referer header. */
-export const metadata: Metadata = { referrer: "no-referrer" };
+/**
+ * The token is in the address; it must not travel on in a Referer header to
+ * another site. `same-origin` and not `no-referrer`: with `no-referrer` the
+ * browser sends `Origin: null` on the form post, and control refuses that.
+ */
+export const metadata: Metadata = { referrer: "same-origin" };
 
 /**
  * The page the link in the reset mail opens (ticket #159). It asks control
