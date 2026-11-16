@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { isValidElement } from "react";
-import { metadata as resetPageMetadata } from "@/app/password/reset/page";
 import { ForgotLink, ForgotPanel, ResetNotice } from "@/components/password-reset-panel";
 import { parseAuthOptions } from "@/lib/auth-options";
 
@@ -135,8 +134,12 @@ describe("what follows", () => {
 });
 
 describe("the reset page", () => {
-  test("keeps the token from other sites, but not from its own form post", () => {
+  // The page's source is read, not imported: importing it would pull in `@/lib/control`, which other
+  // test files replace for the whole process with stand-ins that lack the page's exports.
+  test("keeps the token from other sites, but not from its own form post", async () => {
+    const source = await Bun.file(new URL("../src/app/password/reset/page.tsx", import.meta.url)).text();
     // `no-referrer` would make the browser post the form with `Origin: null`, and control refuses that.
-    expect(resetPageMetadata.referrer).toBe("same-origin");
+    expect(source).toMatch(/export const metadata: Metadata = \{ referrer: "same-origin" \};/);
+    expect(source).not.toContain('"no-referrer"');
   });
 });
