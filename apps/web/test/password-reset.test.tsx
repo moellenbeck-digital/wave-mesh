@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { isValidElement } from "react";
+import { metadata as resetPageMetadata } from "@/app/password/reset/page";
 import { ForgotLink, ForgotPanel, ResetNotice } from "@/components/password-reset-panel";
 import { parseAuthOptions } from "@/lib/auth-options";
 
@@ -130,5 +131,12 @@ describe("what follows", () => {
     expect(text(tree)).toContain("This link no longer works");
     expect(hrefs(tree)).toEqual(["/password/forgot", "/login"]);
     expect(text(ResetNotice({ kind: "gone", locale: "de" }))).toContain("Dieser Link gilt nicht mehr");
+  });
+});
+
+describe("the reset page", () => {
+  test("keeps the token from other sites, but not from its own form post", () => {
+    // `no-referrer` would make the browser post the form with `Origin: null`, and control refuses that.
+    expect(resetPageMetadata.referrer).toBe("same-origin");
   });
 });

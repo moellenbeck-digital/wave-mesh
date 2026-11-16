@@ -300,7 +300,8 @@ describe("the whole way", () => {
         headers: { "accept-language": "en" },
       });
       expect(page.status).toBe(200);
-      expect(page.headers.get("referrer-policy")).toBe("no-referrer");
+      // Not `no-referrer`: Chromium then posts the form with `Origin: null`, which is refused.
+      expect(page.headers.get("referrer-policy")).toBe("same-origin");
       const html = await page.text();
       expect(html).toContain('action="/auth/password/reset"');
       expect(html).toContain('name="password"');
@@ -392,6 +393,52 @@ describe("the whole way", () => {
     expect((await reset(app, token, NEW, { origin: "null" })).status).toBe(403);
     expect((await logIn(app, EMAIL, OLD)).status).toBe(302);
     expect((await reset(app, token, NEW, { origin: "http://localhost:8080" })).status).toBe(303);
+  });
+
+  test("the form posted with the page's own origin goes through", async () => {
+    const { app, sink } = await setup();
+    await account();
+    await forgot(app, EMAIL);
+    const token = MailSink.resetTokenOf(sink?.sent[0]);
+
+    const done = await reset(app, token, NEW, {
+      origin: "http://localhost:8080",
+      "sec-fetch-site": "same-origin",
+    });
+    expect(done.status).toBe(303);
+    expect(done.headers.get("location")).toBe("/auth/password/login?notice=password-changed");
+    expect((await logIn(app, EMAIL, NEW)).status).toBe(302);
+  });
+
+  test("the pages keep the token from other sites without turning the origin into null", async () => {
+    const { app, sink } = await setup();
+    await account();
+    await forgot(app, EMAIL);
+    const token = MailSink.resetTokenOf(sink?.sent[0]);
+
+    // Every page of the link, and the answers around it.
+    const page = await app.request(`/password/reset?token=${token}`);
+    expect(page.headers.get("referrer-policy")).toBe("same-origin");
+    const check = await app.request(`/api/auth/password-reset/check?token=${token}`);
+    expect(check.headers.get("referrer-policy")).toBe("same-origin");
+    const refused = await reset(app, token, "short");
+    expect(refused.headers.get("referrer-policy")).toBe("same-origin");
+  });
+
+  test("a browser posting the form from the page it was given gets through", async () => {
+    const { app, sink } = await setup();
+    await account();
+    await forgot(app, EMAIL);
+    const token = MailSink.resetTokenOf(sink?.sent[0]);
+
+    // What Chromium does on a form post to the page's own site: it sends the page's
+    // origin, except under `Referrer-Policy: no-referrer`, where it sends `null`.
+    const page = await app.request(`/password/reset?token=${token}`);
+    const policy = page.headers.get("referrer-policy");
+    const origin = policy === "no-referrer" ? "null" : "http://localhost:8080";
+    const done = await reset(app, token, NEW, { origin, "sec-fetch-site": "same-origin" });
+    expect(done.status).toBe(303);
+    expect((await logIn(app, EMAIL, NEW)).status).toBe(302);
   });
 });
 
