@@ -5,6 +5,7 @@ import {
   auditLog,
   customerAccounts,
   nodes,
+  passwordResets,
   signupVerifications,
   users,
   waveBilling,
@@ -289,6 +290,7 @@ export async function deleteAccount(db: Database, userId: string): Promise<Delet
     if (user.email) {
       await t.delete(waveInvites).where(eq(waveInvites.email, user.email));
       await t.delete(signupVerifications).where(eq(signupVerifications.email, user.email));
+      await t.delete(passwordResets).where(eq(passwordResets.email, user.email.toLowerCase()));
     }
 
     const deletedWaves: { id: string; name: string }[] = [];
