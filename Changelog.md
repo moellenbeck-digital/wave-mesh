@@ -6,6 +6,10 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+---
+
+## 🔬 Development v0.18.0-develop.1 (16.11.2026)
+
 ### Neue Funktionen
 
 - **Passwort vergessen (#159):** Auf der Passwort-Anmeldung gibt es den Link „Passwort vergessen“. Wer ein Konto mit
