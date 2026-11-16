@@ -26,6 +26,16 @@
  * - P4 „Link ungültig“ (Mail an): `/password/reset?token=…` mit erfundenem Token zeigt „Link gilt nicht mehr“ mit Link
  *   zum neuen Anfordern (`data-reset="again"`); das Formular fehlt.
  *
+ * - P5 „Referrer-Policy“ (Mail an): die Reset-Seite (`/password/reset?token=…`) gilt mit `same-origin` (Response-Header
+ *   `Referrer-Policy`, im Frontend das Meta-Tag `referrer`), nie mit `no-referrer`: Chromium sendet bei diesem Wert beim
+ *   Formular-POST `Origin: null`, und der Server lehnt das mit 403 ab (Fehler des Tickets, nur im echten Browser sichtbar).
+ * - P6 „Kein Referer an Fremdseiten“ (Mail an): ein von der Reset-Seite aus angeklickter Link auf eine fremde Adresse sendet
+ *   keinen `Referer` (Token bleibt geschützt). Die Seite hat keinen eigenen externen Link; der Test setzt einen ein und fängt
+ *   die Anfrage im Browser ab, ins Netz geht nichts.
+ * - P7 „Fremde Herkunft“ (Mail an): `POST /auth/password/reset` mit `Origin: null`, mit fremdem `Origin` und mit
+ *   `Sec-Fetch-Site: cross-site` endet mit 403 (erfundener Token, es wird nichts verbraucht).
+ * - Der Formular-POST in P3 wird als echte Browser-Anfrage beobachtet: Status nie 403.
+ *
  * Aufräumen: Die Mails der Adressen löscht der Test in Mailpit; das Konto von P3 löscht er über `/account/delete` (#31).
  *
  * Nicht über die Oberfläche prüfbar, mit Grund (Beleg: `apps/control/test/password-reset.test.ts`):
@@ -253,7 +263,15 @@ test.describe("Passwort vergessen", () => {
       await expect(b.locator('[data-reset="error"][data-error="password-too-short"]')).toBeVisible();
 
       await b.locator('[data-reset="form"] [data-field="password"]').fill(NEW_PASSWORD);
-      await b.locator('[data-action="reset-submit"]').click();
+      // Echter Formular-POST des Browsers: kein 403 „Not from this page“ (Origin: null bei no-referrer).
+      const [post] = await Promise.all([
+        b.waitForResponse(
+          (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/auth/password/reset",
+        ),
+        b.locator('[data-action="reset-submit"]').click(),
+      ]);
+      expect(post.status(), "POST /auth/password/reset aus dem Formular").not.toBe(403);
+      expect(await post.request().headerValue("origin"), "Origin des Formular-POSTs").not.toBe("null");
 
       // Keine automatische Anmeldung: die Anmeldeseite mit Hinweis.
       await expect(b.locator('[data-login="notice"]')).toContainText("Password changed");
@@ -291,5 +309,73 @@ test.describe("Passwort vergessen", () => {
     await expect(page.locator('[data-reset="gone"]')).toBeVisible();
     await expect(page.locator('[data-reset="form"]')).toHaveCount(0);
     await expect(page.locator('a[data-reset="again"]')).toHaveAttribute("href", "/password/forgot");
+  });
+
+  test("P5 Reset-Seite gilt mit Referrer-Policy same-origin, nicht no-referrer", {
+    tag: "@t159",
+  }, async () => {
+    test.skip(options.passwordReset !== true, NO_RESET);
+
+    const res = await page.goto(`/password/reset?token=t159-${RUN}-policy`);
+    expect(res?.status(), "Reset-Seite").toBeLessThan(500);
+    // Control setzt den Header, das Frontend das Meta-Tag; wirksam ist, was der Browser sieht.
+    const header = res?.headers()["referrer-policy"];
+    const metaTag = page.locator('meta[name="referrer"]').first();
+    const meta = (await metaTag.count()) > 0 ? await metaTag.getAttribute("content") : null;
+    expect(header ?? meta, "wirksame Referrer-Policy (Header, sonst Meta-Tag)").toBe("same-origin");
+    expect(header ?? "", "Header Referrer-Policy").not.toContain("no-referrer");
+    expect(meta ?? "", "Meta-Tag referrer").not.toBe("no-referrer");
+  });
+
+  test("P6 Link zu einer Fremdseite sendet keinen Referer (Token bleibt geschützt)", {
+    tag: "@t159",
+  }, async ({ browser }) => {
+    test.skip(options.passwordReset !== true, NO_RESET);
+
+    const other = await newSession(browser);
+    try {
+      const p = await other.newPage();
+      const seen: Array<string | null> = [];
+      await p.route("https://fremdseite.example.test/**", async (route) => {
+        seen.push(await route.request().headerValue("referer"));
+        await route.fulfill({
+          status: 200,
+          contentType: "text/html",
+          body: "<!doctype html><title>fremd</title>",
+        });
+      });
+
+      await p.goto(`/password/reset?token=t159-${RUN}-fremd`);
+      // Die Seite hat keinen eigenen externen Link: einen setzen, wie ihn ein Mailclient oder eine Erweiterung einfügte.
+      await p.locator("body").evaluate((body) => {
+        const a = body.ownerDocument.createElement("a");
+        a.href = "https://fremdseite.example.test/";
+        a.id = "t159-extern";
+        a.textContent = "extern";
+        body.appendChild(a);
+      });
+      await p.locator("#t159-extern").click();
+      await p.waitForURL("https://fremdseite.example.test/**");
+
+      expect(seen.length, "Anfrage an die Fremdseite").toBe(1);
+      expect(seen[0], "Referer an die Fremdseite").toBeNull();
+    } finally {
+      await other.close();
+    }
+  });
+
+  test("P7 Fremde Herkunft und Origin: null werden mit 403 abgelehnt", { tag: "@t159" }, async () => {
+    test.skip(options.passwordReset !== true, NO_RESET);
+
+    const form = { token: `t159-${RUN}-erfunden`, password: NEW_PASSWORD };
+    const variants: Array<[string, Record<string, string>]> = [
+      ["Origin: null", { origin: "null" }],
+      ["fremder Origin", { origin: "https://fremdseite.example.test" }],
+      ["Sec-Fetch-Site: cross-site", { "sec-fetch-site": "cross-site" }],
+    ];
+    for (const [name, headers] of variants) {
+      const res = await page.request.post("/auth/password/reset", { form, headers, maxRedirects: 0 });
+      expect(res.status(), `POST /auth/password/reset mit ${name}`).toBe(403);
+    }
   });
 });
