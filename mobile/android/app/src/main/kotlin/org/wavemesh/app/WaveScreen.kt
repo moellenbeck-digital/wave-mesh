@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.text.format.DateUtils
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -70,6 +71,7 @@ fun WaveScreen(
 ) {
     val colors = LocalWaveColors.current
     val focus = LocalFocusManager.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
     var controlURL by rememberSaveable { mutableStateOf("") }
@@ -208,6 +210,11 @@ fun WaveScreen(
                             Text(stringResource(R.string.connect_automatically), style = WaveType.body, color = colors.label)
                         }
                     }
+                    // What on-demand does on iOS beyond the restart -- back
+                    // after Android ends the service -- is the system's
+                    // "Always-on VPN" here. Only the person can
+                    // switch it on, in the settings; the app can only lead there.
+                    row { ButtonRow(stringResource(R.string.always_on), icon = WaveIcons.OpenInNew) { openVpnSettings(context) } }
                 }
             }
 
@@ -509,6 +516,13 @@ private fun CopyMenu(name: String, address: String, content: @Composable (open: 
 
 private fun copy(context: Context, text: String) {
     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("wave", text))
+}
+
+/// The system's VPN list, where "Always-on VPN" is switched on per app.
+private fun openVpnSettings(context: Context) {
+    runCatching {
+        context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.onFailure { context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
 fun openUrl(context: Context, url: String) {
