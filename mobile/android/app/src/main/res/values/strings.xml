@@ -32,7 +32,8 @@
     <string name="device_preview">In the next wave you join, this device is called %1$s. A wave it is already in keeps the name it got there.</string>
     <string name="device_fallback" translatable="false">node</string>
     <string name="connect_automatically">Connect automatically</string>
-    <string name="auto_connect_footer">After a restart the tunnel comes back by itself. Android runs one VPN at a time: switch this off if you also use another one and want to choose each time.</string>
+    <string name="always_on">Always-on VPN in the system settings</string>
+    <string name="auto_connect_footer">After a restart the tunnel comes back by itself. To have it back when Android ends it, too, turn on \"Always-on VPN\" for wave-mesh in the system settings. Android runs one VPN at a time: switch this off if you also use another one and want to choose each time.</string>
     <string name="log">Log</string>
 
     <string name="no_control_connection">no control connection; peers will stop being updated</string>

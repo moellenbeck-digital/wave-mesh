@@ -57,6 +57,9 @@ class WaveVpnService : VpnService(), Callbacks {
             stopEverything()
             return START_NOT_STICKY
         }
+        // The system starts us itself when "Always-on VPN" is on for wave-mesh:
+        // after Android ended the service, or at boot before BootReceiver.
+        if (intent?.action == SERVICE_INTERFACE) log("started by Always-on VPN")
         startInForeground()
         if (mutableState.value !is State.Starting && mutableState.value !is State.Running) {
             mutableState.value = State.Starting

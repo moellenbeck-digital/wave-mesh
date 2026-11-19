@@ -249,7 +249,9 @@ fragt vor dem Beitritt. Gezeichnet wird die gruppierte Liste von iOS in
 Compose (`Theme.kt`), mit den Systemfarben von iOS in hell und dunkel. Wer an
 einer der beiden Apps etwas an Verhalten, Text oder Gestalt ändert, zieht die
 andere nach. Was es nur auf einer Seite gibt, hat dort seinen Grund: On-Demand
-heißt unter Android ein Neustart-Empfänger (`BootReceiver`), MetricKit ein
+heißt unter Android ein Neustart-Empfänger (`BootReceiver`) und, für einen
+von Android beendeten Dienst, „Durchgehend aktives VPN“ in den
+Systemeinstellungen, zu dem „Automatisch verbinden“ führt, MetricKit ein
 Blick auf `ApplicationExitInfo` beim Start — beides landet im Protokoll.
 
 Beide Apps zeigen vor der ersten Verbindung einmal, was mit Daten geschieht —

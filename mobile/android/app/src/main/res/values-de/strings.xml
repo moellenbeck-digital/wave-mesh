@@ -23,7 +23,8 @@
     <string name="device_name">Gerätename</string>
     <string name="device_preview">Im nächsten Wave, dem du beitrittst, heißt dieses Gerät %1$s. In einem Wave, in dem es schon ist, behält es seinen bisherigen Namen.</string>
     <string name="connect_automatically">Automatisch verbinden</string>
-    <string name="auto_connect_footer">Nach einem Neustart kommt der Tunnel von selbst wieder. Android lässt nur ein VPN gleichzeitig zu: schalte das aus, wenn du auch ein anderes nutzt und jedes Mal selbst wählen willst.</string>
+    <string name="always_on">Durchgehend aktives VPN in den Systemeinstellungen</string>
+    <string name="auto_connect_footer">Nach einem Neustart kommt der Tunnel von selbst wieder. Damit er auch zurückkommt, wenn Android ihn beendet, schalte in den Systemeinstellungen „Durchgehend aktives VPN“ für wave-mesh ein. Android lässt nur ein VPN gleichzeitig zu: schalte das aus, wenn du auch ein anderes nutzt und jedes Mal selbst wählen willst.</string>
     <string name="log">Protokoll</string>
 
     <string name="no_control_connection">keine Verbindung zum Control-Server; die Peers werden nicht mehr aktualisiert</string>
