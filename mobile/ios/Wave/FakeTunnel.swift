@@ -15,6 +15,7 @@
     ///   -UITestReset           start as a fresh install
     ///   -UITestRemovedWave     start in a wave the server has ended
     ///   -UITestOtherVPN        another app's VPN holds the slot until ours connects
+    ///   -UITestDemo            a wave with more in it, for the store's screenshots
     @MainActor
     final class FakeTunnel: TunnelControl {
 
@@ -33,6 +34,9 @@
         private var otherSelected: Bool
         private var waves: [Wave] = []
         private var pending: [String: CheckedContinuation<String, Never>] = [:]
+        /// More devices and services than the tests need, named as a small
+        /// team would name them: what the store's screenshots show.
+        private let demo: Bool
 
         init(arguments: [String]) {
             if arguments.contains("-UITestRemovedWave") {
@@ -40,6 +44,7 @@
                               enabled: false, problem: "removed", hostname: "phone")]
             }
             otherSelected = arguments.contains("-UITestOtherVPN")
+            demo = arguments.contains("-UITestDemo")
         }
 
         func anotherVPNIsSelected() async -> Bool { otherSelected }
@@ -157,21 +162,40 @@
                     "relay": live && index == 0 ? "wss://relay.\(wave.controlUrl.replacingOccurrences(of: "https://", with: ""))/relay" : "",
                     "relayOffered": live && index == 0,
                     "resolver": live ? "10.\(third).0.53" : "",
-                    "peers": live ? [
+                    "peers": live ? (demo ? demoPeers(suffix, third) : [
                         ["hostname": "laptop", "dnsName": "laptop.\(suffix)", "ipv4": "10.\(third).0.3", "ipv6": "",
                          "online": true, "via": "192.168.1.20:41641", "rttMs": 12, "lastHandshakeSeconds": 8],
                         ["hostname": "nas", "dnsName": "nas.\(suffix)", "ipv4": "10.\(third).0.4", "ipv6": "",
                          "online": false, "via": "", "rttMs": 0, "lastHandshakeSeconds": -1],
-                    ] : [],
-                    "services": live ? [
+                    ]) : [],
+                    "services": live ? (demo ? demoServices(suffix, third) : [
                         ["name": "grafana", "dnsName": "grafana.\(suffix)", "ipv4": "10.\(third).0.9",
                          "url": "https://grafana.\(suffix)"],
-                    ] : [],
+                    ]) : [],
                 ]
             }
             let status: [String: Any] = ["port": 41641, "running": connected, "waves": views]
             let data = (try? JSONSerialization.data(withJSONObject: status)) ?? Data("{}".utf8)
             return String(decoding: data, as: UTF8.self)
+        }
+
+        private func demoPeers(_ suffix: String, _ third: Int) -> [[String: Any]] {
+            func peer(_ name: String, _ last: Int, via: String, rtt: Int, online: Bool = true) -> [String: Any] {
+                ["hostname": name, "dnsName": "\(name).\(suffix)", "ipv4": "10.\(third).0.\(last)", "ipv6": "",
+                 "online": online, "via": via, "rttMs": rtt, "lastHandshakeSeconds": online ? 6 : -1]
+            }
+            return [
+                peer("macbook", 3, via: "192.168.1.20:41641", rtt: 4),
+                peer("build-server", 4, via: "203.0.113.17:41641", rtt: 18),
+                peer("cluster", 5, via: "relay", rtt: 31),
+                peer("nas", 6, via: "", rtt: 0, online: false),
+            ]
+        }
+
+        private func demoServices(_ suffix: String, _ third: Int) -> [[String: Any]] {
+            ["grafana", "wiki", "git"].map { name in
+                ["name": name, "dnsName": "\(name).\(suffix)", "ipv4": "10.\(third).0.5", "url": "https://\(name).\(suffix)"]
+            }
         }
     }
 #endif
