@@ -217,7 +217,7 @@ Sprache.
 ```bash
 ./mobile/build.sh ios && cd mobile/ios && xcodegen generate   # dann Wave.xcodeproj in Xcode öffnen
 ./mobile/build.sh android && cd mobile/android && ./gradlew :app:assembleDebug
-./gradlew :app:bundleRelease                                  # das .aab für Google Play
+./gradlew :app:bundleRelease                                  # das .aab für Google Play, siehe unten
 ```
 
 Das Xcode-Projekt steht als Text in `ios/project.yml` (XcodeGen); das
@@ -237,6 +237,29 @@ Fest und nie mehr änderbar, sobald die App im Store ist:
 | Tunnel | Extension `org.wavemesh.app.tunnel` | `WaveVpnService` im selben Paket |
 | Gemeinsam | App-Gruppe `group.org.wavemesh.app` | — |
 | Mindestens | iOS 17, iPhone und iPad | Android 10 (API 29), Ziel API 36 |
+
+### Release-Build für Google Play
+
+`bundleRelease` signiert mit dem Upload-Schlüssel und nur damit; fehlt er,
+bricht der Build vorher mit einer Meldung ab, die die fehlenden Variablen nennt.
+Der Schlüssel liegt in 1Password (Tresor „wave-mesh CI“), nie im Repo.
+
+```bash
+export ANDROID_UPLOAD_KEYSTORE_BASE64=…   # oder ANDROID_UPLOAD_KEYSTORE_PATH=/pfad/upload.jks
+export ANDROID_UPLOAD_KEYSTORE_PASSWORD=…
+export ANDROID_UPLOAD_KEY_ALIAS=…         # ANDROID_UPLOAD_KEY_PASSWORD nur, wenn es vom Store-Passwort abweicht
+VERSION_CODE=2 ./gradlew :app:bundleRelease
+jarsigner -verify app/build/outputs/bundle/release/app-release.aab
+```
+
+- `versionName` kommt aus `MARKETING_VERSION` in `ios/project.yml`, damit
+  beide Stores dieselbe Nummer zeigen; `VERSION_NAME` überschreibt sie für
+  einen einzelnen Build.
+- `versionCode` kommt aus `VERSION_CODE` und muss bei Play größer sein als
+  jeder bisher hochgeladene; ohne die Variable bleibt er lokal bei 1.
+- R8 bleibt aus: die gomobile-Bindungen (`go.*`, `wavemobile.*`) werden über
+  JNI beim Namen gerufen, eine fehlende Keep-Regel zeigte sich erst als Absturz
+  beim Start, und den Großteil des Bundles macht ohnehin der Kern aus.
 
 **Android folgt der iOS-App**, im Verhalten und im Aussehen: dieselben
 Abschnitte, dieselben Texte (aus `Localizable.xcstrings`, mit „Android“ statt
