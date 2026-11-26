@@ -2547,10 +2547,13 @@ Was daran festliegt:
   `wave pier status` zeigt dann `unreachable`. Die Meldung löst einen Broadcast aus, wenn sie
   sich ändert (`control-ws.ts`).
 - **Die Zone, eine Stelle: `pierZone(wave, sharedDomain)`.** `pier_zone_mode = shared` mit
-  Label und Domain → `<zufall>.<domain>`, sonst `<pierLabel>.<suffix>`. Das Label (acht
-  Zeichen, Buchstabe vorn, kein `??--`) entsteht beim ersten Claim oder `GET /v1/piers` und
+  Label und Domain → `<zufall>.<domain>`, sonst `<pierLabel>.<suffix>`. Das Label (drei
+  Wörter aus `unique-names-generator`, `brave-teal-otter`: Adjektiv, Farbe, Tier, rund
+  22 Millionen Kombinationen; geprüft wird trotzdem auf ein DNS-Label) entsteht beim ersten Claim oder `GET /v1/piers` und
   bleibt — Namen und Zertifikate hängen daran. Zufall statt Wave-Name: Namen sind weder
-  eindeutig noch fest, und das Label steht für immer in den CT-Logs. Solange es kein Label
+  eindeutig noch fest, und das Label steht für immer in den CT-Logs. Wörter statt
+  Buchstaben, weil ein Mensch es liest, tippt und ausspricht. Die Bibliothek gehört nur dem
+  Control-Server, nicht dem mit `--compile` gebauten Client. Solange es kein Label
   gibt, lässt die Netzkarte `pier` weg, und der Daemon fragt den Server.
 - **`own` ist Punkt 1:** `pier.<eigene-domain>` über den geteilten Pier, Wildcard über den
   DNS-Provider des Waves auf die IP des Piers. Umstellen (Shell oder `/waves/<id>/dns`) nur

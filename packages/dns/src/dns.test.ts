@@ -172,15 +172,17 @@ describe("resolving", () => {
       ...config,
       records: [
         ...config.records,
-        { name: "app.k3x9q7mz.w-pier.net", ipv4: "10.77.0.1", ipv6: "fd7a:1:2::1" },
+        { name: "app.brave-teal-otter.w-pier.net", ipv4: "10.77.0.1", ipv6: "fd7a:1:2::1" },
       ],
     };
-    const { code, records } = readAnswers(answered(resolve(query("app.k3x9q7mz.w-pier.net"), withPier)));
+    const { code, records } = readAnswers(
+      answered(resolve(query("app.brave-teal-otter.w-pier.net"), withPier)),
+    );
     expect(code).toBe(ResponseCode.NoError);
     expect([...(records[0]?.data ?? [])]).toEqual([10, 77, 0, 1]);
     // Its neighbours are not ours to deny or to answer.
-    expect(resolve(query("other.k3x9q7mz.w-pier.net"), withPier).kind).toBe("drop");
-    expect(resolve(query("k3x9q7mz.w-pier.net"), withPier).kind).toBe("drop");
+    expect(resolve(query("other.brave-teal-otter.w-pier.net"), withPier).kind).toBe("drop");
+    expect(resolve(query("brave-teal-otter.w-pier.net"), withPier).kind).toBe("drop");
   });
 
   test("ignores a packet that is not a query at all", () => {

@@ -104,7 +104,7 @@ put_out() {
   ip netns exec "$netns" "${CLI[@]}" expose app http://127.0.0.1:3000 --listen-port 8443 \
     --daemon "$WORK/$name.waved.sock" >"$WORK/$name-expose.log" 2>&1 || true
   local fqdn
-  fqdn=$(grep -oE "app\.[a-z][a-z0-9]{7}\.$DOMAIN" "$WORK/$name-expose.log" | head -1)
+  fqdn=$(grep -oE "app\.[a-z]+-[a-z]+-[a-z]+\.$DOMAIN" "$WORK/$name-expose.log" | head -1)
   [[ -n "$fqdn" ]] || { cat "$WORK/$name-expose.log"; fail "$name did not get a name under $DOMAIN"; }
 
   # The device's own service, terminating TLS with its own certificate. Not

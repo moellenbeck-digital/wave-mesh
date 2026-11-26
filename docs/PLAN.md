@@ -869,7 +869,8 @@ wir ihn. Vorbild ist Tailscale Funnel.
   Regeln plus dieselbe Pier-Regel. Der Pier wird erst Peer, wenn das Gerät
   `filterEnforced = true` gemeldet hat; ein Client, der keinen Filter hält, bekommt ihn nie. Ein
   gekaperter Pier erreicht damit nur, was ohnehin öffentlich ist. Ohne Client-Änderung.
-- **Die Zone:** standardmäßig `<app>.<zufall>.<WAVE_SHARED_PIER_DOMAIN>` — acht Zeichen, beim
+- **Die Zone:** standardmäßig `<app>.<zufall>.<WAVE_SHARED_PIER_DOMAIN>` — drei Wörter aus `unique-names-generator`
+  (`app.brave-teal-otter.w-pier.net`), beim
   ersten Bedarf vergeben und danach fest (`waves.shared_pier_name`), zufällig statt des
   Wave-Namens, weil Namen weder eindeutig noch fest sind und das Label für immer in den CT-Logs
   steht. Wildcard je Wave (`*.<zufall>.<domain>`, ein DNS-Wildcard reicht nur ein Label tief),

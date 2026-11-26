@@ -106,7 +106,7 @@ export const waves = pgTable(
     /**
      * Which zone the wave's names take while it uses the shared pier: `shared`
      * puts them under a random label in `WAVE_SHARED_PIER_DOMAIN`
-     * (`app.k3x9q7mz.wavepier.net`), `own` under `pierLabel` and the wave's own
+     * (`app.brave-teal-otter.wavepier.net`), `own` under `pierLabel` and the wave's own
      * suffix, with the wildcard written by the wave's DNS provider. A wave with
      * a pier of its own always serves its own zone.
      */

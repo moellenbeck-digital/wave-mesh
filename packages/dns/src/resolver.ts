@@ -197,7 +197,7 @@ export function resolve(packet: Uint8Array, config: ResolverConfig): Resolution 
 
   // Outside the wave's zone only an exact name of the netmap is ours: a name
   // put out through the shared pier lives in the server's zone
-  // (`app.k3x9q7mz.w-pier.net`), not under the wave's suffix, and the system
+  // (`app.brave-teal-otter.w-pier.net`), not under the wave's suffix, and the system
   // routes exactly that name here. Everything else out there stays unanswered.
   if (!isWithinZone(name, config.zone)) {
     if (!record) return { kind: "drop" };

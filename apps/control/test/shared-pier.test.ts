@@ -14,7 +14,9 @@ import { createAuthKey } from "../src/waves/auth-keys.ts";
 import { addMember } from "../src/waves/members.ts";
 import { pierLeaving, unpublishLeavingPier } from "../src/waves/pier-dns.ts";
 import {
+  pierLabel,
   pierZone,
+  randomPierName,
   setPierAllowed,
   setPierHost,
   setPierZoneMode,
@@ -224,7 +226,8 @@ describe("the shared zone", () => {
     const body = (await res.json()) as { dnsName: string };
     const label = body.dnsName.split(".")[1] as string;
     expect(body.dnsName).toBe(`app.${label}.${DOMAIN}`);
-    expect(label).toMatch(/^[a-z][a-z0-9]{7}$/);
+    // Three words from unique-names-generator: `brave-teal-otter`.
+    expect(label).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
 
     // Written by the server's token into its own zone, pointing at the pier.
     expect(zones.at(`*.${label}.${DOMAIN}`)).toEqual([`z-shared A ${PIER_V4}`, `z-shared AAAA ${PIER_V6}`]);
@@ -234,6 +237,15 @@ describe("the shared zone", () => {
       zone: string;
     };
     expect(list.zone).toBe(`${label}.${DOMAIN}`);
+  });
+
+  test("a random name is three words and always a valid label under the zone", () => {
+    for (let i = 0; i < 500; i++) {
+      const name = randomPierName();
+      expect(name).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
+      expect(name.length).toBeLessThanOrEqual(63);
+      expect(pierLabel(name, DOMAIN)).toBe(name);
+    }
   });
 
   test("two waves get two labels", async () => {
@@ -256,7 +268,7 @@ describe("the shared zone", () => {
   });
 
   test("a certificate for a name under the shared zone is allowed on a placeholder suffix, mixed orders are not", () => {
-    const pierName = `app.k3x9q7mz.${DOMAIN}`;
+    const pierName = `app.brave-teal-otter.${DOMAIN}`;
     const input = {
       hostname: "laptop",
       dnsSuffix: "a.wave.internal",

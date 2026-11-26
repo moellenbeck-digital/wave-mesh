@@ -1,7 +1,7 @@
-import { randomInt } from "node:crypto";
 import { isIP } from "node:net";
 import type { FilterRule } from "@wave/proto";
 import { and, asc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { adjectives, animals, colors, uniqueNamesGenerator } from "unique-names-generator";
 import type { Database } from "../db/client.ts";
 import { nodes, wavePiers, waves } from "../db/schema.ts";
 import { newId } from "../ids.ts";
@@ -75,7 +75,7 @@ export interface ZoneOfWave {
  * The zone the pier serves, and the one place that puts it together.
  *
  * `pier.wave.example.com` for the default label under the wave's own suffix;
- * `k3x9q7mz.wavepier.net` while the wave uses the shared pier's zone -- which
+ * `brave-teal-otter.wavepier.net` while the wave uses the shared pier's zone -- which
  * takes the mode, the wave's random label and the domain of the shared pier
  * (`WAVE_SHARED_PIER_DOMAIN`, passed in by the caller). Missing any of the
  * three, it is the wave's own zone: a name is never put under a zone nobody
@@ -144,19 +144,26 @@ export async function effectivePier(db: Database, waveId: string): Promise<PierH
   return (await findPierHost(db, waveId)) ?? (await findSharedPier(db))?.host ?? null;
 }
 
-const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
-
 /**
- * A random label for a wave's zone under the shared pier domain: eight
- * characters, a letter first, never `??--`. Random rather than the wave's name
- * because names are neither unique nor fixed, and because the label stands in
- * the CT logs for good -- it should not say whose wave it is.
+ * A random label for a wave's zone under the shared pier domain, three words
+ * from unique-names-generator: `brave-teal-otter`. Random rather than the
+ * wave's name because names are neither unique nor fixed, and because the
+ * label stands in the CT logs for good -- it should not say whose wave it is.
+ * Words rather than letters because a person reads it, types it and says it.
+ *
+ * The dictionaries hold plain letters, which `pierLabel()` checks anyway: what
+ * leaves here has to be a DNS label (at most 63, no `??--`), and a future
+ * release of the package must not change that silently.
  */
 export function randomPierName(): string {
   for (;;) {
-    let name = RANDOM_ALPHABET[randomInt(26)] as string;
-    while (name.length < 8) name += RANDOM_ALPHABET[randomInt(RANDOM_ALPHABET.length)];
-    if (name.slice(2, 4) !== "--") return name;
+    const name = uniqueNamesGenerator({
+      dictionaries: [adjectives, colors, animals],
+      separator: "-",
+      style: "lowerCase",
+      length: 3,
+    });
+    if (LABEL.test(name) && name.slice(2, 4) !== "--") return name;
   }
 }
 
