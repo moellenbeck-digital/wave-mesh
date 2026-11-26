@@ -1,0 +1,296 @@
+# The Android app into Google Play, from a button.
+#
+# Started by hand -- from the Actions tab, or the GitHub app on a phone -- and
+# never by a push, for the reason testflight.yml gives: a build that reaches
+# testers is a decision, not the side effect of a commit. Its sibling for the
+# iPhone is testflight.yml, and the step after it appstore.yml.
+#
+# What it does on a runner what you would do at a desk: test what the app
+# depends on (the same two jobs as testflight.yml), build the Go core, build
+# the bundle, sign it with the upload key and put it on a Play track. The key,
+# the service account and the package name come from 1Password through the
+# same service account the other store workflows use, so no store secret is
+# stored in GitHub. The versionCode is the next free one on Play, whoever
+# uploaded last.
+#
+# Two tracks: "internal" (the default; internal testers get it within minutes)
+# and "production" (everyone, after Play's review). Production has two gates,
+# and both have to open:
+#   * the input "confirm" has to say production -- a mis-tap on a phone, or a
+#     default someone forgot to change, cannot start it -- and the run has to be
+#     on main, so a branch with an edited workflow cannot publish;
+#   * the job "gate" runs in the GitHub environment "play-production", which an
+#     admin sets to require a reviewer: the run waits there until someone
+#     approves it. (Without a reviewer set on the environment, the first gate
+#     is all there is. See mobile/README.md.)
+name: Google Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track: internal (testers) or production (everyone, needs approval)"
+        type: choice
+        options: [internal, production]
+        default: internal
+      confirm:
+        description: "For production only: type production to confirm"
+        type: string
+        default: ""
+
+# One upload at a time: two runs would ask Play for the same next versionCode,
+# and the second upload would be refused.
+concurrency:
+  group: play
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Where the store material lives. One place, so that renaming the item or a
+  # field in 1Password is a change here and nowhere else.
+  # (No op:// prefix here: the 1Password action resolves every variable that
+  # starts with it, and this one is an item, not a field.)
+  PLAY_ITEM: wave-mesh CI/Google Play API - wave-mesh
+
+jobs:
+  # Fails at once, before anything is built, on a production request that is
+  # not a clear one.
+  check:
+    name: Is this request clear?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the inputs
+        env:
+          TRACK: ${{ inputs.track }}
+          CONFIRM: ${{ inputs.confirm }}
+          REF: ${{ github.ref }}
+        run: |
+          case "$TRACK" in
+            internal) ;;
+            production)
+              if [[ "$CONFIRM" != "production" ]]; then
+                echo "::error::production needs the input confirm set to: production"
+                exit 1
+              fi
+              if [[ "$REF" != "refs/heads/main" ]]; then
+                echo "::error::production is only released from main, not from $REF"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::track must be internal or production"
+              exit 1
+              ;;
+          esac
+
+  # The approval. For production the environment makes the run wait for a
+  # reviewer; for internal the environment is a plain one without rules.
+  gate:
+    name: Approval (${{ inputs.track }})
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ inputs.track == 'production' && 'play-production' || 'play-internal' }}
+    steps:
+      - run: echo "Track ${{ inputs.track }} is cleared."
+
+  # What the app depends on, held against everything that has broken before.
+  # The upload waits for both: a build goes to testers, and a red one stops it.
+  verify:
+    name: Unit tests and the Go core
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mobile/core/go.mod
+          cache-dependency-path: mobile/core/go.sum
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run typecheck
+      - run: bun test
+      # The phone's core is checked against the TypeScript side's own bytes:
+      # canonical JSON, signatures, disco, DNS. Regenerated, as in release.yml.
+      - name: Regenerate the cross-implementation fixtures
+        run: cd mobile/fixtures && bun run generate
+      - name: Go core (gofmt, vet, go test -race, bindings)
+        run: ./mobile/build.sh check
+
+  e2e:
+    name: End-to-end (the phone's core against real servers)
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-go@v5
+        with:
+          # go.mod's pin, for the reason release.yml gives: the scripts build
+          # the core in a namespace without DNS, where a missing toolchain
+          # cannot be fetched.
+          go-version-file: mobile/core/go.mod
+          cache-dependency-path: mobile/core/go.sum
+      - name: Build wireguard-go
+        run: |
+          set -euo pipefail
+          version="$(grep -oP '^WIREGUARD_GO_VERSION="\K[^"]+' scripts/build-clients.sh)"
+          go install "golang.zx2c4.com/wireguard@$version"
+      - name: Warm the module cache for the mobile core
+        run: cd mobile/core && go mod download
+      - run: bun install --frozen-lockfile
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Install nftables
+        run: sudo apt-get update && sudo apt-get install -y nftables
+      # Two waves on one interface, one resolver for both zones, a restart
+      # that keeps addresses and port.
+      - name: The core carries two waves over one interface
+        run: ./test/e2e/mobile-core.sh
+      # Every step the app takes, through wavemobile: login, cancel, pause,
+      # leave, rename, a removed device, a restart, a second wave at one server.
+      - name: Every step of the app against real servers
+        run: ./test/e2e/mobile-lifecycle.sh
+      # A connector with the production ruleset: IPv4, IPv6 refused at once,
+      # 40 netmap changes, relay only, an access policy.
+      - name: A cluster's services through a connector
+        run: ./test/e2e/mobile-services.sh
+      - name: The core punches through two NATs
+        run: ./test/e2e/mobile-nat.sh
+      - name: The core falls back to the relay
+        run: ./test/e2e/mobile-nat.sh --symmetric
+      # The other side of every test above is the desktop client and the
+      # server, both changed for the phones as well.
+      - name: One device in two waves at once
+        run: ./test/e2e/two-waves.sh
+      - name: One device in two waves at the same server
+        run: ./test/e2e/same-server.sh
+      - name: Two nodes behind NATs punch a direct path
+        run: ./test/e2e/nat-traversal.sh
+      # A paused wave serves empty netmaps to every device, the phone included;
+      # resuming has to bring the mesh back without a new approval.
+      - name: A billed wave is paused, resumed, held to its seats and swept
+        run: ./test/e2e/billing.sh
+
+  android:
+    name: Android to Google Play
+    needs: [gate, verify, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TRACK: ${{ inputs.track }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mobile/core/go.mod
+          cache-dependency-path: mobile/core/go.sum
+
+      # gomobile needs the SDK and the NDK; the runner image has both and says
+      # where (ANDROID_HOME, ANDROID_NDK_HOME). Gradle fetches the platform it
+      # compiles against once the licenses are accepted.
+      - name: Accept the Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+
+      # Always from source: an .aar left over from somewhere else is a build
+      # with an old core in it, and nothing in the app would say so.
+      - name: Build the Go core
+        run: ./mobile/build.sh android
+
+      - name: Load the store material
+        id: secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5
+        with:
+          export-env: false
+          version: 2.39.0
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          PLAY_SERVICE_ACCOUNT_JSON: op://${{ env.PLAY_ITEM }}/google_play_service_account_json
+          PLAY_PACKAGE_NAME: op://${{ env.PLAY_ITEM }}/google_play_package_name
+          UPLOAD_KEYSTORE_BASE64: op://${{ env.PLAY_ITEM }}/android_upload_keystore_base64
+          UPLOAD_KEYSTORE_PASSWORD: op://${{ env.PLAY_ITEM }}/android_upload_keystore_password
+          UPLOAD_KEY_ALIAS: op://${{ env.PLAY_ITEM }}/android_upload_key_alias
+          UPLOAD_KEY_PASSWORD: op://${{ env.PLAY_ITEM }}/android_upload_key_password
+
+      # The two files exist for this job only: the runner's temp directory,
+      # mode 600, removed in the last step (and with the runner after it).
+      - name: Write the key files
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ steps.secrets.outputs.PLAY_SERVICE_ACCOUNT_JSON }}
+          UPLOAD_KEYSTORE_BASE64: ${{ steps.secrets.outputs.UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          # The service account key is stored as JSON or as base64 of it.
+          if [[ "$PLAY_SERVICE_ACCOUNT_JSON" == "{"* ]]; then
+            printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" >"$RUNNER_TEMP/play-service-account.json"
+          else
+            base64 -d <<<"$PLAY_SERVICE_ACCOUNT_JSON" >"$RUNNER_TEMP/play-service-account.json"
+          fi
+          base64 -d <<<"$UPLOAD_KEYSTORE_BASE64" >"$RUNNER_TEMP/upload.keystore"
+
+      - name: Next versionCode
+        id: version
+        env:
+          PLAY_SERVICE_ACCOUNT_FILE: ${{ runner.temp }}/play-service-account.json
+          PLAY_PACKAGE_NAME: ${{ steps.secrets.outputs.PLAY_PACKAGE_NAME }}
+        run: echo "code=$(node mobile/android/play.mjs next-version-code)" >>"$GITHUB_OUTPUT"
+
+      - name: Build and sign the bundle
+        working-directory: mobile/android
+        env:
+          WAVE_VERSION_CODE: ${{ steps.version.outputs.code }}
+          WAVE_UPLOAD_KEYSTORE: ${{ runner.temp }}/upload.keystore
+          WAVE_UPLOAD_KEYSTORE_PASSWORD: ${{ steps.secrets.outputs.UPLOAD_KEYSTORE_PASSWORD }}
+          WAVE_UPLOAD_KEY_ALIAS: ${{ steps.secrets.outputs.UPLOAD_KEY_ALIAS }}
+          WAVE_UPLOAD_KEY_PASSWORD: ${{ steps.secrets.outputs.UPLOAD_KEY_PASSWORD }}
+        run: |
+          ./gradlew --no-daemon :app:bundleRelease
+          # Signed, or Play would refuse it with a message that does not say why.
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab
+
+      - name: Upload to the ${{ inputs.track }} track
+        env:
+          PLAY_SERVICE_ACCOUNT_FILE: ${{ runner.temp }}/play-service-account.json
+          PLAY_PACKAGE_NAME: ${{ steps.secrets.outputs.PLAY_PACKAGE_NAME }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          node mobile/android/play.mjs upload \
+            --bundle mobile/android/app/build/outputs/bundle/release/app-release.aab \
+            --track "$TRACK" --version-code "$VERSION_CODE"
+
+      - name: Remove the key files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/play-service-account.json" "$RUNNER_TEMP/upload.keystore"
+
+      - name: Summary
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          {
+            echo "### wave-mesh Android versionCode $VERSION_CODE"
+            echo
+            echo "From \`${GITHUB_SHA::7}\` on \`${GITHUB_REF_NAME}\`, on the \`$TRACK\` track."
+            if [[ "$TRACK" == "internal" ]]; then
+              echo "Play processes it for a few minutes; then the internal testers get the update."
+            else
+              echo "In production. Play reviews it before it reaches users."
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"

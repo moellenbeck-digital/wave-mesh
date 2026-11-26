@@ -20,8 +20,38 @@ android {
         minSdk = 29
         // Google Play takes new apps and updates only at the current level.
         targetSdk = 36
-        versionCode = 1
+        // Play refuses a versionCode it has seen, so the number is not ours to
+        // keep: the upload workflow asks Play for the next free one and passes
+        // it as -PwaveVersionCode (or WAVE_VERSION_CODE). A build on a
+        // machine without it is a local build and stays 1.
+        versionCode = providers.gradleProperty("waveVersionCode")
+            .orElse(providers.environmentVariable("WAVE_VERSION_CODE"))
+            .map { it.toInt() }
+            .getOrElse(1)
         versionName = "0.8.0"
+    }
+
+    // The upload key, for the Play upload workflow only. It arrives as a file
+    // and four values in the environment, never in the repo; without them
+    // bundleRelease stays unsigned, as it always was.
+    val uploadKeystore = providers.environmentVariable("WAVE_UPLOAD_KEYSTORE").orNull
+    signingConfigs {
+        if (uploadKeystore != null) {
+            create("upload") {
+                storeFile = file(uploadKeystore)
+                storePassword = providers.environmentVariable("WAVE_UPLOAD_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("WAVE_UPLOAD_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("WAVE_UPLOAD_KEY_PASSWORD").get()
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (uploadKeystore != null) {
+                signingConfig = signingConfigs.getByName("upload")
+            }
+        }
     }
 
     sourceSets["main"].java.srcDirs("src/main/kotlin")

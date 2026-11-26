@@ -259,6 +259,63 @@ nach der Erlaubnis. Der Text sagt nur, was stimmt: kein Server von uns im Weg,
 keine Analyse, keine Werbung. Ändert er sich, bekommt `disclosureAccepted.v1`
 eine neue Nummer, damit er erneut erscheint.
 
+## Store-Releases per Workflow
+
+Drei Workflows, alle nur per Hand gestartet (Actions-Tab oder GitHub-App auf dem
+Telefon), nie durch einen Push — ein Build, der Tester erreicht, ist eine
+Entscheidung wie ein Release:
+
+| Workflow | Tut | Eingaben |
+|---|---|---|
+| `testflight.yml` | iPhone-App bauen, signieren, in TestFlight hochladen | `upload` (an) |
+| `appstore.yml` | einen Build, der schon in TestFlight ist, zur App-Store-Prüfung einreichen | `build_number`, `notes_de`, `notes_en`, `dry_run` (an) |
+| `play.yml` | Android-App bauen, mit dem Upload-Key signieren, in einen Play-Track laden | `track` (`internal`), `confirm` |
+
+**Google Play (`play.yml`).** Läuft dieselben Prüfungen wie `testflight.yml`
+(Unit-Tests, Go-Kern, E2E), baut dann `./mobile/build.sh android` und
+`bundleRelease` und lädt das AAB hoch. Der `versionCode` steht nicht mehr fest
+im Code: der Workflow fragt Play nach dem höchsten, den es kennt (jedes Bundle,
+jede Track-Version), und übergibt den nächsten als `-PwaveVersionCode`; ohne ihn
+bleibt ein lokaler Build bei 1. Auf `production` läuft er nur mit zwei
+Schlüsseln: `confirm` muss `production` lauten und der Lauf muss auf `main`
+sein, und der Job `gate` läuft im GitHub-Environment `play-production`, das ein
+Admin auf „Required reviewers“ stellt — der Lauf wartet dann dort auf ein Go.
+(Ohne Reviewer am Environment bleibt nur die erste Hürde. Dort auch
+„Deployment branches: main“ setzen.)
+
+**App Store (`appstore.yml`).** Reicht einen vorhandenen TestFlight-Build ein:
+`build_number` ist die Build-Nummer aus TestFlight, `notes_de` und `notes_en`
+sind „Was ist neu“ (ein Zeilenumbruch als `\n`). Der Release-Typ der Version
+wird auf **manuell** gesetzt: nach der Freigabe durch Apple wartet sie, bis
+jemand in App Store Connect auf „Veröffentlichen“ drückt. Mit `dry_run` (Standard:
+an) liest der Lauf nur: er prüft, dass Build und Version da und verarbeitet
+sind, dass die Version eine Einreichung annimmt und kein anderer Antrag läuft,
+und nennt im Lauf-Protokoll, was ein echter Lauf ändern würde — er ändert und
+reicht nichts ein. Ein echter Lauf (`dry_run` aus) wird nur auf `main`
+angenommen. Hat die App noch keine veröffentlichte Version, nimmt App Store
+Connect kein „Was ist neu“; die Notizen werden dann nicht gesetzt (der Lauf
+sagt es).
+
+**Vorbedingungen** (nicht Teil der Workflows):
+
+- Im 1Password-Tresor „wave-mesh CI“ liegt das Item „Google Play API -
+  wave-mesh“ mit den Feldern `google_play_service_account_json`,
+  `google_play_package_name`, `android_upload_keystore_base64`,
+  `android_upload_key_alias`, `android_upload_keystore_password` und
+  `android_upload_key_password`. Tresor, Item und Feldnamen stehen in
+  `play.yml` (`PLAY_ITEM` und der Schritt „Load the store material“). Das Dienstkonto
+  braucht in der Play Console das Recht, Releases zu verwalten.
+- Die erste Android-Version muss einmal von Hand in der Play Console
+  hochgeladen sein; ohne sie bricht `play.yml` bei der Frage nach dem
+  `versionCode` mit einer Meldung ab.
+- Als GitHub-Secret gibt es nur `OP_SERVICE_ACCOUNT_TOKEN`; alles andere kommt
+  zur Laufzeit aus 1Password, wird maskiert, und Schlüsseldatei und Keystore
+  liegen nur als temporäre Dateien auf dem Runner.
+- Für die Freigabe auf `production`: Environment `play-production` mit
+  Reviewer anlegen (Settings → Environments).
+- `appstore.yml`: der Build ist in TestFlight fertig verarbeitet; Metadaten,
+  Screenshots und App-Review-Angaben der App sind in App Store Connect gepflegt.
+
 ## Tests und Diagnose
 
 ```bash

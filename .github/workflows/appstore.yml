@@ -1,0 +1,85 @@
+# A TestFlight build into App Review, from a button.
+#
+# The step after testflight.yml: that one gets a build onto App Store Connect,
+# this one submits a build that is already there for review. Started by hand,
+# never by a push -- a submission is a decision like a release.
+#
+# It never publishes. The version's release type is set to MANUAL, so when
+# Apple approves it, it waits for a person to press "Release" in App Store
+# Connect.
+#
+# dry_run (on by default) only reads: it checks that the build is there and
+# processed, that its version can take a submission and that the notes are
+# usable, says what a real run would change, and changes and submits nothing.
+# A real run (dry_run off) is only accepted on main.
+#
+# The API key is the one testflight.yml uses, from the 1Password vault
+# "wave-mesh CI" through the same service account; no Apple secret is stored in
+# GitHub.
+name: App Store submission
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "The TestFlight build to submit (its build number)"
+        type: string
+        required: true
+      notes_de:
+        description: "What's New, German (a line break as \\n)"
+        type: string
+        required: true
+      notes_en:
+        description: "What's New, English (a line break as \\n)"
+        type: string
+        required: true
+      dry_run:
+        description: "Only check: submit nothing and change nothing"
+        type: boolean
+        default: true
+
+concurrency:
+  group: appstore
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    name: ${{ inputs.dry_run && 'Dry run' || 'Submit for review' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: A real run only from main
+        if: ${{ !inputs.dry_run && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::a real submission only runs from main, not from $GITHUB_REF; use the dry run here"
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Load the App Store Connect key
+        id: secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5
+        with:
+          export-env: false
+          version: 2.39.0
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ASC_KEY_ID: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_key_id
+          ASC_ISSUER_ID: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_issuer_id
+          ASC_KEY_P8_BASE64: op://ru5ydmxogt5ckmkebfezdzh5fa/cumkhcjndrtnrqjlptpriqize4/apple_api_private_key_p8_base64
+
+      # The inputs go in through the environment, not into the script text: the
+      # release notes are free text.
+      - name: ${{ inputs.dry_run && 'Check the submission' || 'Submit the build for review' }}
+        env:
+          ASC_KEY_ID: ${{ steps.secrets.outputs.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ steps.secrets.outputs.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ steps.secrets.outputs.ASC_KEY_P8_BASE64 }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          NOTES_DE: ${{ inputs.notes_de }}
+          NOTES_EN: ${{ inputs.notes_en }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: node mobile/ios/submit-for-review.mjs
