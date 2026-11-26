@@ -226,6 +226,9 @@ describe("the old image against the new schema", () => {
       insert into wave_members (wave_id, user_id, role) values ('w_5', 'u_anna', 'owner');
       insert into wave_billing (wave_id, subscription_id, seats, state) values ('w_5', 'sub_5', 1, 'active');
     `);
+    // Rolling forward is the new image again, and its init container migrates
+    // before any command runs: the command meets the newest schema.
+    await migrate(drizzle(client), { migrationsFolder: REAL });
     const result = await migrateAccounts(db);
     expect(result.kind).toBe("migrated");
     const wave = (await db.select().from(waves).where(eq(waves.id, "w_5")))[0];
@@ -383,6 +386,7 @@ describe("the old image against 0024 (account subscriptions)", () => {
       insert into wave_members (wave_id, user_id, role) values ('w_5', 'u_anna', 'owner');
       insert into wave_billing (wave_id, subscription_id, seats, state) values ('w_5', 'sub_5', 1, 'active');
     `);
+    await migrate(drizzle(c24), { migrationsFolder: REAL });
     const result = await migrateAccounts(drizzle(c24, { schema }) as unknown as Database);
     expect(result.kind).toBe("migrated");
     expect((await c24.query(`select account_id from waves where id = 'w_5'`)).rows).toEqual([
@@ -390,5 +394,60 @@ describe("the old image against 0024 (account subscriptions)", () => {
     ]);
     // Account subscriptions are not the command's business: they are still exactly what they were.
     expect((await c24.query(`select id from account_subscriptions order by 1`)).rows).toHaveLength(2);
+  });
+});
+
+/**
+ * 0027 (the shared pier): two columns on `waves`, one on `nodes`, all with a
+ * default or nullable, so the old image's inserts keep working. And a wave that
+ * already has a pier or holds names keeps the zone it has -- its names and
+ * certificates hang under `pier.<suffix>` -- while every other wave starts on
+ * the shared zone.
+ */
+describe("the old image against 0027 (shared pier)", () => {
+  let c27: PGlite;
+  let before: string;
+
+  beforeAll(async () => {
+    before = folderThrough(26);
+    c27 = new PGlite();
+  });
+  afterAll(async () => {
+    await c27.close();
+    rmSync(before, { recursive: true, force: true });
+  });
+
+  test("waves with a pier or with names keep their own zone, the rest start on the shared one", async () => {
+    await migrate(drizzle(c27), { migrationsFolder: before });
+    await c27.exec(`
+      insert into users (id, email, email_verified) values ('u_anna', 'anna@acme.example', true);
+      insert into waves (id, name, dns_suffix, owner_user_id, ipv4_prefix, ipv6_prefix)
+        values ('w_pier', 'pier', 'pier.example.com', 'u_anna', '10.64.0.0/16', 'fd7a:1:1::/48'),
+               ('w_name', 'name', 'name.example.com', 'u_anna', '10.65.0.0/16', 'fd7a:1:2::/48'),
+               ('w_none', 'none', 'none.wave.internal', 'u_anna', '10.66.0.0/16', 'fd7a:1:3::/48');
+      insert into nodes (id, wave_id, user_id, machine_key, node_key, disco_key, hostname, os, ipv4, ipv6, approved, pier_ipv4)
+        values ('n_pier', 'w_pier', 'u_anna', 'mk1', 'nk1', 'dk1', 'pier', 'linux', '10.64.0.10', 'fd7a:1:1::10', true, '203.0.113.1'),
+               ('n_name', 'w_name', 'u_anna', 'mk2', 'nk2', 'dk2', 'laptop', 'linux', '10.65.0.10', 'fd7a:1:2::10', true, null);
+      insert into wave_piers (id, wave_id, node_id, name, port) values ('p_1', 'w_name', 'n_name', 'app', 443);
+    `);
+    await migrate(drizzle(c27), { migrationsFolder: REAL });
+    expect(
+      (await c27.query(`select id, pier_zone_mode, shared_pier_name from waves order by id`)).rows,
+    ).toEqual([
+      { id: "w_name", pier_zone_mode: "own", shared_pier_name: null },
+      { id: "w_none", pier_zone_mode: "shared", shared_pier_name: null },
+      { id: "w_pier", pier_zone_mode: "own", shared_pier_name: null },
+    ]);
+
+    // The old image writes rows without the new columns, and they get defaults.
+    await c27.exec(`
+      insert into waves (id, name, dns_suffix, owner_user_id, ipv4_prefix, ipv6_prefix)
+        values ('w_old', 'old', 'old.wave.internal', 'u_anna', '10.67.0.0/16', 'fd7a:1:4::/48');
+      insert into nodes (id, wave_id, user_id, machine_key, node_key, disco_key, hostname, os, ipv4, ipv6, approved)
+        values ('n_old', 'w_old', 'u_anna', 'mk3', 'nk3', 'dk3', 'old', 'linux', '10.67.0.10', 'fd7a:1:4::10', true);
+    `);
+    expect((await c27.query(`select shared_pier from nodes where id = 'n_old'`)).rows).toEqual([
+      { shared_pier: false },
+    ]);
   });
 });

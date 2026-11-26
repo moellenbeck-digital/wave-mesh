@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { DnsProviderPanel } from "@/components/dns-provider-panel";
+import { PierZonePanel } from "@/components/pier-zone-panel";
 import { dnsMessages } from "@/i18n/dns";
 import { rich } from "@/i18n/rich";
 import { fetchDns, fetchMe } from "@/lib/control";
@@ -42,6 +43,19 @@ export default async function DnsPage({ params }: { params: Promise<{ id: string
           <DnsProviderPanel waveId={id} settings={settings} />
         )}
       </section>
+
+      {/* Only through the shared pier is there a zone to choose: a pier of the
+          wave's own always serves pier.<suffix>. */}
+      {settings.pier?.via === "shared" ? (
+        <section className="wc-card animate-slide-up relative mt-8 rounded-lg p-6 md:p-8">
+          <PierZonePanel
+            waveId={id}
+            pier={settings.pier}
+            dnsSuffix={settings.dnsSuffix}
+            placeholder={settings.placeholder}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

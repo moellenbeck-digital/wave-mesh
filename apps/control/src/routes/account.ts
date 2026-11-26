@@ -38,7 +38,7 @@ export function accountRoutes({
   /** To cut the devices of a deleted account and tell the waves that stay. */
   hub?: NetmapHub;
   /** For the DNS secret of a pier that goes with the account. */
-  config?: Pick<Config, "dnsSecret">;
+  config?: Pick<Config, "dnsSecret" | "sharedPier">;
   dnsFetch?: typeof fetch;
 }) {
   const app = new Hono<{ Variables: Vars }>();
@@ -185,7 +185,10 @@ export function accountRoutes({
     // After the commit: cut the devices, take a pier's wildcard out of the zone, tell the waves that stay.
     for (const { waveId, nodeId } of result.nodes) hub?.disconnect(waveId, nodeId, "node-removed");
     for (const pier of result.piers) {
-      await unpublishLeavingPier({ db, dnsSecret: config?.dnsSecret, http: dnsFetch }, pier);
+      await unpublishLeavingPier(
+        { db, dnsSecret: config?.dnsSecret, sharedPier: config?.sharedPier, http: dnsFetch },
+        pier,
+      );
     }
     for (const waveId of result.changedWaves) await hub?.broadcast(waveId);
     for (const line of orphanLogLines(result.orphans)) console.log(line);

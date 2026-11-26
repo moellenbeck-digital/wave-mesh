@@ -90,16 +90,18 @@ describe("the arguments", () => {
 });
 
 describe("putting a name out", () => {
-  test("without the operator's allow-pier: the next step, in both languages", async () => {
+  test("without the pier allowed: the next step, in both languages", async () => {
     const { socket, control } = await ready();
     control.pierAllowed = false;
     const en = await wave(socket, ["expose", "app", "http://localhost:3000"]);
     expect(en.code).toBe(1);
-    expect(en.err).toContain("has not allowed the pier for laptop");
+    expect(en.err).toContain("the pier is not allowed for laptop");
+    expect(en.err).toContain("owner or admin");
     expect(en.err).toContain("admin.ts allow-pier");
     const de = await wave(socket, ["expose", "app", "http://localhost:3000"], "de");
     expect(de.code).toBe(1);
-    expect(de.err).toContain("hat den Pier für laptop nicht erlaubt");
+    expect(de.err).toContain("der Pier ist für laptop nicht erlaubt");
+    expect(de.err).toContain("Owner oder Admin");
     expect(de.err).toContain("admin.ts allow-pier");
   });
 
@@ -137,7 +139,7 @@ describe("putting a name out", () => {
 
     const list = await wave(socket, ["expose", "--list"]);
     expect(list.code).toBe(0);
-    expect(list.out).toContain("the operator has allowed it for this device");
+    expect(list.out).toContain("pier: allowed for this device");
     expect(list.out).toContain("pier address: 203.0.113.10, for *.pier.wave.example.com");
     expect(list.out).toContain("app.pier.wave.example.com");
     expect(list.out).toContain("no certificate for app.pier.wave.example.com");

@@ -26,7 +26,7 @@ import { AccountSeatLimitError, SeatLimitError } from "../billing/seats.ts";
 import { billingStateOf } from "../billing/subscriptions.ts";
 import { waveAccountOverview } from "../billing/usage.ts";
 import type { Database } from "../db/client.ts";
-import { users, waves } from "../db/schema.ts";
+import { users, wavePiers, waves } from "../db/schema.ts";
 import { configureDnsProvider, findDnsCredential, removeDnsCredential } from "../dns/credentials.ts";
 import { isAutomaticKind, isProviderKind, PROVIDER_KINDS } from "../dns/provider.ts";
 import type { Config } from "../env.ts";
@@ -43,7 +43,8 @@ import {
 } from "../waves/invites.ts";
 import { canManage, changeRole, listMembers, removeMember, roleOf } from "../waves/members.ts";
 import { ownerOfNode, removeNode, renameNode } from "../waves/nodes.ts";
-import { pierLeaving, unpublishLeavingPier } from "../waves/pier-dns.ts";
+import { pierLeaving, unpublishLeavingPier, unpublishPierZone } from "../waves/pier-dns.ts";
+import { findPierHost, findSharedPier, pierZone, setPierAllowed, setPierZoneMode } from "../waves/piers.ts";
 import {
   deleteWave,
   InvalidInputError,
@@ -595,7 +596,10 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
     if (result === "forbidden") {
       return page(c, (m) => [m.notAllowed, m.onlyOwnerRemovesAdmins], 403);
     }
-    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
+    await unpublishLeavingPier(
+      { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier, http: dnsFetch },
+      pier,
+    );
 
     await audit(db, waveId, userActor(auth.user), { action: "member.remove", target: c.req.param("userId") });
     // Their devices are gone from the database; the ones still up learn it
@@ -686,7 +690,10 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
     const pier = await pierLeaving(db, { waveId, leaving: { userId: auth.user.id } });
     const result = await removeMember(db, waveId, "owner", auth.user.id);
     if (typeof result === "string") return page(c, (m) => [m.notAMember, m.nothingToRemove], 404);
-    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
+    await unpublishLeavingPier(
+      { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier, http: dnsFetch },
+      pier,
+    );
     await audit(db, waveId, userActor(auth.user), { action: "member.leave", target: auth.user.id });
     await hub?.broadcast(waveId);
     return c.redirect("/", 303);
@@ -711,7 +718,10 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
     // Already gone, or never in this wave -- the same answer either way, for
     // the same reason a wave one is not in looks like one that does not exist.
     if (!removed) return page(c, (m) => [m.noSuchDevice, m.notInThisWave], 404);
-    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
+    await unpublishLeavingPier(
+      { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier, http: dnsFetch },
+      pier,
+    );
 
     // Cut first, push second: the device learns it is out, and the ones that
     // stay lose it from their netmap -- that is what drops the peer entry from
@@ -858,6 +868,30 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
    * The credential itself never comes back out: what is sealed stays sealed,
    * and the page only learns which provider holds it and since when.
    */
+  /**
+   * Where a wave's names go out, for the page that chooses it: through its
+   * own pier, through the shared one (and under which zone), or nowhere yet.
+   */
+  const pierView = async (waveId: string) => {
+    const [wave] = await db.select().from(waves).where(eq(waves.id, waveId)).limit(1);
+    if (!wave) return null;
+    const own = await findPierHost(db, waveId);
+    const shared = own ? null : await findSharedPier(db);
+    const held = await db.select({ id: wavePiers.id }).from(wavePiers).where(eq(wavePiers.waveId, waveId));
+    const sharedDomain = config.sharedPier?.domain ?? null;
+    return {
+      via: own ? "own" : shared ? "shared" : "none",
+      mode: wave.pierZoneMode,
+      // Unset until the first name is put out: the random label is given then.
+      zone:
+        own || wave.pierZoneMode === "own" || wave.sharedPierName
+          ? pierZone(wave, sharedDomain ?? undefined)
+          : null,
+      sharedDomain,
+      names: held.length,
+    };
+  };
+
   const dnsView = async (waveId: string) => {
     const [wave] = await db
       .select({ suffix: waves.dnsSuffix })
@@ -866,6 +900,7 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
       .limit(1);
     const stored = await findDnsCredential(db, waveId);
     return {
+      pier: await pierView(waveId),
       dnsSuffix: wave?.suffix ?? "",
       placeholder: isPlaceholderSuffix(wave?.suffix ?? ""),
       provider: stored?.provider ?? null,
@@ -984,6 +1019,69 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
   });
 
   /**
+   * Whether a device may put names into the open network through the pier --
+   * the first of the two locks (D12), set by whoever manages the wave. A member
+   * may not put the wave on the internet on their own; an owner or admin may
+   * decide it for a device, as the operator always could from the shell.
+   * Closing it takes the device's names with it (`setPierAllowed()`).
+   */
+  app.put("/api/waves/:id/nodes/:nodeId/pier", async (c) => {
+    const waveId = c.req.param("id");
+    const auth = await authorize(c, waveId, "manage");
+    if (auth instanceof Response) return auth;
+    if (!isJson(c)) return c.json({ error: say(c).apiExpectedJson }, 415);
+
+    const body = (await c.req.json().catch(() => null)) as { allowed?: unknown } | null;
+    if (typeof body?.allowed !== "boolean") return c.json({ error: say(c).apiExpectedAllowed }, 400);
+
+    const updated = await setPierAllowed(db, waveId, c.req.param("nodeId"), body.allowed);
+    if (!updated) return c.json({ error: say(c).apiNoSuchDevice }, 404);
+    await audit(db, waveId, userActor(auth.user), {
+      action: body.allowed ? "pier.allow" : "pier.deny",
+      target: updated.hostname,
+      ...(updated.taken.length > 0 ? { detail: { removed: updated.taken.map((pier) => pier.name) } } : {}),
+    });
+    await hub?.broadcast(waveId);
+    return c.json({ hostname: updated.hostname, pierAllowed: body.allowed, removed: updated.taken.length });
+  });
+
+  /**
+   * Which zone the wave's names take under the shared pier: the random one under
+   * the server's pier domain, or `pier.<own domain>` with the wave's DNS
+   * provider writing its wildcard. Only while no name is out (`setPierZoneMode()`).
+   */
+  app.put("/api/waves/:id/pier-zone", async (c) => {
+    const waveId = c.req.param("id");
+    const auth = await authorize(c, waveId, "manage");
+    if (auth instanceof Response) return auth;
+    if (!isJson(c)) return c.json({ error: say(c).apiExpectedJson }, 415);
+
+    const body = (await c.req.json().catch(() => null)) as { mode?: unknown } | null;
+    const mode = body?.mode;
+    if (mode !== "shared" && mode !== "own") return c.json({ error: say(c).apiExpectedZoneMode }, 400);
+
+    const set = await setPierZoneMode(db, { waveId, mode, sharedDomain: config.sharedPier?.domain });
+    if ("error" in set) return c.json({ error: set.error }, set.status);
+    if (set.changed) {
+      await audit(db, waveId, userActor(auth.user), {
+        action: "pier.zone",
+        target: set.zone,
+        detail: { mode, from: set.previousZone },
+      });
+      // A wildcard the old zone may still carry from earlier names goes with it.
+      const shared = await findSharedPier(db);
+      if (shared && shared.waveId !== waveId) {
+        await unpublishPierZone(
+          { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier, http: dnsFetch },
+          { waveId, zone: set.previousZone, host: shared.host },
+        );
+      }
+      await hub?.broadcast(waveId);
+    }
+    return c.json(await pierView(waveId));
+  });
+
+  /**
    * Takes the whole wave away, at its owner's word.
    *
    * The owner alone, not everyone who may manage it: an administrator removes
@@ -1027,10 +1125,13 @@ export function waveRoutes({ db, config, hub, providers, dnsFetch, creationThrot
         409,
       );
 
-    const pier = await pierLeaving(db, { waveId, leaving: { wholeWave: true } });
+    const pier = await pierLeaving(db, { waveId, leaving: { wholeWave: true } }, config.sharedPier?.domain);
     const deleted = await deleteWave(db, waveId);
     if (!deleted) return page(c, (m) => [m.unknownWave, m.nothingToDelete], 404);
-    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
+    await unpublishLeavingPier(
+      { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier, http: dnsFetch },
+      pier,
+    );
 
     // Cut every device, and no broadcast afterwards: a netmap belongs to a
     // wave, and there is no longer one to build. A socket left open would go

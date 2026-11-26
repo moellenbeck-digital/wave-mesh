@@ -20,7 +20,9 @@ ionos take one token; inwx takes an account and asks for its parts, or reads
 {"user":"…","password":"…","totpSecret":"…"} from a pipe.
 set-pier makes one device the pier of the wave (D12), says the public address the world reaches
 it at and points *.pier.<domain> there (--label names another zone than "pier"); allow-pier lets
-a device put names through it, deny-pier takes its names back.`,
+a device put names through it, deny-pier takes its names back. set-shared-pier makes a device the
+shared pier of the server, used by every wave without a pier of its own; pier-zone chooses
+whether such a wave's names go under the shared pier domain (shared) or its own (own).`,
 
   // --- credentials ----------------------------------------------------------
   ionosPrompt: (suffix: string) => `IONOS API key, <public prefix>.<secret> (${suffix}): `,
@@ -92,6 +94,21 @@ a device put names through it, deny-pier takes its names back.`,
   pierCleared: (host: string) =>
     `${host} is no longer the pier of this wave; its names stay, and wait for the next one.`,
   noPierHost: (wave: string) => `${wave} has no pier`,
+  sharedPierSet: (host: string, addresses: string, domain: string | null) =>
+    `${host} is now the shared pier of this server, reached by the world at ${addresses}; ` +
+    (domain
+      ? `every wave without a pier of its own puts names out through it, under <random>.${domain}.`
+      : "WAVE_SHARED_PIER_DOMAIN is not set, so waves can use it only under their own domain (pier-zone own)."),
+  sharedPierWarning: [
+    "The shared pier is a peer of every device that puts a name out through it, in every wave.",
+    "Those devices let it reach only their claimed ports, but give it a machine of its own and",
+    "nothing else, and keep its hosting wave for it alone.",
+  ].join("\n"),
+  sharedPierCleared: (host: string) =>
+    `${host} is no longer the shared pier; the names put out through it stay, and wait for the next one.`,
+  noSharedPier: "this server has no shared pier",
+  useClearSharedPier: "that is the shared pier of this server; use clear-shared-pier",
+  pierZoneIs: (wave: string, mode: string, zone: string) => `${wave}: pier zone ${zone} (${mode})`,
   pierNeedsAddress: "a pier needs a public address: --ipv4 and/or --ipv6",
   pierRecordPublished: (name: string) => `  ${name}: public records written`,
   pierRecordRemoved: (name: string) => `  ${name}: public records removed`,
@@ -271,7 +288,10 @@ ionos nehmen einen Token; inwx nimmt ein Konto und fragt nach seinen Teilen, ode
 {"user":"…","password":"…","totpSecret":"…"} aus einer Pipe.
 set-pier macht ein Gerät zum Pier des Waves (D12), nennt die öffentliche Adresse, unter der es
 erreichbar ist, und stellt *.pier.<domain> darauf (--label nennt eine andere Zone als „pier“);
-allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie zurück.`,
+allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie zurück.
+set-shared-pier macht ein Gerät zum geteilten Pier des Servers, den jeder Wave ohne eigenen Pier
+nutzt; pier-zone wählt, ob dessen Namen unter der Domain des geteilten Piers liegen (shared) oder
+unter der eigenen (own).`,
 
   ionosPrompt: (suffix) => `IONOS-API-Schlüssel, <öffentliches Präfix>.<Geheimnis> (${suffix}): `,
   tokenPrompt: (kind, suffix) => `API-Token für ${kind} (${suffix}): `,
@@ -336,6 +356,21 @@ allow-pier erlaubt einem Gerät, Namen darüber freizugeben, deny-pier nimmt sie
   pierCleared: (host) =>
     `${host} ist nicht mehr der Pier dieses Waves; seine Namen bleiben und warten auf den nächsten.`,
   noPierHost: (wave) => `${wave} hat keinen Pier`,
+  sharedPierSet: (host, addresses, domain) =>
+    `${host} ist jetzt der geteilte Pier dieses Servers, aus dem Netz erreichbar unter ${addresses}; ` +
+    (domain
+      ? `jeder Wave ohne eigenen Pier stellt Namen darüber ins Netz, unter <zufall>.${domain}.`
+      : "WAVE_SHARED_PIER_DOMAIN ist nicht gesetzt, Waves können ihn also nur unter ihrer eigenen Domain nutzen (pier-zone own)."),
+  sharedPierWarning: [
+    "Der geteilte Pier ist Peer jedes Geräts, das über ihn einen Namen ins Netz stellt, in jedem Wave.",
+    "Diese Geräte lassen ihn nur an ihre beanspruchten Ports, aber gib ihm eine eigene Maschine,",
+    "sonst nichts darauf, und lass seinen Hosting-Wave ihm allein.",
+  ].join("\n"),
+  sharedPierCleared: (host) =>
+    `${host} ist nicht mehr der geteilte Pier; die darüber vergebenen Namen bleiben und warten auf den nächsten.`,
+  noSharedPier: "dieser Server hat keinen geteilten Pier",
+  useClearSharedPier: "das ist der geteilte Pier dieses Servers; nimm clear-shared-pier",
+  pierZoneIs: (wave, mode, zone) => `${wave}: Pier-Zone ${zone} (${mode})`,
   pierNeedsAddress: "ein Pier braucht eine öffentliche Adresse: --ipv4 und/oder --ipv6",
   pierRecordPublished: (name) => `  ${name}: öffentliche Records geschrieben`,
   pierRecordRemoved: (name) => `  ${name}: öffentliche Records entfernt`,

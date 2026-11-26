@@ -3,24 +3,58 @@
  * test. Same app, same routes, same middleware -- only the database driver
  * differs, and the PGlite/node-postgres parity is covered by the unit tests.
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createApp } from "../src/app.ts";
 import { createProviders } from "../src/auth/providers.ts";
 import { createSession } from "../src/auth/session.ts";
-import { identities, users, waves } from "../src/db/schema.ts";
+import { identities, nodes, users, waves } from "../src/db/schema.ts";
 import { loadConfig } from "../src/env.ts";
 import { newId } from "../src/ids.ts";
 import { resolveSigningKey } from "../src/netmap/signing-key.ts";
 import { createAuthKey } from "../src/waves/auth-keys.ts";
+import { setSharedPierHost } from "../src/waves/piers.ts";
 import { createTestDb } from "./helpers.ts";
 
 const config = loadConfig({ ...process.env, WAVE_DEV_AUTH: "1" });
 const { db } = await createTestDb();
+
+/**
+ * The DNS of the shared pier's zone, kept in this process: a Cloudflare that
+ * answers for exactly that zone and remembers what it was told, so a script
+ * can see the wildcard a claim writes. Only with WAVE_SHARED_PIER_DOMAIN.
+ */
+const records = new Map<string, { type: string; name: string; content: string }>();
+let nextRecord = 0;
+const fakeDns = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  const method = init?.method ?? "GET";
+  const ok = (result: unknown) => Response.json({ success: true, errors: [], result });
+  if (url.pathname === "/client/v4/zones") {
+    const name = url.searchParams.get("name");
+    return ok(name === config.sharedPier?.domain ? [{ id: "z", name }] : []);
+  }
+  if (method === "POST") {
+    const id = `r${++nextRecord}`;
+    records.set(id, JSON.parse(String(init?.body)));
+    return ok({ id });
+  }
+  if (method === "DELETE") {
+    records.delete(url.pathname.split("/").pop() ?? "");
+    return ok({});
+  }
+  const type = url.searchParams.get("type");
+  const name = url.searchParams.get("name");
+  return ok(
+    [...records].filter(([, r]) => r.type === type && r.name === name).map(([id, r]) => ({ id, ...r })),
+  );
+}) as typeof fetch;
+
 const app = createApp({
   db,
   config,
   providers: createProviders(config),
   signingKey: resolveSigningKey(config),
+  ...(config.sharedPier ? { dnsFetch: fakeDns } : {}),
 });
 
 /**
@@ -49,6 +83,22 @@ const hooks: Record<string, (url: URL) => Promise<Response>> = {
     const key = await createAuthKey(db, { waveId, userId: owner, label: "e2e" });
     return Response.json({ token: key.token });
   },
+  // `wave-admin set-shared-pier <wave> <hostname> --ipv4 <addr>`.
+  "/__e2e/shared-pier": async (url) => {
+    const waveId = url.searchParams.get("wave") ?? "";
+    const hostname = url.searchParams.get("node") ?? "";
+    const rows = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(and(eq(nodes.waveId, waveId), eq(nodes.hostname, hostname)))
+      .limit(1);
+    const nodeId = rows[0]?.id;
+    if (!nodeId) return Response.json({ error: "no such node" }, { status: 404 });
+    const set = await setSharedPierHost(db, { waveId, nodeId, ipv4: url.searchParams.get("ipv4") ?? "" });
+    return Response.json(set, { status: "host" in set ? 200 : 409 });
+  },
+  // What the fake DNS of the shared pier holds now.
+  "/__e2e/dns": async () => Response.json({ records: [...records.values()] }),
   // A person whose address nobody confirmed (an identity provider that says
   // `email_verified: false`). The dev login vouches for every address it is
   // given, so this is the only way to get such a session into a script: the

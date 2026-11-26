@@ -849,6 +849,44 @@ geht — ein Wildcard des Waves deckt die Pier-Zone ohnehin nicht, er reicht nur
 deckt. Nach dem Entfernen läuft ein ausgestelltes Zertifikat bis zum Ablauf weiter;
 Ablauf und Erneuerung begrenzen den Zeitraum.
 
+#### D12a — Der geteilte Pier (M17)
+
+Wer keinen eigenen Pier mit öffentlicher Adresse, Domain und DNS-Provider betreiben will,
+stellt Namen über den **geteilten Pier** des Servers ins Netz — auf wave-mesh.net betreiben
+wir ihn. Vorbild ist Tailscale Funnel.
+
+- **Ein Pier für alle Waves eines Servers**, nicht einer je Wave. Er ist Knoten eines eigenen
+  Hosting-Waves (`nodes.shared_pier`, höchstens einer, `wave-admin set-shared-pier`) und in
+  keinem Kunden-Wave Mitglied. Ein Wave ohne eigenen Pier nutzt ihn automatisch; ein Wave mit
+  eigenem Pier bleibt, wie er war.
+- **Peer ohne Mitgliedschaft.** WireGuard kennt keine Netze, nur Paare: der Server schreibt den
+  Pier nur in die Netzkarte von Geräten, die über ihn einen Namen halten (`allowedIps` = seine
+  `/32`,`/128`), und dem Pier genau diese Geräte (nur ihre eigenen zwei Adressen) samt ihrer
+  `piers` mit vollem `dnsName`. `apps/pier` bleibt unverändert.
+- **Der Schutz ist der Filter auf dem Gerät.** Ein solches Gerät bekommt immer einen
+  `packetFilter`: ohne Policy „alles aus dem eigenen Wave-Block“ plus „Pier nur auf die
+  beanspruchten Ports“ (gleichbedeutend mit keiner Policy für die Mitglieder), mit Policy deren
+  Regeln plus dieselbe Pier-Regel. Der Pier wird erst Peer, wenn das Gerät
+  `filterEnforced = true` gemeldet hat; ein Client, der keinen Filter hält, bekommt ihn nie. Ein
+  gekaperter Pier erreicht damit nur, was ohnehin öffentlich ist. Ohne Client-Änderung.
+- **Die Zone:** standardmäßig `<app>.<zufall>.<WAVE_SHARED_PIER_DOMAIN>` — acht Zeichen, beim
+  ersten Bedarf vergeben und danach fest (`waves.shared_pier_name`), zufällig statt des
+  Wave-Namens, weil Namen weder eindeutig noch fest sind und das Label für immer in den CT-Logs
+  steht. Wildcard je Wave (`*.<zufall>.<domain>`, ein DNS-Wildcard reicht nur ein Label tief),
+  geschrieben beim Claim mit dem Token des Servers (`WAVE_SHARED_PIER_DNS_*`). Umstellbar auf
+  `<app>.pier.<eigene-domain>` (`waves.pier_zone_mode = own`), dann schreibt der DNS-Provider des
+  Waves den Wildcard auf die IP des geteilten Piers — nur ohne vergebene Namen.
+- **Die Domain gehört auf die Public Suffix List** und ist nie die des Control-Servers: eine App
+  darunter könnte sonst Cookies für die Anmeldung setzen, und alle Namen teilten sich das
+  Let's-Encrypt-Limit einer registrierten Domain.
+- **Eine Maschine, ein Wave.** Der Pier ist eine Adresse; eine Maschine, die in zwei Waves Namen
+  darüber hielte, routete sie auf zwei Interfaces, und `overlap.ts` wiese den zweiten ab. Der
+  zweite Claim ist deshalb 409.
+- **Die erste Sperre setzen Owner und Admins**, über `PUT /api/waves/:id/nodes/:nodeId/pier`
+  (Schalter in der Geräteliste), der Betreiber weiterhin mit `allow-pier`.
+- **Netzkarten zweier Waves hängen zusammen:** die Version ist zusammengesetzt (Wave + Hosting
+  bzw. Hosting + alle verknüpften), Hub-Broadcasts und Punch-Hinweise gehen eine Ebene hinüber.
+
 ### D13 — Selbstaktualisierung der Clients
 
 **Problem:** Ein Client, der einmal installiert ist, bleibt auf seiner Version
@@ -1540,6 +1578,7 @@ Damit ist ein Neustart oder ein verpasstes Delta unkritisch.
 | **M14** | Geräte im Cluster | Egress-Kette im Connector (DNAT von Pod-Netz auf Wave-Adressen, masquerade auf `wave0`), Ziele per Gerätename aus der Netzkarte, `ExternalName`-Services mit `wave.dev/egress`, Portvergabe und ConfigMap durch den Operator, NetworkPolicy für die Egress-Ports (D14) | ein Pod erreicht `http://ollama.ai:11434` auf einer Workstation im Wave, nur aus freigegebenen Namespaces und nur, solange die Policy es erlaubt |
 | **M15** | Zwischenablage | `Peer.clipboard` nur in Netzkarten desselben Menschen, Meldung `{ type: "clipboard", receive }` und `nodes.clipboard_receive`, Freigabe des Ports im `packetFilter`, Listener auf der Wave-Adresse im Daemon und im Go-Kern, IPC zum Tray, Plattformweiche `clipboard.ts` (Wayland, NSPasteboard, Win32), Share Extension/App Intent und Benachrichtigung auf den Telefonen (D15) | Text, der auf dem Notebook kopiert wird, lässt sich auf einem zweiten Notebook desselben Menschen sofort einfügen, auf dessen iPhone nach einem Tippen auf die Benachrichtigung, und in die Gegenrichtung über „Teilen → wave“ — ein Gerät eines anderen Mitglieds bekommt nichts, und was ein Passwort-Manager als vertraulich markiert, verlässt das Gerät nicht |
 | **M16** | Home Assistant | App mit `host_network`, `wave daemon` im Vordergrund, Zustand in `/data`, Pre-Auth-Key, Auto-Update aus, HTTPS per TLS-Listener auf der Wave-Adresse, später Ingress-Seite aus `dsm-ui` und Resolver als Opt-in für das DNS-Plugin — Plan in [`HOME-ASSISTANT.md`](HOME-ASSISTANT.md) | eine Integration in Home Assistant erreicht ein Gerät im Wave, und Home Assistant ist aus dem Wave unter seinem Namen per HTTPS erreichbar, ohne dass sich im LAN etwas ändert |
+| **M17** | Geteilter Pier | D12a: ein Pier im Hosting-Wave für alle Waves ohne eigenen, Zufallszone unter `WAVE_SHARED_PIER_DOMAIN` oder `pier.<eigene-domain>`, Filter auf dem Gerät, Freigabe durch Owner/Admin | `test/e2e/shared-pier.sh`: zwei Waves, ein Pier, jeder Name erreicht sein Gerät per SNI, der Pier nur den beanspruchten Port |
 
 **Erledigt: M0, M1, M2, M3, M4, M5, M6, M11; M10 bis auf den Lauf auf echter Hardware; M13 bis auf den ersten echten Release.** M5 ist mit M6 zusammen fertig
 geworden, weil beide dieselbe Arbeit brauchten: Der Server schreibt jetzt über

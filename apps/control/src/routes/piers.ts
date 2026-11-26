@@ -5,7 +5,17 @@ import { Hono } from "hono";
 import { type Actor, audit } from "../audit.ts";
 import type { Database } from "../db/client.ts";
 import { waves } from "../db/schema.ts";
-import { findPierHost, listPiers, pierLabel, pierZone, removePier, setPier } from "../waves/piers.ts";
+import type { SharedPierConfig } from "../env.ts";
+import { publishPierZone } from "../waves/pier-dns.ts";
+import {
+  effectivePier,
+  ensureSharedPierName,
+  listPiers,
+  pierLabel,
+  pierZone,
+  removePier,
+  setPier,
+} from "../waves/piers.ts";
 import type { NetmapHub } from "./control-ws.ts";
 import { authenticateMachine, nodeForRequest } from "./machine-auth.ts";
 
@@ -17,16 +27,22 @@ import { authenticateMachine, nodeForRequest } from "./machine-auth.ts";
  * taken is not here -- the operator's lock, the namespace and the 409 are all
  * `setPier()` -- so a second front for the same thing could not disagree.
  *
- * Nothing here touches DNS: one wildcard record covers the whole pier zone and
- * belongs to the operator's `set-pier`. A claim is a row and a netmap push.
+ * With a pier of its own, nothing here touches DNS: one wildcard record covers
+ * the whole pier zone and belongs to the operator's `set-pier`. Through the
+ * shared pier there is no such step, so a claim writes the zone's wildcard
+ * itself -- idempotent, and tried again with every claim if it failed.
  */
 export interface PierRouteDeps {
   db: Database;
   hub?: NetmapHub;
   nonces?: NonceStore;
+  sharedPier?: SharedPierConfig;
+  dnsSecret?: Buffer;
+  http?: typeof fetch;
 }
 
-export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
+export function pierRoutes({ db, hub, nonces, sharedPier, dnsSecret, http }: PierRouteDeps) {
+  const sharedDomain = sharedPier?.domain;
   const app = new Hono();
   const nonceStore = nonces ?? createMemoryNonceStore();
 
@@ -52,8 +68,19 @@ export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
       nodeId: node.id,
       name: parsed.data.name,
       port: parsed.data.port,
+      sharedDomain,
     });
     if ("error" in set) return c.json({ error: set.error }, set.status);
+
+    if (set.host.shared) {
+      const outcome = await publishPierZone(
+        { db, dnsSecret, sharedPier, http },
+        { waveId: node.waveId, zone: set.zone, host: set.host },
+      );
+      if (outcome.state !== "published") {
+        console.error(`pier: *.${set.zone} is ${outcome.state}${outcome.error ? `: ${outcome.error}` : ""}`);
+      }
+    }
 
     const actor: Actor = { userId: node.userId, label: `device:${node.hostname}` };
     if (set.changed) {
@@ -85,8 +112,13 @@ export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
     const waveRows = await db.select().from(waves).where(eq(waves.id, node.waveId)).limit(1);
     const wave = waveRows[0];
     if (!wave) return c.json({ error: "the wave is gone" }, 404);
-    const zone = pierZone(wave);
-    const host = await findPierHost(db, node.waveId);
+    const host = await effectivePier(db, node.waveId);
+    // Through the shared pier the zone is decided at the first moment a
+    // device asks where its names would go.
+    if (host?.shared && sharedDomain && wave.pierZoneMode !== "own" && !wave.sharedPierName) {
+      wave.sharedPierName = await ensureSharedPierName(db, wave.id);
+    }
+    const zone = pierZone(wave, sharedDomain);
     const piers = await listPiers(db, node.waveId, node.id);
     return c.json({
       allowed: node.pierAllowed,
@@ -108,7 +140,7 @@ export function pierRoutes({ db, hub, nonces }: PierRouteDeps) {
     const wave = waveRows[0];
     if (!wave) return c.json({ error: "the wave is gone" }, 404);
 
-    const zone = pierZone(wave);
+    const zone = pierZone(wave, sharedDomain);
     // Hono has decoded the parameter already; decoding it again would throw on
     // a lone `%` and answer 500 to what is only a name that is not one.
     const label = pierLabel(c.req.param("name"), zone);

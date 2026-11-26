@@ -20,6 +20,8 @@ export interface DeviceRow {
   /** Public addresses, on the one node that is the pier; null elsewhere. */
   pierIpv4: string | null;
   pierIpv6: string | null;
+  /** Whether it is the shared pier of the server. */
+  sharedPier: boolean;
   /** What it is to the wave's policy (M7). */
   tags: string[];
   /** What it last said about enforcing the policy's ports. */
@@ -44,6 +46,7 @@ export async function listNodes(db: Database, waveId: string): Promise<DeviceRow
       pierAllowed: nodes.pierAllowed,
       pierIpv4: nodes.pierIpv4,
       pierIpv6: nodes.pierIpv6,
+      sharedPier: nodes.sharedPier,
       tags: nodes.tags,
       filterEnforced: nodes.filterEnforced,
       filterReason: nodes.filterReason,

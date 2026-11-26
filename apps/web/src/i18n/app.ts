@@ -248,6 +248,10 @@ const en = {
   newDeviceName: "New name",
   renameDeviceHint:
     "Lower case letters, digits and hyphens; anything else becomes a hyphen. A name already taken gets a number. Every device in the wave learns the new name.",
+  pierAllow: "May put names into the open network (pier)",
+  pierAllowHint:
+    "Then the device can publish its own services with wave expose. Turning it off takes its names back.",
+  pierAllowFailed: "Could not change it: {reason}",
   deleteConfirm: "Type {name} to confirm",
   deleteForGood: "Delete for good",
   deleteHint:
@@ -515,6 +519,10 @@ const de: typeof en = {
   newDeviceName: "Neuer Name",
   renameDeviceHint:
     "Kleinbuchstaben, Ziffern und Bindestriche; alles andere wird zum Bindestrich. Ein vergebener Name bekommt eine Nummer. Alle Geräte im Wave lernen den neuen Namen.",
+  pierAllow: "Darf Namen ins offene Netz stellen (Pier)",
+  pierAllowHint:
+    "Dann kann das Gerät eigene Dienste mit wave expose veröffentlichen. Ausschalten nimmt seine Namen zurück.",
+  pierAllowFailed: "Konnte nicht geändert werden: {reason}",
   deleteConfirm: "Zum Bestätigen {name} eintippen",
   deleteForGood: "Endgültig löschen",
   deleteHint:

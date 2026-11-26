@@ -257,7 +257,7 @@ export async function sweepEndedWaves(
     try {
       // Read outside the transaction, taken away after it: a provider call
       // does not belong under the lock on the billing row.
-      const pier = await pierLeaving(db, { waveId, leaving: { wholeWave: true } });
+      const pier = await pierLeaving(db, { waveId, leaving: { wholeWave: true } }, dns.sharedPier?.domain);
       const gone = await db.transaction(async (tx) => {
         const still = await tx
           .select({ state: waveBilling.state, deleteAfter: waveBilling.deleteAfter })

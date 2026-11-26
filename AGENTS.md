@@ -36,6 +36,7 @@ cd apps/web && bun run typecheck   # eigener Lauf: DOM und JSX, nicht Bun
 ./test/e2e/two-nodes.sh      # Tunnel im LAN
 ./test/e2e/two-waves.sh      # ein Gerät in zwei Waves gleichzeitig
 ./test/e2e/same-server.sh    # ... in zwei Waves am selben Server
+./test/e2e/shared-pier.sh    # der geteilte Pier: zwei Waves, ein Pier, SNI zum richtigen Gerät
 ./test/e2e/nat-traversal.sh  # Hole Punching durch zwei NATs
 ./test/e2e/relay-fallback.sh # symmetrisches NAT → Relay
 ./test/e2e/acl.sh            # eine Policy: Peers über die Netzkarte, Ports über nftables
@@ -2271,8 +2272,8 @@ was ein Gerät darf, in welcher Zone die Namen liegen und was es freigegeben hat
 
 Was daran festliegt:
 
-- **Zwei Schlösser, beide in `setPier()`.** `nodes.pier_allowed` (Vorgabe aus,
-  nur der Betreiber) entscheidet, wer *beanspruchen* darf; die Zeile in
+- **Zwei Schlösser, beide in `setPier()`.** `nodes.pier_allowed` (Vorgabe aus;
+  Owner und Admins des Waves im Browser, der Betreiber mit `allow-pier`) entscheidet, wer *beanspruchen* darf; die Zeile in
   `wave_piers` ist der Anspruch. Die Erlaubnis zu entziehen **räumt die Namen ab**
   — in `setPierAllowed()` selbst, in einer Transaktion unter derselben Sperre auf die
   Wave-Zeile, die `setPier()` nimmt. Getrennt konnte ein Claim, der „erlaubt“ schon
@@ -2504,6 +2505,89 @@ mit dem Zertifikat des Zielgeräts; das Image ist nicht gebaut), die Provider-Au
 gegen die echten APIs (nur Fakes, und ob jeder Provider einen Wildcard-Namen über genau
 diesen Aufruf anlegt, sagt erst die echte API), der Daemon mit einem echten Tunnel (der Listener wird
 dort an eine echte Wave-Adresse gebunden, im Test an `127.0.0.1`) und Mobile.
+
+### Der geteilte Pier (M17, D12a)
+
+**Ein Pier für jeden Wave ohne eigenen** — wer keine öffentliche Adresse, Domain und
+keinen DNS-Provider hat, stellt Namen trotzdem ins Netz, auf wave-mesh.net über unseren.
+Code: `waves/piers.ts` (`findSharedPier`, `effectivePier`, `setSharedPierHost`,
+`setPierZoneMode`, `waveWideFilter`, `wavesOnSharedPier`, `sharedPierLink`),
+`netmap/build.ts` (`linkedDevices`, `netmapVersionOf`), `dns/shared-pier.ts`, Hub in
+`routes/control-ws.ts`. Tests: `test/shared-pier.test.ts`, `test/e2e/shared-pier.sh`.
+
+```bash
+WAVE_SHARED_PIER_DOMAIN=wavepier.net          # ohne: keine Zufallszone, nur pier-zone own
+WAVE_SHARED_PIER_DNS_PROVIDER=cloudflare      # cloudflare|hetzner|ionos|inwx, Pflicht mit der Domain
+WAVE_SHARED_PIER_DNS_TOKEN=…                  # schreibt die Zone der Domain
+
+bun apps/control/src/admin.ts create-wave        ops@example.com pier-host   # der Hosting-Wave, nur für den Pier
+bun apps/control/src/admin.ts auth-key           pier-host                    # damit meldet sich der Pier-Pod an
+bun apps/control/src/admin.ts set-shared-pier    pier-host <gerät> --ipv4 <öffentlich> [--ipv6 …]
+bun apps/control/src/admin.ts clear-shared-pier
+bun apps/control/src/admin.ts pier-zone          <wave> [shared|own]
+```
+
+Was daran festliegt:
+
+- **Peer ohne Mitgliedschaft.** Der Pier ist Knoten seines Hosting-Waves und sonst nirgends
+  Mitglied. Ein Gerät, das über ihn einen Namen hält, bekommt ihn als Peer
+  (`allowedIps` = nur seine `/32`,`/128`); der Pier bekommt genau diese Geräte (nur ihre
+  eigenen zwei Adressen, keine Dienste) und ihre `piers` mit vollem `dnsName` und
+  `pier: { nodeId: self, zone: <domain> }`. `apps/pier` und die Clients sind unverändert:
+  `pierTable()` arbeitet mit `dnsName`, und die Blöcke der Waves eines Servers überschneiden
+  sich nie (`waves_ipv4_prefix_idx`). Andere Geräte des Waves sehen den Pier nicht, der Pier
+  sieht keinen anderen Wave.
+- **Der Schutz ist der Filter auf dem Gerät, deshalb ist er Pflicht.** Ohne Policy gäbe es
+  keinen `packetFilter`, und „keine Policy“ ließe den Pier an jeden Port. Ein Gerät mit Namen
+  über den geteilten Pier bekommt deshalb immer einen: `waveWideFilter()` (der eigene
+  IPv4-/IPv6-Block des Waves → das Gerät und seine Dienste, alle Ports — für die Mitglieder
+  gleichbedeutend mit keiner Policy) plus `pierFilter()`; unter einer Policy deren Regeln plus
+  `pierFilter()`. **Peer wird der Pier erst, wenn das Gerät `filterEnforced = true` gemeldet
+  hat** — ein alter Client oder einer, der den Filter nicht setzen kann, bekommt ihn nie, und
+  `wave pier status` zeigt dann `unreachable`. Die Meldung löst einen Broadcast aus, wenn sie
+  sich ändert (`control-ws.ts`).
+- **Die Zone, eine Stelle: `pierZone(wave, sharedDomain)`.** `pier_zone_mode = shared` mit
+  Label und Domain → `<zufall>.<domain>`, sonst `<pierLabel>.<suffix>`. Das Label (acht
+  Zeichen, Buchstabe vorn, kein `??--`) entsteht beim ersten Claim oder `GET /v1/piers` und
+  bleibt — Namen und Zertifikate hängen daran. Zufall statt Wave-Name: Namen sind weder
+  eindeutig noch fest, und das Label steht für immer in den CT-Logs. Solange es kein Label
+  gibt, lässt die Netzkarte `pier` weg, und der Daemon fragt den Server.
+- **`own` ist Punkt 1:** `pier.<eigene-domain>` über den geteilten Pier, Wildcard über den
+  DNS-Provider des Waves auf die IP des Piers. Umstellen (Shell oder `/waves/<id>/dns`) nur
+  ohne vergebene Namen, `own` nur mit öffentlichem Suffix. Ein Wave, der einen eigenen Pier
+  bekommt (`set-pier`), steht danach auf `own`; mit Namen über den geteilten Pier wird das
+  verweigert. Die Migration `0027` setzt jeden Wave, der schon einen Pier oder Namen hatte,
+  auf `own` — seine Namen stehen schon unter `pier.<suffix>`.
+- **DNS:** wer eine Zone schreibt, entscheidet der Name (`underSharedDomain()`): unter der
+  Domain des geteilten Piers der Token des Servers, sonst der Provider des Waves. Der Wildcard
+  wird **bei jedem Claim** geschrieben (idempotent, so repariert der nächste Claim einen
+  gescheiterten), beim Löschen des Waves und beim Zonenwechsel entfernt; `set-shared-pier`
+  schreibt alle neu (`sharedPierZones()`), `clear-shared-pier` nimmt alle weg. Freigaben
+  zurückziehen lässt den Record stehen: er zeigt auf den Pier, der bleibt.
+- **Zertifikate:** Pier-Namen gibt es auch bei Platzhalter-Suffix (`checkNames()`); ein Auftrag
+  mit Namen unter der Domain des geteilten Piers geht über den Token des Servers, gemischt mit
+  anderen Namen ist er 400.
+- **Eine Maschine, ein Wave.** Hält dieselbe `machine_key` schon in einem anderen Wave Namen
+  über den geteilten Pier, ist der Claim 409: die Pier-Adresse läge sonst auf zwei Interfaces,
+  und `overlap.ts` wiese den zweiten Wave ab.
+- **Zwei Waves, eine Netzkarte.** Die Version ist zusammengesetzt (`netmapVersionOf()`: Wave +
+  Hosting-Wave für ein Gerät mit Namen, Hosting + alle verknüpften Waves für den Pier) und ist
+  genau das, was der Heartbeat vergleicht — Änderungen aus der Shell kommen also mit dem
+  Herzschlag an. `broadcast()` und `hint()` gehen eine Ebene hinüber; der Hub merkt sich die
+  Waves der letzten Pier-Netzkarte (`onSharedPier`), damit auch das Zurückziehen des letzten
+  Namens den Pier sofort erreicht.
+- **Owner und Admins setzen `pier_allowed`** (`PUT /api/waves/:id/nodes/:nodeId/pier`
+  `{ allowed }`, Schalter in `node-list.tsx`, Audit `pier.allow`/`pier.deny`); die Zone
+  `PUT /api/waves/:id/pier-zone` `{ mode }` (Audit `pier.zone`), angezeigt auf der
+  DNS-Seite (`pier-zone-panel.tsx`), wenn der Wave den geteilten Pier nutzt.
+- **Betrieb:** Die Domain gehört auf die **Public Suffix List** und ist nie die des
+  Control-Servers — eine App darunter könnte sonst Cookies für `control.<domain>` setzen, und
+  alle Namen teilten sich das Let's-Encrypt-Limit einer registrierten Domain. Der Ingress
+  leitet alles auf 443 per SNI an `wave-pier` (wie beim eigenen Pier,
+  `deployment/pier/base/ingress.example.yaml`). Der Hosting-Wave gehört dem Pier allein.
+
+**Ungeprüft:** wie beim eigenen Pier der Lauf an einem echten Ingress übers Internet und die
+Provider gegen die echten APIs; Bandbreite und Quoten sind nicht begrenzt.
 
 ## Telefone
 

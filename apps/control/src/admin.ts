@@ -24,7 +24,7 @@ import { MigrationInvariantError, migrateAccounts } from "./billing/migrate-acco
 import { AccountSeatLimitError, SeatLimitError } from "./billing/seats.ts";
 import { billingStateOf } from "./billing/subscriptions.ts";
 import { createDb } from "./db/client.ts";
-import { certificateOrders, nodes, users } from "./db/schema.ts";
+import { certificateOrders, nodes, users, waves } from "./db/schema.ts";
 import { configureDnsProvider, findDnsCredential, removeDnsCredential } from "./dns/credentials.ts";
 import { type AutomaticKind, isAutomaticKind, isProviderKind, PROVIDER_KINDS } from "./dns/provider.ts";
 import { loadConfig } from "./env.ts";
@@ -38,11 +38,22 @@ import {
   type PierDnsOutcome,
   pierLeaving,
   publishPierZone,
+  sharedPierZones,
   unpublishLeavingPier,
   unpublishPierZone,
   wildcardOf,
 } from "./waves/pier-dns.ts";
-import { clearPierHost, setPierAllowed, setPierHost } from "./waves/piers.ts";
+import {
+  clearPierHost,
+  clearSharedPierHost,
+  findPierHost,
+  findSharedPier,
+  pierZone,
+  setPierAllowed,
+  setPierHost,
+  setPierZoneMode,
+  setSharedPierHost,
+} from "./waves/piers.ts";
 import {
   createWave,
   DEFAULT_DNS_BASE,
@@ -169,6 +180,9 @@ const COMMANDS = [
   "deny-pier",
   "set-pier",
   "clear-pier",
+  "set-shared-pier",
+  "clear-shared-pier",
+  "pier-zone",
   "set-dns-provider",
   "dns-provider",
   "remove-dns-provider",
@@ -204,6 +218,8 @@ const CHANGES = new Set([
   "deny-pier",
   "set-pier",
   "clear-pier",
+  "set-shared-pier",
+  "pier-zone",
   "set-dns-provider",
   "remove-dns-provider",
   "set-acl",
@@ -252,6 +268,9 @@ const usage = `${m.usageTitle}
   ${invocation} deny-wildcard       <wave> <hostname|node-id>
   ${invocation} set-pier            <wave> <hostname|node-id> [--ipv4 <addr>] [--ipv6 <addr>] [--label pier]
   ${invocation} clear-pier          <wave>
+  ${invocation} set-shared-pier     <wave> <hostname|node-id> [--ipv4 <addr>] [--ipv6 <addr>]
+  ${invocation} clear-shared-pier
+  ${invocation} pier-zone           <wave> [shared|own]
   ${invocation} allow-pier          <wave> <hostname|node-id>
   ${invocation} deny-pier           <wave> <hostname|node-id>
 
@@ -554,7 +573,7 @@ async function main(): Promise<never> {
         set.zone,
       ),
     );
-    const dns = { db, dnsSecret: config.dnsSecret };
+    const dns = { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier };
     // A zone that moved leaves its old wildcard behind otherwise.
     if (set.previousZone) {
       reportPierDns(
@@ -575,8 +594,99 @@ async function main(): Promise<never> {
     return done(0, m.pierSetWarning);
   }
 
+  if (command === "set-shared-pier") {
+    const positional: string[] = [];
+    for (let at = 0; at < rest.length; at++) {
+      const entry = rest[at] ?? "";
+      if (entry === "--ipv4" || entry === "--ipv6") at++;
+      else positional.push(entry);
+    }
+    const [selector, host] = positional;
+    if (!host) return done(1, usage);
+    const flagValue = (name: string): string | undefined => {
+      const at = rest.indexOf(name);
+      return at >= 0 ? rest[at + 1] : undefined;
+    };
+    const ipv4 = flagValue("--ipv4");
+    const ipv6 = flagValue("--ipv6");
+    if (ipv4 === undefined && ipv6 === undefined) return done(1, m.pierNeedsAddress);
+
+    const target = await wave(selector);
+    const found = await findNode(db, target.id, host);
+    if (!found) return done(1, m.noDevice(host, target.name));
+    const set = await setSharedPierHost(db, { waveId: target.id, nodeId: found.id, ipv4, ipv6 });
+    if ("invalid" in set) return done(1, set.invalid);
+    if ("conflict" in set) return done(1, set.conflict);
+
+    const addresses = [set.host.publicIpv4, set.host.publicIpv6].filter(Boolean).join(", ");
+    console.log(m.sharedPierSet(found.hostname, addresses, config.sharedPier?.domain ?? null));
+    // Every zone that points at the shared pier follows it to its new address;
+    // written every time, so setting it again repairs a record that failed.
+    const dns = { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier };
+    for (const entry of await sharedPierZones(db, config.sharedPier?.domain, target.id)) {
+      reportPierDns(
+        wildcardOf(entry.zone),
+        entry.name,
+        "publish",
+        await publishPierZone(dns, { waveId: entry.waveId, zone: entry.zone, host: set.host }),
+      );
+    }
+    return done(0, m.sharedPierWarning);
+  }
+
+  if (command === "clear-shared-pier") {
+    const shared = await findSharedPier(db);
+    if (!shared) return done(1, m.noSharedPier);
+    const dns = { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier };
+    const zones = await sharedPierZones(db, config.sharedPier?.domain, shared.waveId);
+    await clearSharedPierHost(db);
+    console.log(m.sharedPierCleared(shared.host.hostname));
+    for (const entry of zones) {
+      reportPierDns(
+        wildcardOf(entry.zone),
+        entry.name,
+        "unpublish",
+        await unpublishPierZone(dns, { waveId: entry.waveId, zone: entry.zone, host: shared.host }),
+      );
+    }
+    return done(0);
+  }
+
+  if (command === "pier-zone") {
+    const [selector, mode] = rest;
+    const target = await wave(selector);
+    const sharedDomain = config.sharedPier?.domain;
+    if (mode === undefined) {
+      const rows = await db.select().from(waves).where(eq(waves.id, target.id)).limit(1);
+      const row = rows[0];
+      if (!row) return done(1, m.noPierHost(target.name));
+      console.log(m.pierZoneIs(target.name, row.pierZoneMode, pierZone(row, sharedDomain)));
+      return done(0);
+    }
+    if (mode !== "shared" && mode !== "own") return done(1, usage);
+    const set = await setPierZoneMode(db, { waveId: target.id, mode, sharedDomain });
+    if ("error" in set) return done(1, set.error);
+    console.log(m.pierZoneIs(target.name, set.mode, set.zone));
+    if (set.changed) {
+      const shared = await findSharedPier(db);
+      if (shared) {
+        reportPierDns(
+          wildcardOf(set.previousZone),
+          target.name,
+          "unpublish",
+          await unpublishPierZone(
+            { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier },
+            { waveId: target.id, zone: set.previousZone, host: shared.host },
+          ),
+        );
+      }
+    }
+    return done(0);
+  }
+
   if (command === "clear-pier") {
     const target = await wave(rest[0]);
+    if ((await findPierHost(db, target.id))?.shared) return done(1, m.useClearSharedPier);
     const cleared = await clearPierHost(db, target.id);
     if (!cleared) return done(1, m.noPierHost(target.name));
 
@@ -588,7 +698,7 @@ async function main(): Promise<never> {
       target.name,
       "unpublish",
       await unpublishPierZone(
-        { db, dnsSecret: config.dnsSecret },
+        { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier },
         { waveId: target.id, zone: cleared.zone, host: cleared.host },
       ),
     );
@@ -853,10 +963,17 @@ async function main(): Promise<never> {
     const typed = await readLine(m.typeToConfirm(target.name));
     if (typed !== target.name) return done(1, m.notDeleted);
 
-    const pier = await pierLeaving(db, { waveId: target.id, leaving: { wholeWave: true } });
+    const pier = await pierLeaving(
+      db,
+      { waveId: target.id, leaving: { wholeWave: true } },
+      config.sharedPier?.domain,
+    );
     const deleted = await deleteWave(db, target.id);
     if (!deleted) return done(1, m.noWaveMatches(rest[0] ?? ""));
-    const zone = await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret }, pier);
+    const zone = await unpublishLeavingPier(
+      { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier },
+      pier,
+    );
     if (zone) reportPierDns(zone.name, target.name, "unpublish", zone.outcome);
     // Connected devices are not told from here -- this process has no hub.
     // They find out when their control connection next asks for a netmap.
@@ -890,8 +1007,13 @@ async function main(): Promise<never> {
       const seen = device.lastSeenAt ? device.lastSeenAt.toISOString() : m.neverSeen;
       const owner = device.email ?? device.userId;
       const wildcard = device.wildcardAllowed ? "  [wildcard]" : "";
-      const pier =
-        device.pierIpv4 || device.pierIpv6 ? "  [pier]" : device.pierAllowed ? "  [pier allowed]" : "";
+      const pier = device.sharedPier
+        ? "  [shared pier]"
+        : device.pierIpv4 || device.pierIpv6
+          ? "  [pier]"
+          : device.pierAllowed
+            ? "  [pier allowed]"
+            : "";
       const tags = device.tags.length > 0 ? `  ${device.tags.join(" ")}` : "";
       const ports = policy ? `  [${enforcementText(device, locale)}]` : "";
       // Who is behind (D13). A client from before self-updates never says.
@@ -916,7 +1038,10 @@ async function main(): Promise<never> {
     // Read before the row goes, while its addresses are still known.
     const pier = await pierLeaving(db, { waveId: target.id, leaving: { nodeId: found.id } });
     await removeNode(db, target.id, found.id);
-    const zone = await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret }, pier);
+    const zone = await unpublishLeavingPier(
+      { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier },
+      pier,
+    );
     if (zone) reportPierDns(zone.name, target.name, "unpublish", zone.outcome);
     console.log(m.deviceRemoved(found.hostname, target.name));
     // The running server has the sockets, this process does not -- a device
@@ -969,7 +1094,10 @@ async function main(): Promise<never> {
     }
     if (result === "forbidden") return done(1, m.notAllowed);
     {
-      const zone = await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret }, pier);
+      const zone = await unpublishLeavingPier(
+        { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier },
+        pier,
+      );
       if (zone) reportPierDns(zone.name, target.name, "unpublish", zone.outcome);
     }
 

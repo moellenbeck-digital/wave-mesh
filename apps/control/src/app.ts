@@ -158,7 +158,7 @@ export function createApp({
     passwordRoutes({ db, config, throttle, codeThrottle, passwordReset: passwordResetOffered(mailer) }),
   );
 
-  const hub = new NetmapHub(db, signingKey, config.relays);
+  const hub = new NetmapHub(db, signingKey, config.relays, config.sharedPier?.domain);
   app.route("/", accountRoutes({ db, hub, config, dnsFetch }));
   // The same events, told to the other audience: nodes get a signed netmap,
   // browsers get the device list they are rendering.
@@ -184,7 +184,17 @@ export function createApp({
   app.route("/", machineRoutes({ db, config, signingKey, hub, providers, nonces, dnsFetch }));
   app.route("/", certRoutes({ db, certs: certs ?? new CertificateService({ db, config }), nonces }));
   app.route("/", serviceRoutes({ db, hub, nonces }));
-  app.route("/", pierRoutes({ db, hub, nonces }));
+  app.route(
+    "/",
+    pierRoutes({
+      db,
+      hub,
+      nonces,
+      sharedPier: config.sharedPier,
+      dnsSecret: config.dnsSecret,
+      http: dnsFetch,
+    }),
+  );
   app.route("/", updateRoutes({ db, releases: updates, nonces }));
   app.route("/", waveRoutes({ db, config, hub, providers, dnsFetch, creationThrottles }));
   app.route("/", billingRoutes({ db, config, hub }));
@@ -195,7 +205,12 @@ export function createApp({
    * on a timer; a test calls it with the clock it wants.
    */
   const sweepBilling = async (now: Date = new Date()): Promise<number> => {
-    const deleted = await sweepEndedWaves(db, now, { db, dnsSecret: config.dnsSecret, http: dnsFetch });
+    const deleted = await sweepEndedWaves(db, now, {
+      db,
+      dnsSecret: config.dnsSecret,
+      sharedPier: config.sharedPier,
+      http: dnsFetch,
+    });
     for (const wave of deleted) {
       for (const nodeId of wave.nodeIds) hub.disconnect(wave.waveId, nodeId, "node-removed");
     }

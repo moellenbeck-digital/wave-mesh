@@ -85,6 +85,61 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 /**
+ * The first lock of the pier (D12), for whoever manages the wave. JSON rather
+ * than a form, like the tags: the answer comes back to this row, and the feed
+ * pushes the new list to every page anyway.
+ */
+function PierToggle({ node, wave }: { node: Node; wave: Wave }) {
+  const t = appMessages(useLocale());
+  const [allowed, setAllowed] = useState(node.pierAllowed === true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // A push from the feed is the truth once nothing is in flight.
+  const shown = busy ? allowed : node.pierAllowed === true;
+
+  async function toggle(next: boolean) {
+    setBusy(true);
+    setAllowed(next);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/waves/${encodeURIComponent(wave.id)}/nodes/${encodeURIComponent(node.id)}/pier`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ allowed: next }),
+        },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? String(res.status));
+      }
+    } catch (err) {
+      setAllowed(!next);
+      setError(t.pierAllowFailed.replace("{reason}", err instanceof Error ? err.message : String(err)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="col-span-full text-caption text-slate">
+      <label className="inline-flex cursor-pointer items-center gap-2" title={t.pierAllowHint}>
+        <input
+          type="checkbox"
+          data-field="pier-allowed"
+          checked={shown}
+          disabled={busy}
+          onChange={(event) => void toggle(event.target.checked)}
+        />
+        {t.pierAllow}
+      </label>
+      {error ? <p className="mt-1 text-[#dc2626]">{error}</p> : null}
+    </div>
+  );
+}
+
+/**
  * The removal is a plain form post to the control server, like the ones in the
  * member list: same origin for the browser, session cookie along, no JavaScript.
  */
@@ -202,6 +257,8 @@ function NodeRow({
       ) : null}
 
       {hasServices && open ? <ServiceList id={listId} services={node.services} /> : null}
+
+      {mayRemove && node.pierAllowed !== undefined ? <PierToggle node={node} wave={wave} /> : null}
 
       {mayRename ? (
         <details className="col-span-full">

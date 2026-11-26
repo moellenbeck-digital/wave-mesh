@@ -34,8 +34,9 @@ const en = {
 
   wave expose <name> <url>  put a name of this wave into the open network and
                      proxy it to a service here; <url> is http(s)://host:port,
-                     on this device or in its LAN (needs the operator's
-                     allow-pier, and a certificate: wave cert <name>)
+                     on this device or in its LAN (needs the pier allowed
+                     for this device by an owner or admin, and a
+                     certificate: wave cert <name>)
   wave expose --list      the names this device has put out, and where each stands
   wave expose --remove <name>  take a name out again
   wave pier status   the pier names and why one does not work yet
@@ -187,8 +188,8 @@ The language follows the system (LANG, LC_ALL, …); WAVE_LANG=en|de overrides i
   exposeNone: "this device has put no name out",
   exposeAllowed: (allowed: boolean): string =>
     allowed
-      ? "pier: the operator has allowed it for this device"
-      : "pier: the operator has not allowed it for this device yet (`admin.ts allow-pier`)",
+      ? "pier: allowed for this device"
+      : "pier: not allowed for this device yet (an owner or admin allows it in the browser)",
   exposePierAddress: (v4: string | null, v6: string | null, zone: string): string =>
     v4 || v6
       ? `pier address: ${[v4, v6].filter(Boolean).join(", ")}, for *.${zone}`
@@ -314,8 +315,8 @@ const de: typeof en = {
   wave expose <name> <url>  einen Namen dieses Waves ins offene Netz stellen und
                      an einen Dienst hier weiterreichen; <url> ist
                      http(s)://host:port, auf diesem Gerät oder in seinem LAN
-                     (braucht allow-pier vom Betreiber und ein Zertifikat:
-                     wave cert <name>)
+                     (braucht die Pier-Freigabe durch Owner oder Admin
+                     und ein Zertifikat: wave cert <name>)
   wave expose --list      die Namen, die dieses Gerät freigegeben hat, und wie es um jeden steht
   wave expose --remove <name>  einen Namen wieder herausnehmen
   wave pier status   die Pier-Namen und warum einer noch nicht geht
@@ -463,8 +464,8 @@ Die Sprache folgt dem System (LANG, LC_ALL, …); WAVE_LANG=en|de setzt sie fest
   exposeNone: "dieses Gerät hat keinen Namen freigegeben",
   exposeAllowed: (allowed) =>
     allowed
-      ? "Pier: der Betreiber hat ihn für dieses Gerät erlaubt"
-      : "Pier: der Betreiber hat ihn für dieses Gerät noch nicht erlaubt (`admin.ts allow-pier`)",
+      ? "Pier: für dieses Gerät erlaubt"
+      : "Pier: für dieses Gerät noch nicht erlaubt (ein Owner oder Admin erlaubt ihn im Browser)",
   exposePierAddress: (v4, v6, zone) =>
     v4 || v6
       ? `Adresse des Piers: ${[v4, v6].filter(Boolean).join(", ")}, für *.${zone}`

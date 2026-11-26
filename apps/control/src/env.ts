@@ -3,6 +3,7 @@ import { z } from "zod";
 import { LETSENCRYPT_STAGING } from "./acme/client.ts";
 import { DEFAULT_FREE_DEVICE_LIMIT } from "./billing/device-limit.ts";
 import { DEFAULT_FREE_MAX_WAVES, parseBlockedDomains } from "./billing/plan.ts";
+import { AUTOMATIC_KINDS, type AutomaticKind, isAutomaticKind } from "./dns/provider.ts";
 import { parseIpv4Cidr, RESOLVER_OFFSET, usableAddresses } from "./net/addressing.ts";
 
 /** Free waves get a /24 unless WAVE_FREE_IPV4_PREFIX_LENGTH says otherwise. */
@@ -70,6 +71,18 @@ const EnvSchema = z.object({
    * other people's domains.
    */
   WAVE_DNS_SECRET: z.string().optional(),
+  /**
+   * The domain of the shared pier (e.g. `wavepier.net`): a wave without a pier
+   * of its own puts its names out as `<app>.<random>.<domain>`. Unset, there is
+   * no such zone, and a wave can only use the shared pier under its own domain.
+   * Belongs on the Public Suffix List, and is never the domain the control
+   * server lives on: an app under it could set cookies for the login.
+   */
+  WAVE_SHARED_PIER_DOMAIN: z.string().optional(),
+  /** The DNS provider that writes the shared pier domain (cloudflare, hetzner, ionos, inwx). */
+  WAVE_SHARED_PIER_DNS_PROVIDER: z.string().optional(),
+  /** Its API token (for INWX the JSON account, as with `set-dns-provider`). */
+  WAVE_SHARED_PIER_DNS_TOKEN: z.string().optional(),
   /**
    * The update channels this server offers its devices, comma-separated
    * (D13). The first is the default: a device that names none, or one not on
@@ -241,6 +254,13 @@ export function parseOidc(raw: {
   };
 }
 
+/** The shared pier's zone and the provider that writes it (WAVE_SHARED_PIER_*). */
+export interface SharedPierConfig {
+  domain: string;
+  provider: AutomaticKind;
+  token: string;
+}
+
 export type Config = {
   env: "development" | "test" | "production";
   port: number;
@@ -259,6 +279,8 @@ export type Config = {
   devAuth: boolean;
   devAuthFrom: string[];
   secureCookies: boolean;
+  /** The zone of the shared pier and who writes it; absent without WAVE_SHARED_PIER_DOMAIN. */
+  sharedPier?: SharedPierConfig;
   /** Absent when WAVE_BILLING_TOKEN is unset: no billing routes at all. */
   billing?: { token: string; retentionDays: number };
   /** Distinct devices a free hosted account may register; see billing/device-limit.ts. */
@@ -385,6 +407,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     acmeDirectory: raw.WAVE_ACME_DIRECTORY,
     acmeContact: raw.WAVE_ACME_CONTACT ? [`mailto:${raw.WAVE_ACME_CONTACT.replace(/^mailto:/, "")}`] : [],
     dnsSecret,
+    sharedPier: parseSharedPier(raw),
     secureCookies: raw.WAVE_BASE_URL.startsWith("https://"),
     billing: billingConfig(raw.WAVE_BILLING_TOKEN, raw.WAVE_BILLING_RETENTION_DAYS),
     freeDeviceLimit: raw.WAVE_FREE_DEVICE_LIMIT,
@@ -413,4 +436,25 @@ function billingConfig(token: string | undefined, retentionDays: number): Config
     throw new Error("WAVE_BILLING_TOKEN must be at least 32 characters (openssl rand -base64 32)");
   }
   return { token: trimmed, retentionDays };
+}
+
+/**
+ * Refused at start when half there: a domain without a provider would hand out
+ * names whose wildcard nobody writes, and that never resolve.
+ */
+function parseSharedPier(raw: z.infer<typeof EnvSchema>): SharedPierConfig | undefined {
+  const domain = raw.WAVE_SHARED_PIER_DOMAIN?.trim().toLowerCase().replace(/\.$/, "");
+  if (!domain) return undefined;
+  if (!/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) {
+    throw new Error(`WAVE_SHARED_PIER_DOMAIN: ${domain} is not a domain`);
+  }
+  const provider = raw.WAVE_SHARED_PIER_DNS_PROVIDER?.trim();
+  const token = raw.WAVE_SHARED_PIER_DNS_TOKEN?.trim();
+  if (!provider || !isAutomaticKind(provider)) {
+    throw new Error(
+      `WAVE_SHARED_PIER_DOMAIN needs WAVE_SHARED_PIER_DNS_PROVIDER (${AUTOMATIC_KINDS.join(", ")})`,
+    );
+  }
+  if (!token) throw new Error("WAVE_SHARED_PIER_DOMAIN needs WAVE_SHARED_PIER_DNS_TOKEN");
+  return { domain, provider, token };
 }

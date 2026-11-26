@@ -302,6 +302,8 @@ const en = {
   apiNotJson: "not JSON",
   apiNoPolicy: "no policy",
   apiExpectedTags: "expected { tags: [...] }",
+  apiExpectedAllowed: "expected { allowed: true|false }",
+  apiExpectedZoneMode: 'expected { mode: "shared"|"own" }',
   apiNoSuchDevice: "no such device",
   apiUnknownProvider: (kinds: string) => `the DNS provider must be one of ${kinds}`,
   apiPlaceholderSuffix: (suffix: string) =>
@@ -576,6 +578,8 @@ const de: typeof en = {
   apiNotJson: "kein JSON",
   apiNoPolicy: "keine Policy",
   apiExpectedTags: "{ tags: [...] } erwartet",
+  apiExpectedAllowed: "{ allowed: true|false } erwartet",
+  apiExpectedZoneMode: '{ mode: "shared"|"own" } erwartet',
   apiNoSuchDevice: "Gerät nicht gefunden",
   apiUnknownProvider: (kinds) => `der DNS-Provider muss einer von ${kinds} sein`,
   apiPlaceholderSuffix: (suffix) =>

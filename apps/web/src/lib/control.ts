@@ -247,6 +247,8 @@ export interface Node {
   clientPlatform: string | null;
   /** Who brought it in; they may rename it, besides whoever manages the wave. */
   userId: string;
+  /** Whether it may put names out through the pier (D12); absent from an older server. */
+  pierAllowed?: boolean;
   /** What this node answers for besides itself -- a connector's services. */
   services: Service[];
 }
@@ -417,6 +419,19 @@ export interface DnsSettings {
   /** False without WAVE_DNS_SECRET on the server: only `manual` can be stored. */
   sealing: boolean;
   providers: DnsProviderKind[];
+  /** Where the wave's public names go out (D12); absent from an older server. */
+  pier?: PierSettings | null;
+}
+
+export interface PierSettings {
+  /** Through a pier of its own, the shared pier of the server, or none yet. */
+  via: "own" | "shared" | "none";
+  mode: "shared" | "own";
+  /** Null while the random name has not been given yet. */
+  zone: string | null;
+  sharedDomain: string | null;
+  /** How many names are out; the zone moves only at zero. */
+  names: number;
 }
 
 /** Null is a wave the caller may not manage -- or is not in. */

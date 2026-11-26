@@ -7,10 +7,11 @@ import { mayMeet } from "../acl/evaluate.ts";
 import { compiledPolicyFor } from "../acl/store.ts";
 import { isSuspended } from "../billing/subscriptions.ts";
 import type { Database } from "../db/client.ts";
-import { nodes, waves } from "../db/schema.ts";
-import { buildNetmap, type SigningKey, signNetmap } from "../netmap/build.ts";
+import { nodes, wavePiers, waves } from "../db/schema.ts";
+import { buildNetmap, netmapVersionOf, type SigningKey, signNetmap } from "../netmap/build.ts";
 import { boundCandidates } from "../netmap/candidates.ts";
 import type { ReleaseFeed } from "../updates/releases.ts";
+import { findSharedPier, sharedPierLink, wavesOnSharedPier } from "../waves/piers.ts";
 import { nodeForRequest, WAVE_HEADER } from "./machine-auth.ts";
 import { upgradeWebSocket } from "./ws.ts";
 
@@ -47,10 +48,20 @@ export class NetmapHub {
   private readonly byWave = new Map<string, Set<Connection>>();
   private listener?: (waveId: string) => void;
 
+  /**
+   * The waves whose devices were in the last netmap sent to the shared pier.
+   * A wave that has just taken its last name back is no longer linked by the
+   * database, and the pier would keep splicing to it until the next heartbeat
+   * -- so the hub remembers who was in, and pushes to the pier once more.
+   */
+  private onSharedPier = new Set<string>();
+
   constructor(
     private readonly db: Database,
     private readonly signingKey: SigningKey,
     private readonly relays: Relay[] = [],
+    /** WAVE_SHARED_PIER_DOMAIN: the zone of waves that use the shared pier. */
+    private readonly sharedDomain?: string,
   ) {}
 
   /**
@@ -120,19 +131,36 @@ export class NetmapHub {
   }
 
   async sendNetmap(connection: Connection): Promise<void> {
-    const netmap = await buildNetmap(this.db, connection.nodeId, this.relays);
+    const netmap = await buildNetmap(this.db, connection.nodeId, this.relays, this.sharedDomain);
     if (!netmap) return;
+    const shared = await findSharedPier(this.db);
+    if (shared?.node.id === connection.nodeId) {
+      this.onSharedPier = new Set(await wavesOnSharedPier(this.db, shared.waveId));
+    }
     connection.sentVersion = netmap.version;
     connection.send({ type: "netmap", netmap: signNetmap(netmap, this.signingKey) });
   }
 
   /** Every node sees a different netmap, so each one is built individually. */
-  async broadcast(waveId: string): Promise<void> {
+  async broadcast(waveId: string, linked = true): Promise<void> {
     for (const connection of this.byWave.get(waveId) ?? []) await this.sendNetmap(connection);
     // Whatever moved the netmap may well be visible in the browser too. What
     // is not -- a node republishing its candidates -- is filtered there, by
     // comparing the list a page would show.
     this.listener?.(waveId);
+    // The shared pier ties netmaps of two waves together: a wave's devices
+    // that hold a name are built from the pier's wave, and the pier from
+    // theirs. One level only; the linked wave does not link back.
+    if (linked) for (const other of await this.linkedWaves(waveId)) await this.broadcast(other, false);
+  }
+
+  /** The waves whose netmaps depend on this one through the shared pier. */
+  private async linkedWaves(waveId: string): Promise<string[]> {
+    const shared = await findSharedPier(this.db);
+    if (!shared) return [];
+    if (shared.waveId === waveId) return wavesOnSharedPier(this.db, waveId);
+    if (this.onSharedPier.has(waveId) || (await sharedPierLink(this.db, waveId))) return [shared.waveId];
+    return [];
   }
 
   /**
@@ -168,6 +196,41 @@ export class NetmapHub {
       if (connection.nodeId === fromNodeId) continue;
       if (policy && !mayMeet(policy.compiled, connection.nodeId, fromNodeId, policy.services)) continue;
       connection.send({ type: "disco-hint", nodeId: fromNodeId as never, candidates });
+    }
+    await this.hintAcrossSharedPier(waveId, fromNodeId, candidates);
+  }
+
+  /**
+   * The same hint between the shared pier and the devices it is a peer of:
+   * both sides of a path have to punch at once, in which wave each of them
+   * sits does not matter to the NAT.
+   */
+  private async hintAcrossSharedPier(waveId: string, fromNodeId: string, candidates: Candidate[]) {
+    const shared = await findSharedPier(this.db);
+    if (!shared) return;
+    const hint = { type: "disco-hint" as const, nodeId: fromNodeId as never, candidates };
+    if (shared.node.id === fromNodeId) {
+      for (const linked of await wavesOnSharedPier(this.db, shared.waveId)) {
+        const holders = await this.db
+          .select({ nodeId: wavePiers.nodeId })
+          .from(wavePiers)
+          .where(eq(wavePiers.waveId, linked));
+        const ids = new Set(holders.map((row) => row.nodeId));
+        for (const connection of this.byWave.get(linked) ?? []) {
+          if (ids.has(connection.nodeId)) connection.send(hint);
+        }
+      }
+      return;
+    }
+    if (!(await sharedPierLink(this.db, waveId))) return;
+    const holds = await this.db
+      .select({ id: wavePiers.id })
+      .from(wavePiers)
+      .where(eq(wavePiers.nodeId, fromNodeId))
+      .limit(1);
+    if (!holds[0]) return;
+    for (const connection of this.byWave.get(shared.waveId) ?? []) {
+      if (connection.nodeId === shared.node.id) connection.send(hint);
     }
   }
 }
@@ -296,13 +359,11 @@ export function controlWebsocket({ db, hub, nonces, releases }: ControlWsDeps) {
             // by here every thirty seconds; one that is behind is caught up
             // now. For a policy that takes access away, "with the next netmap
             // whenever that happens" would not be good enough.
-            const current = await db
-              .select({ version: waves.netmapVersion })
-              .from(waves)
-              .where(eq(waves.id, node.waveId))
-              .limit(1);
-            const version = current[0]?.version;
-            if (version !== undefined && version !== connection.sentVersion) await hub.sendNetmap(connection);
+            // The same composed version the netmap carries: through the shared
+            // pier a netmap is built from two waves, and a change in either --
+            // from the shell, too -- has to be caught up here.
+            const version = await netmapVersionOf(db, node.id);
+            if (version !== null && version !== connection.sentVersion) await hub.sendNetmap(connection);
             return;
           }
           if (parsed.data.type === "hello") {
@@ -334,10 +395,20 @@ export function controlWebsocket({ db, hub, nonces, releases }: ControlWsDeps) {
             // What the device says about itself, and nothing more: the server
             // cannot check it, but an operator who reads "not enforced" next to
             // a Mac knows what the policy there is and is not doing.
+            const before = await db
+              .select({ enforced: nodes.filterEnforced })
+              .from(nodes)
+              .where(eq(nodes.id, node.id))
+              .limit(1);
             await db
               .update(nodes)
               .set({ filterEnforced: parsed.data.enforced, filterReason: parsed.data.reason ?? null })
               .where(eq(nodes.id, node.id));
+            // Through the shared pier, the report is the gate: the pier becomes
+            // a peer of this device only once it says it holds its filter.
+            if (before[0]?.enforced !== parsed.data.enforced && (await sharedPierLink(db, node.waveId))) {
+              await hub.broadcast(node.waveId);
+            }
           }
         },
 

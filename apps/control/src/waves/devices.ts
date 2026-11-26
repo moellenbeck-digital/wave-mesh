@@ -39,6 +39,8 @@ export interface DeviceView {
   clientPlatform: string | null;
   /** Who brought the device in: they may rename it, besides the managers. */
   userId: string;
+  /** Whether it may put names into the open network through the pier (D12). */
+  pierAllowed: boolean;
   services: { name: string; ipv4: string; ipv6: string; url: string }[];
 }
 
@@ -70,6 +72,7 @@ export async function listDevices(
       updateChannel: nodes.updateChannel,
       clientPlatform: nodes.clientPlatform,
       userId: nodes.userId,
+      pierAllowed: nodes.pierAllowed,
     })
     .from(nodes)
     .where(eq(nodes.waveId, waveId))

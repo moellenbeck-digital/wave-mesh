@@ -14,6 +14,7 @@ import {
 import { type DnsMode, loadDnsMode } from "../dns/credentials.ts";
 import { lookupTxtAtAuthority, type TxtLookup } from "../dns/lookup.ts";
 import { type DnsProvider, PROVIDER_KINDS } from "../dns/provider.ts";
+import { sharedPierMode, underSharedDomain } from "../dns/shared-pier.ts";
 import type { Config } from "../env.ts";
 import { newId } from "../ids.ts";
 import { pierZone } from "../waves/piers.ts";
@@ -112,7 +113,7 @@ export class CertificateService {
             .select({ name: wavePiers.name })
             .from(wavePiers)
             .where(eq(wavePiers.nodeId, input.nodeId))
-        ).map((row) => `${row.name}.${pierZone(found.wave)}`)
+        ).map((row) => `${row.name}.${pierZone(found.wave, this.config.sharedPier?.domain)}`)
       : [];
 
     const refusal = checkNames({
@@ -123,6 +124,16 @@ export class CertificateService {
       pierNames,
     });
     if (refusal) return refusal;
+    // One zone owner per order: the shared pier domain is written with the
+    // server's token, everything else with the wave's, and an order is
+    // answered by one of them.
+    const sharedNames = input.names.filter((name) => underSharedDomain(name, this.config.sharedPier));
+    if (sharedNames.length > 0 && sharedNames.length < input.names.length) {
+      return {
+        error: `${sharedNames.join(", ")} cannot share a certificate with the wave's own names; ask for them separately`,
+        status: 400,
+      };
+    }
 
     let csr: ReturnType<typeof readCsr>;
     try {
@@ -217,7 +228,7 @@ export class CertificateService {
     if (!order) return;
 
     try {
-      const mode = await this.mode(order.waveId);
+      const mode = await this.mode(order.waveId, order.names);
       const client = await this.client();
       const acmeOrder = await client.newOrder(order.names);
 
@@ -374,7 +385,13 @@ export class CertificateService {
     this.log(`certificate for ${names.join(", ")} failed: ${message(error)}`);
   }
 
-  private async mode(waveId: string): Promise<DnsMode> {
+  private async mode(waveId: string, names: string[]): Promise<DnsMode> {
+    // Names under the shared pier domain are the server's zone, answered with
+    // the server's token; `request()` keeps them out of orders with others.
+    const shared = this.config.sharedPier;
+    if (shared && names.length > 0 && names.every((name) => underSharedDomain(name, shared))) {
+      return sharedPierMode(shared, this.options.fetch);
+    }
     const mode = await loadDnsMode(this.db, waveId, this.config.dnsSecret, this.options.fetch);
     if (!mode) {
       throw new Error(
@@ -496,9 +513,17 @@ export function checkNames(input: {
 }): OrderRefusal | null {
   if (input.names.length === 0) return { error: "no names requested", status: 400 };
 
+  const piers = new Set((input.pierNames ?? []).map((name) => name.toLowerCase()));
+
   // Never a public certificate for the placeholder suffix: `.internal` cannot
   // be delegated, so no CA can validate it and no order would get past dns-01.
-  if (input.dnsSuffix === DEFAULT_DNS_BASE || input.dnsSuffix.endsWith(`.${DEFAULT_DNS_BASE}`)) {
+  // Names put out through the shared pier are the exception -- they live in
+  // the server's zone, not under the suffix.
+  const onlyPiers = input.names.every((name) => piers.has(name.toLowerCase()));
+  if (
+    !onlyPiers &&
+    (input.dnsSuffix === DEFAULT_DNS_BASE || input.dnsSuffix.endsWith(`.${DEFAULT_DNS_BASE}`))
+  ) {
     return {
       error: `${input.dnsSuffix} is a placeholder domain; point the wave at a domain you own first`,
       status: 400,
@@ -508,7 +533,6 @@ export function checkNames(input: {
   const suffix = input.dnsSuffix.toLowerCase();
   const own = `${input.hostname}.${suffix}`.toLowerCase();
   const wildcard = `*.${suffix}`;
-  const piers = new Set((input.pierNames ?? []).map((name) => name.toLowerCase()));
 
   const seen = new Set<string>();
   for (const raw of input.names) {

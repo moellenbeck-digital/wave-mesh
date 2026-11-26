@@ -104,6 +104,20 @@ export const waves = pgTable(
      */
     pierLabel: text("pier_label").notNull().default("pier"),
     /**
+     * Which zone the wave's names take while it uses the shared pier: `shared`
+     * puts them under a random label in `WAVE_SHARED_PIER_DOMAIN`
+     * (`app.k3x9q7mz.wavepier.net`), `own` under `pierLabel` and the wave's own
+     * suffix, with the wildcard written by the wave's DNS provider. A wave with
+     * a pier of its own always serves its own zone.
+     */
+    pierZoneMode: text("pier_zone_mode").$type<"shared" | "own">().notNull().default("shared"),
+    /**
+     * The random label of the wave's zone under the shared pier domain. Given
+     * once, at the first moment it is needed, and kept: every name put out and
+     * every certificate issued for one hangs under it.
+     */
+    sharedPierName: text("shared_pier_name"),
+    /**
      * The customer account a billed wave belongs to; null for every self-hosted
      * wave and for a billed one the migration has not reached yet. Never a
      * cascade: the wave row stays when the account row goes.
@@ -118,6 +132,7 @@ export const waves = pgTable(
     // client in both would have two host routes for it. The allocator picks the
     // lowest free block; this is what makes the pick binding.
     uniqueIndex("waves_ipv4_prefix_idx").on(t.ipv4Prefix),
+    uniqueIndex("waves_shared_pier_name_idx").on(t.sharedPierName),
   ],
 );
 
@@ -288,6 +303,14 @@ export const nodes = pgTable(
     pierIpv4: text("pier_ipv4"),
     pierIpv6: text("pier_ipv6"),
     /**
+     * Whether this node is the shared pier of the server: the one pier every
+     * wave without one of its own puts its names out through. It is a member
+     * of its own hosting wave only; to a customer wave it is a peer of exactly
+     * the devices that hold a name, and those let it reach only their claimed
+     * ports. At most one per server (partial unique index).
+     */
+    sharedPier: boolean("shared_pier").notNull().default(false),
+    /**
      * What this device is to the wave's policy (M7): `tag:nas`, `tag:connector`.
      *
      * Set by an operator, never by the device -- the same reason as the
@@ -323,6 +346,7 @@ export const nodes = pgTable(
     uniqueIndex("nodes_wave_ipv4_idx").on(t.waveId, t.ipv4),
     uniqueIndex("nodes_wave_hostname_idx").on(t.waveId, t.hostname),
     index("nodes_wave_idx").on(t.waveId),
+    uniqueIndex("nodes_one_shared_pier_idx").on(t.sharedPier).where(sql`${t.sharedPier}`),
   ],
 );
 

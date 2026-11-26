@@ -40,7 +40,7 @@ const en = {
   "expose-port-busy": (p: Params) =>
     `something already listens on ${p.address}:${p.port}; the pier would reach it directly -- choose another port with --listen-port`,
   "pier-not-allowed": (p: Params) =>
-    `the operator has not allowed the pier for ${p.device}; next step: an operator runs \`admin.ts allow-pier <wave> ${p.device}\``,
+    `the pier is not allowed for ${p.device}; next step: an owner or admin of the wave allows it on the device list in the browser (or an operator runs \`admin.ts allow-pier <wave> ${p.device}\`)`,
   "pier-refused": (p: Params) => `${p.name} was not put out: ${p.reason}`,
   "pier-failed": (p: Params) => `could not reach ${p.controlUrl}: ${p.reason}`,
   "unexpose-unknown": (p: Params) =>
@@ -81,7 +81,7 @@ const de: typeof en = {
   "expose-port-busy": (p) =>
     `auf ${p.address}:${p.port} lauscht schon etwas; der Pier erreichte es direkt -- nimm mit --listen-port einen anderen Port`,
   "pier-not-allowed": (p) =>
-    `der Betreiber hat den Pier für ${p.device} nicht erlaubt; nächster Schritt: ein Betreiber führt \`admin.ts allow-pier <wave> ${p.device}\` aus`,
+    `der Pier ist für ${p.device} nicht erlaubt; nächster Schritt: ein Owner oder Admin des Waves erlaubt ihn in der Geräteliste im Browser (oder ein Betreiber führt \`admin.ts allow-pier <wave> ${p.device}\` aus)`,
   "pier-refused": (p) => `${p.name} wurde nicht freigegeben: ${p.reason}`,
   "pier-failed": (p) => `${p.controlUrl} ist nicht erreichbar: ${p.reason}`,
   "unexpose-unknown": (p) =>

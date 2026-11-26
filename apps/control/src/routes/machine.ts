@@ -81,7 +81,7 @@ export function machineRoutes({
   const authenticate = (c: Context) => authenticateMachine(c, nonceStore);
 
   const withNetmap = async (nodeId: string) => {
-    const netmap = await buildNetmap(db, nodeId, config.relays);
+    const netmap = await buildNetmap(db, nodeId, config.relays, config.sharedPier?.domain);
     if (!netmap) throw new Error(`node ${nodeId} vanished while building its netmap`);
     return signNetmap(netmap, signingKey);
   };
@@ -289,7 +289,10 @@ export function machineRoutes({
     // way a pier node goes (waves/pier-dns.ts).
     const pier = await pierLeaving(db, { waveId: node.waveId, leaving: { nodeId: node.id } });
     await db.delete(nodes).where(eq(nodes.id, node.id));
-    await unpublishLeavingPier({ db, dnsSecret: config.dnsSecret, http: dnsFetch }, pier);
+    await unpublishLeavingPier(
+      { db, dnsSecret: config.dnsSecret, sharedPier: config.sharedPier, http: dnsFetch },
+      pier,
+    );
     await bumpNetmapVersion(node.waveId);
     await hub?.broadcast(node.waveId);
     return c.json({ ok: true });

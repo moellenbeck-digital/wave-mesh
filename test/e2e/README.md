@@ -197,3 +197,20 @@ das schon einmal schiefging:
 - Ein Umbenennen im Web erreicht das Telefon.
 - Ein Neustart kommt ohne Freigabe zurück, und Stoppen hängt nicht (vorher:
   ein blockierender TUN-Deskriptor hielt die Leseschleife fest).
+
+## `shared-pier.sh` — M17
+
+Der geteilte Pier (D12a): ein Pier-Knoten in einem Hosting-Wave, zwei Geräte in zwei
+weiteren Waves. Jedes gibt mit `wave expose` einen Namen frei und bekommt ihn unter der
+Zufallszone seines Waves (`app.<zufall>.wavepier.test`); die Owner schalten den Pier im
+Browser frei (dieselbe API wie der Schalter in der Geräteliste). Geprüft wird: die Wildcards
+beider Zonen zeigen auf den Pier (ein DNS-Fake im E2E-Server), aus dem „offenen Netz“ erreicht
+jeder Name per SNI sein eigenes Gerät (TLS gegen dessen eigenes Zertifikat), der Pier erreicht
+den beanspruchten Port und keinen anderen, die beiden Waves sehen sich nicht, und ein
+zurückgezogener Name wird nicht mehr bedient.
+
+Jeder Daemon läuft in einem eigenen Mount-Namespace mit eigenem `/run/wireguard`:
+wireguard-go legt seinen UAPI-Socket dort nach Interface-Namen ab, jeder Daemon nennt seinen
+ersten Tunnel `wave0`, und ein Daemon, der einen fertigen Socket findet, übernimmt das Gerät
+dahinter. Das Zertifikat für den Namen kommt von `openssl`, der Dienst dahinter ist
+`tlsbackend.ts` — der Listener von `wave expose` wartet auf eine CA, die ein Test nicht hat.

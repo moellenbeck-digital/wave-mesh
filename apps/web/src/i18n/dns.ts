@@ -54,6 +54,16 @@ const en = {
   confirmRemove:
     "Remove the provider? Certificates already issued stay valid, but devices can neither get new ones nor renew until a provider is set again.",
   refused: "The control server refused.",
+  pierTitle: "Public names (pier)",
+  pierShared:
+    "This wave puts names into the open network through the shared pier of this server. Devices publish them with {expose}.",
+  pierZone: "Zone",
+  pierZonePending: "A random name under {domain}, given with the first name a device puts out.",
+  pierModeShared: "Random name under {domain}",
+  pierModeOwn: "pier.{suffix} (own domain)",
+  pierModeOwnHint: "With the own domain, the DNS provider above writes the record for the pier.",
+  pierModeLocked: "The zone can only change while no device holds a name in it.",
+  pierChoose: "Use this zone",
 } satisfies Messages;
 
 const de: typeof en = {
@@ -104,6 +114,16 @@ const de: typeof en = {
   confirmRemove:
     "Provider entfernen? Ausgestellte Zertifikate bleiben gültig, aber Geräte bekommen weder neue noch Erneuerungen, bis wieder einer eingerichtet ist.",
   refused: "Der Control-Server hat abgelehnt.",
+  pierTitle: "Öffentliche Namen (Pier)",
+  pierShared:
+    "Dieser Wave stellt Namen über den geteilten Pier dieses Servers ins offene Netz. Geräte veröffentlichen sie mit {expose}.",
+  pierZone: "Zone",
+  pierZonePending: "Ein Zufallsname unter {domain}, vergeben mit dem ersten Namen, den ein Gerät freigibt.",
+  pierModeShared: "Zufallsname unter {domain}",
+  pierModeOwn: "pier.{suffix} (eigene Domain)",
+  pierModeOwnHint: "Mit der eigenen Domain schreibt der DNS-Provider oben den Record für den Pier.",
+  pierModeLocked: "Die Zone lässt sich nur ändern, solange kein Gerät darin einen Namen hält.",
+  pierChoose: "Diese Zone nehmen",
 };
 
 export type DnsMessages = typeof en;

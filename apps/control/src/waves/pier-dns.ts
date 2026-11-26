@@ -1,10 +1,12 @@
 import type { PierDnsState, PierRecord } from "@wave/proto";
 import { and, eq, isNotNull, or } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import { nodes, waves } from "../db/schema.ts";
-import { loadDnsMode } from "../dns/credentials.ts";
+import { nodes, wavePiers, waves } from "../db/schema.ts";
+import { type DnsMode, loadDnsMode } from "../dns/credentials.ts";
 import type { AddressType } from "../dns/provider.ts";
-import { type PierHost, pierZone } from "./piers.ts";
+import { sharedPierMode, underSharedDomain } from "../dns/shared-pier.ts";
+import type { SharedPierConfig } from "../env.ts";
+import { findSharedPier, type PierHost, pierZone } from "./piers.ts";
 
 /**
  * What the zone says about the pier (D12).
@@ -55,6 +57,16 @@ export interface PierDnsContext {
   db: Database;
   dnsSecret?: Buffer;
   http?: typeof fetch;
+  /** The shared pier's zone and token; records under it are the server's to write. */
+  sharedPier?: SharedPierConfig;
+}
+
+/** Who writes a pier zone: the server for the shared domain, the wave for its own. */
+function modeFor(ctx: PierDnsContext, waveId: string, zone: string): Promise<DnsMode | null> {
+  if (ctx.sharedPier && underSharedDomain(zone, ctx.sharedPier)) {
+    return Promise.resolve(sharedPierMode(ctx.sharedPier, ctx.http));
+  }
+  return loadDnsMode(ctx.db, waveId, ctx.dnsSecret, ctx.http);
 }
 
 /** Points the whole pier zone at the pier. */
@@ -65,7 +77,7 @@ export async function publishPierZone(
   const name = wildcardOf(input.zone);
   const records = recordsFor(name, input.host);
   try {
-    const mode = await loadDnsMode(ctx.db, input.waveId, ctx.dnsSecret, ctx.http);
+    const mode = await modeFor(ctx, input.waveId, input.zone);
     if (!mode) return { state: "unconfigured", records };
     if (mode.kind === "manual") return { state: "manual", records };
 
@@ -92,7 +104,7 @@ export async function unpublishPierZone(
   // asked for both types regardless, because it removes by name.
   const records = input.host ? recordsFor(name, input.host) : [];
   try {
-    const mode = await loadDnsMode(ctx.db, input.waveId, ctx.dnsSecret, ctx.http);
+    const mode = await modeFor(ctx, input.waveId, input.zone);
     if (!mode) return { state: "unconfigured", records };
     if (mode.kind === "manual") return { state: "manual", records };
 
@@ -134,6 +146,7 @@ export interface LeavingPier {
 export async function pierLeaving(
   db: Database,
   input: { waveId: string; leaving: Leaving },
+  sharedDomain?: string,
 ): Promise<LeavingPier | null> {
   const rows = await db
     .select()
@@ -141,8 +154,8 @@ export async function pierLeaving(
     .where(and(eq(nodes.waveId, input.waveId), or(isNotNull(nodes.pierIpv4), isNotNull(nodes.pierIpv6))))
     .limit(1);
   const row = rows[0];
-  if (!row) return null;
   const { leaving } = input;
+  if (!row) return "wholeWave" in leaving ? sharedPierLeaving(db, input.waveId, sharedDomain) : null;
   const goes =
     "wholeWave" in leaving ||
     ("nodeId" in leaving ? row.id === leaving.nodeId : row.userId === leaving.userId);
@@ -174,4 +187,73 @@ export async function unpublishLeavingPier(
     console.log(`pier: ${wildcardOf(pier.zone)} has to be deleted by hand (${outcome.state})`);
   }
   return { name: wildcardOf(pier.zone), outcome };
+}
+
+/**
+ * The wildcard a wave leaves behind under the shared pier, as the whole wave
+ * goes: its zone pointed at the shared pier, which stays. Taken away anyway --
+ * a zone nobody owns any more is one somebody might get with the next wave.
+ */
+async function sharedPierLeaving(
+  db: Database,
+  waveId: string,
+  sharedDomain: string | undefined,
+): Promise<LeavingPier | null> {
+  const shared = await findSharedPier(db);
+  if (!shared || shared.waveId === waveId) return null;
+  const rows = await db.select().from(waves).where(eq(waves.id, waveId)).limit(1);
+  const wave = rows[0];
+  if (!wave) return null;
+  // Only a zone that was ever given out: a random label, or names under the
+  // wave's own domain.
+  const named = wave.pierZoneMode !== "own" && !!wave.sharedPierName && !!sharedDomain;
+  if (!named) {
+    if (wave.pierZoneMode !== "own") return null;
+    const held = await db
+      .select({ id: wavePiers.id })
+      .from(wavePiers)
+      .where(eq(wavePiers.waveId, waveId))
+      .limit(1);
+    if (!held[0]) return null;
+  }
+  return {
+    waveId,
+    zone: pierZone(wave, sharedDomain),
+    host: { publicIpv4: shared.host.publicIpv4, publicIpv6: shared.host.publicIpv6 },
+  };
+}
+
+/**
+ * Every zone whose wildcard points at the shared pier: the random zone of each
+ * wave that has one, and the own zone of each wave without a pier of its own
+ * that holds names under it. What `set-shared-pier` writes again when the
+ * pier's address changes, and `clear-shared-pier` takes away.
+ */
+export async function sharedPierZones(
+  db: Database,
+  sharedDomain: string | undefined,
+  hostingWaveId: string,
+): Promise<Array<{ waveId: string; name: string; zone: string }>> {
+  const all = await db.select().from(waves);
+  const zones: Array<{ waveId: string; name: string; zone: string }> = [];
+  for (const wave of all) {
+    if (wave.id === hostingWaveId) continue;
+    const ownPier = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(and(eq(nodes.waveId, wave.id), or(isNotNull(nodes.pierIpv4), isNotNull(nodes.pierIpv6))))
+      .limit(1);
+    if (ownPier[0]) continue;
+    const random = wave.pierZoneMode !== "own" && !!wave.sharedPierName && !!sharedDomain;
+    if (!random) {
+      const held = await db
+        .select({ id: wavePiers.id })
+        .from(wavePiers)
+        .where(eq(wavePiers.waveId, wave.id))
+        .limit(1);
+      if (!held[0]) continue;
+    }
+    zones.push({ waveId: wave.id, name: wave.name, zone: pierZone(wave, sharedDomain) });
+  }
+  return zones;
 }
