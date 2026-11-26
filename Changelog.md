@@ -8,6 +8,15 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## ✅ Stable v0.18.1 (26.11.2026)
+
+### Fehlerbehebungen
+
+- **Selbstaktualisierung hängt nicht mehr und rollt nicht mehr zu früh zurück:** Ein Gerät, das einen Namen über den Pier veröffentlicht, konnte beim Neustart für ein Update hängen bleiben: die Tunnel waren abgebaut, die neue Version startete aber nicht. Startete sie später doch, rollte sie sich sofort zurück und wurde danach nicht mehr angenommen. Der Neustart wartet jetzt höchstens 15 Sekunden auf den Abbau, und die fünf Minuten Probezeit einer neuen Version zählen ab ihrem ersten Start, nicht ab der Installation. Wer 0.18.0 deshalb nicht bekommen hat, bekommt 0.18.1 wieder automatisch.
+- **Geteilter Pier neben einem eigenen Pier:** Ein Gerät, das in einem Wave mit eigenem Pier Namen veröffentlicht, kann in einem anderen Wave jetzt auch Namen über den geteilten Pier veröffentlichen. Bisher wurde das fälschlich abgelehnt.
+
+---
+
 ## ✅ Stable v0.18.0 (26.11.2026)
 
 ### Neue Funktionen
