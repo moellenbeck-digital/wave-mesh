@@ -8,6 +8,25 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.18.0-develop.3 (26.11.2026)
+
+### Neue Funktionen
+
+- **Geteilter Pier: Dienste ins Internet stellen ohne eigenen Pier (M17):** Ein Wave ohne eigenen Pier stellt Namen
+  jetzt über den geteilten Pier des Servers ins offene Netz, mit `wave expose`. Die Namen liegen unter einer zufälligen
+  Zone des Waves, `<app>.<zufall>.<WAVE_SHARED_PIER_DOMAIN>`. Eigene Domain, DNS-Provider und öffentliche Adresse
+  braucht es dafür nicht. Wer eine eigene Domain mit DNS-Provider hat, kann stattdessen `pier.<eigene-domain>` wählen
+  (DNS-Seite des Waves oder `wave-admin pier-zone`). TLS endet weiterhin auf dem Gerät. Der Pier erreicht nur den
+  freigegebenen Port des Geräts und sieht sonst nichts vom Wave.
+- **Pier-Freigabe durch Owner und Admins:** In der Geräteliste schalten Owner und Admins mit einem Schalter frei, welches
+  Gerät Namen veröffentlichen darf. Ausschalten nimmt die Namen des Geräts zurück. Bisher ging das nur auf der Shell
+  des Servers.
+- **Für Betreiber:** `wave-admin set-shared-pier`, `clear-shared-pier` und `pier-zone`, dazu die Variablen
+  `WAVE_SHARED_PIER_DOMAIN`, `WAVE_SHARED_PIER_DNS_PROVIDER` und `WAVE_SHARED_PIER_DNS_TOKEN`. Ein Gerät kann nur in
+  einem Wave Namen über den geteilten Pier veröffentlichen. Waves mit eigenem Pier bleiben unverändert.
+
+---
+
 ## 🔬 Development v0.18.0-develop.2 (16.11.2026)
 
 ### Fehlerbehebungen
