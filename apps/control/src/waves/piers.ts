@@ -290,14 +290,22 @@ async function setPierOnce(
 
     // Through the shared pier, one wave per machine: the pier is one address,
     // and a machine that put names out in two waves would route it on two
-    // interfaces -- the client refuses the second wave for exactly that.
+    // interfaces -- the client refuses the second wave for exactly that. Only
+    // names that go out through the shared pier count: a wave with a pier of
+    // its own routes a different address, and names there are no conflict.
     if (host.shared) {
       const elsewhere = await tx
         .select({ waveName: waves.name })
         .from(wavePiers)
         .innerJoin(nodes, eq(nodes.id, wavePiers.nodeId))
         .innerJoin(waves, eq(waves.id, wavePiers.waveId))
-        .where(and(eq(nodes.machineKey, self.machineKey), ne(wavePiers.waveId, input.waveId)))
+        .where(
+          and(
+            eq(nodes.machineKey, self.machineKey),
+            ne(wavePiers.waveId, input.waveId),
+            sql`not exists (select 1 from ${nodes} as own where own.wave_id = ${wavePiers.waveId} and (own.pier_ipv4 is not null or own.pier_ipv6 is not null))`,
+          ),
+        )
         .limit(1);
       if (elsewhere[0]) {
         return {

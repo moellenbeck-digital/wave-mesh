@@ -387,6 +387,30 @@ describe("one wave per machine", () => {
   });
 });
 
+describe("names in a wave with a pier of its own", () => {
+  test("do not count against the one wave a machine may use the shared pier in", async () => {
+    // The laptop holds names behind its own wave's pier and puts one out
+    // through the shared pier in another wave: two piers, two addresses, no
+    // conflict.
+    await hosting();
+    const own = await wave("own@example.com", OWN_SUFFIX, ["laptop", "edge"]);
+    const set = await setPierHost(db, { waveId: own.id, nodeId: own.node("edge").id, ipv4: "198.51.100.1" });
+    expect("host" in set).toBe(true);
+    const b = await wave("b@example.com", "b.wave.internal", ["laptop"], {
+      laptop: own.machines.laptop as Machine,
+    });
+    await setPierAllowed(db, own.id, own.node("laptop").id, true);
+    await setPierAllowed(db, b.id, b.node("laptop").id, true);
+    const laptop = own.machines.laptop as Machine;
+
+    const first = await signed(laptop, "POST", "/v1/piers", { name: "app", port: 8443 }, own.id);
+    expect(((await first.json()) as { dnsName: string }).dnsName).toBe(`app.pier.${OWN_SUFFIX}`);
+    const second = await signed(laptop, "POST", "/v1/piers", { name: "app", port: 8443 }, b.id);
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { dnsName: string }).dnsName.endsWith(`.${DOMAIN}`)).toBe(true);
+  });
+});
+
 describe("the zone a wave chooses", () => {
   test("own: the names go under pier.<own domain>, written by the wave's provider", async () => {
     await hosting();

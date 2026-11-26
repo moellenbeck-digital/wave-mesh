@@ -2576,7 +2576,8 @@ Was daran festliegt:
   mit Namen unter der Domain des geteilten Piers geht über den Token des Servers, gemischt mit
   anderen Namen ist er 400.
 - **Eine Maschine, ein Wave.** Hält dieselbe `machine_key` schon in einem anderen Wave Namen
-  über den geteilten Pier, ist der Claim 409: die Pier-Adresse läge sonst auf zwei Interfaces,
+  über den geteilten Pier, ist der Claim 409 (Namen hinter dem eigenen Pier eines Waves zählen
+  nicht — anderer Pier, andere Adresse): die Pier-Adresse läge sonst auf zwei Interfaces,
   und `overlap.ts` wiese den zweiten Wave ab.
 - **Zwei Waves, eine Netzkarte.** Die Version ist zusammengesetzt (`netmapVersionOf()`: Wave +
   Hosting-Wave für ein Gerät mit Namen, Hosting + alle verknüpften Waves für den Pier) und ist
