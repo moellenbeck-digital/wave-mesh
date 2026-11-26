@@ -153,6 +153,14 @@ for _ in $(seq 1 40); do [[ "$(fetch_name "$B_NAME" b)" == beta ]] && break; sle
 [[ "$(fetch_name "$B_NAME" b)" == beta ]] || { dump_logs; fail "$B_NAME did not reach B through the pier"; }
 ok "$B_NAME -> beta"
 
+step "inside the wave the name resolves to the device, not to the pier"
+# The shared zone is not under the wave's suffix; the wave's resolver answers
+# the exact name anyway, so members take the direct way.
+RESOLVED=$(ip netns exec nodea bun "$REPO/test/e2e/dnsquery.ts" "$A_IP" "$A_NAME" 2>&1) \
+  || { dump_logs; fail "A's resolver did not answer for $A_NAME: $RESOLVED"; }
+[[ "$RESOLVED" == "$A_IP" ]] || fail "$A_NAME resolved to $RESOLVED, expected $A_IP"
+ok "$A_NAME -> $RESOLVED"
+
 step "the pier reaches the claimed port and nothing else"
 ip netns exec nodea bun "$REPO/test/e2e/tcpprobe.ts" listen "$A_IP" 9000 >"$WORK/a-probe.log" 2>&1 &
 wait_for_line "$WORK/a-probe.log" "listening on" "A's second port"

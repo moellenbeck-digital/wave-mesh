@@ -2564,6 +2564,11 @@ Was daran festliegt:
   gescheiterten), beim Löschen des Waves und beim Zonenwechsel entfernt; `set-shared-pier`
   schreibt alle neu (`sharedPierZones()`), `clear-shared-pier` nimmt alle weg. Freigaben
   zurückziehen lässt den Record stehen: er zeigt auf den Pier, der bleibt.
+- **Innen löst der Name trotzdem direkt auf.** Die Zone liegt nicht unter dem Suffix des
+  Waves; der Resolver (`packages/dns`, `resolve()`) beantwortet deshalb außerhalb der Zone
+  genau die Namen, die als Eintrag in der Netzkarte stehen, und verwirft alles andere dort.
+  Der Go-Kern tut das noch nicht — auf dem Telefon leiten die Apps ohnehin nur die Zonen an
+  ihn, solche Namen gehen dort über das öffentliche DNS und den Pier.
 - **Zertifikate:** Pier-Namen gibt es auch bei Platzhalter-Suffix (`checkNames()`); ein Auftrag
   mit Namen unter der Domain des geteilten Piers geht über den Token des Servers, gemischt mit
   anderen Namen ist er 400.

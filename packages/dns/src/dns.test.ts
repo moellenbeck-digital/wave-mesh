@@ -165,6 +165,24 @@ describe("resolving", () => {
     expect(resolve(query("www.google.com"), config).kind).toBe("drop");
   });
 
+  test("answers a name of its netmap outside the zone, and only that one", () => {
+    // A name put out through the shared pier lives in the server's zone, not
+    // under the wave's suffix; the system routes exactly that name here.
+    const withPier: ResolverConfig = {
+      ...config,
+      records: [
+        ...config.records,
+        { name: "app.k3x9q7mz.w-pier.net", ipv4: "10.77.0.1", ipv6: "fd7a:1:2::1" },
+      ],
+    };
+    const { code, records } = readAnswers(answered(resolve(query("app.k3x9q7mz.w-pier.net"), withPier)));
+    expect(code).toBe(ResponseCode.NoError);
+    expect([...(records[0]?.data ?? [])]).toEqual([10, 77, 0, 1]);
+    // Its neighbours are not ours to deny or to answer.
+    expect(resolve(query("other.k3x9q7mz.w-pier.net"), withPier).kind).toBe("drop");
+    expect(resolve(query("k3x9q7mz.w-pier.net"), withPier).kind).toBe("drop");
+  });
+
   test("ignores a packet that is not a query at all", () => {
     expect(resolve(new Uint8Array([1, 2, 3]), config).kind).toBe("drop");
   });

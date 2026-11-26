@@ -193,9 +193,17 @@ export function resolve(packet: Uint8Array, config: ResolverConfig): Resolution 
   const route = config.routes.find((entry) => isWithinZone(name, entry.suffix));
   if (route && route.nameservers.length > 0) return { kind: "forward", nameservers: route.nameservers };
 
-  if (!isWithinZone(name, config.zone)) return { kind: "drop" };
-
   const record = config.records.find((entry) => normalizeName(entry.name) === name);
+
+  // Outside the wave's zone only an exact name of the netmap is ours: a name
+  // put out through the shared pier lives in the server's zone
+  // (`app.k3x9q7mz.w-pier.net`), not under the wave's suffix, and the system
+  // routes exactly that name here. Everything else out there stays unanswered.
+  if (!isWithinZone(name, config.zone)) {
+    if (!record) return { kind: "drop" };
+    return { kind: "answer", packet: encodeResponse({ query, answers: answersFor(record, query) }) };
+  }
+
   if (!record) {
     if (config.authoritative === false) return { kind: "drop" };
     return { kind: "answer", packet: encodeResponse({ query, code: ResponseCode.NameError }) };

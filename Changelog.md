@@ -8,6 +8,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## 🔬 Development v0.18.0-develop.4 (26.11.2026)
+
+### Fehlerbehebungen
+
+- **Namen über den geteilten Pier lösen im Wave auf:** Ein Name, den ein Gerät über den geteilten Pier veröffentlicht
+  (`<app>.<zufall>.w-pier.net`), ließ sich auf den Geräten des Waves nicht auflösen, auch nicht auf dem Gerät selbst.
+  Er löst jetzt auf die Adresse des Geräts im Wave auf, der Weg führt also direkt dorthin und nicht über den Pier.
+
+---
+
 ## 🔬 Development v0.18.0-develop.3 (26.11.2026)
 
 ### Neue Funktionen
