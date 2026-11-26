@@ -8,6 +8,26 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ---
 
+## ✅ Stable v0.18.0 (26.11.2026)
+
+### Neue Funktionen
+
+- **Geteilter Pier: Dienste ins Internet stellen ohne eigenen Pier (M17):** Ein Wave ohne eigenen Pier stellt Namen mit `wave expose` über den geteilten Pier des Servers ins offene Netz, unter einer Zone des Waves aus drei Wörtern: `<app>.brave-teal-otter.<WAVE_SHARED_PIER_DOMAIN>`. Eigene Domain, DNS-Provider und öffentliche Adresse braucht es dafür nicht. Wer eine eigene Domain mit DNS-Provider hat, kann stattdessen `pier.<eigene-domain>` wählen (DNS-Seite des Waves oder `wave-admin pier-zone`). TLS endet weiterhin auf dem Gerät, der Pier erreicht nur den freigegebenen Port und sieht sonst nichts vom Wave. Im Wave löst der Name direkt auf das Gerät auf. Ein Gerät kann nur in einem Wave Namen über den geteilten Pier veröffentlichen; Waves mit eigenem Pier bleiben unverändert. *(seit develop.3)*
+- **Pier-Freigabe durch Owner und Admins:** In der Geräteliste schalten Owner und Admins frei, welches Gerät Namen veröffentlichen darf; Ausschalten nimmt seine Namen zurück. Bisher ging das nur auf der Shell des Servers. *(seit develop.3)*
+- **Passwort vergessen (#159):** Wer ein Konto mit E-Mail und Passwort hat, setzt über einen einmaligen Link aus der Mail (gilt 1 Stunde) ein neues Passwort. Die Antwort ist für jede Adresse gleich, Anfragen sind gedrosselt, nach dem Zurücksetzen sind alle Sitzungen beendet, ein zweiter Faktor bleibt. Braucht einen Mailserver (`WAVE_SMTP_URL`, `WAVE_MAIL_FROM`); ohne ihn bleibt alles wie bisher. *(seit develop.1)*
+
+### Fehlerbehebungen
+
+- **Passwort vergessen:** Das Formular für das neue Passwort wurde je nach Browser abgewiesen und nimmt die Eingaben jetzt an. *(seit develop.2)*
+- **Namen über den geteilten Pier lösen im Wave auf**, auch auf dem Gerät selbst. *(seit develop.4)*
+
+### Technisch
+
+- **Für Betreiber:** `wave-admin set-shared-pier`, `clear-shared-pier` und `pier-zone`, dazu `WAVE_SHARED_PIER_DOMAIN`, `WAVE_SHARED_PIER_DNS_PROVIDER` und `WAVE_SHARED_PIER_DNS_TOKEN`. Die Domain gehört auf die Public Suffix List und ist nie die des Control-Servers. Migration `0027` ist additiv; Waves mit Pier oder vergebenen Namen behalten ihre Zone.
+- Die Zufallsnamen der Zonen kommen aus `unique-names-generator` (Adjektiv, Farbe, Tier). Schon vergebene Namen bleiben.
+
+---
+
 ## 🔬 Development v0.18.0-develop.4 (26.11.2026)
 
 ### Fehlerbehebungen
