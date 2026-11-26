@@ -398,7 +398,11 @@ describe("the updater", () => {
     const t0 = new Date("2026-10-01T12:00:00Z");
     await installed(env, () => t0);
 
-    // Restarted over and over, it finds the deadline passed on the clock.
+    // Its first start begins the trial; restarted over and over, it finds the
+    // deadline passed on the clock.
+    const first = updater(env, { version: "0.2.0", now: () => t0 });
+    await first.instance.init();
+    first.instance.stop();
     const late = new Date(t0.getTime() + 6 * 60 * 1000);
     const { instance, exits } = updater(env, { version: "0.2.0", now: () => late });
     await instance.init();
@@ -416,6 +420,38 @@ describe("the updater", () => {
     expect(old.instance.status().available).toBeNull();
     expect(old.logs.join("\n")).toMatch(/rolled back once/);
     old.instance.stop();
+  });
+
+  test("the trial starts with the new build, not with the swap: a late restart still gets its minutes", async () => {
+    // 26.11.2026: the old build hung on its way out, the new one started eight
+    // minutes after the swap and rolled itself back before it had tried once.
+    const env = await setup();
+    const t0 = new Date("2026-10-01T12:00:00Z");
+    await installed(env, () => t0);
+
+    const startedLate = new Date(t0.getTime() + 8 * 60 * 1000);
+    const { instance, exits, logs } = updater(env, { version: "0.2.0", now: () => startedLate });
+    await instance.init();
+    expect(exits).toEqual([]);
+    expect(readFileSync(join(env.installDir, "wave"), "utf8")).toBe("wave 0.2.0");
+    expect(logs.join("\n")).toMatch(/on trial/);
+    expect((await loadUpdateSettings(env.statePath)).pending?.runningSince).toBe(startedLate.toISOString());
+    await instance.confirm();
+    expect((await loadUpdateSettings(env.statePath)).pending).toBeNull();
+    instance.stop();
+  });
+
+  test("a shutdown that hangs does not keep the old build running", async () => {
+    const env = await setup();
+    const { instance, exits, logs } = updater(env, {
+      shutdown: () => new Promise<void>(() => {}),
+      shutdownTimeoutMs: 50,
+    });
+    await instance.init();
+    instance.receive(env.controlUrl, offer(env.release));
+    await instance.installNow();
+    expect(exits).toEqual([0]);
+    expect(logs.join("\n")).toMatch(/restarting anyway/);
   });
 
   test("the old build back after a failed trial marks the new one broken itself", async () => {

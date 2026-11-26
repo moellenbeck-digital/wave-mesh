@@ -129,6 +129,12 @@ export const UpdateSettings = z.object({
       version: z.string(),
       from: z.string(),
       startedAt: z.string(),
+      /**
+       * When the new build first started. The trial runs from here, not from
+       * the swap: a restart that came late -- a shutdown that hung, a machine
+       * that slept -- must not roll back a build that never got to try.
+       */
+      runningSince: z.string().optional(),
       /** The files that were swapped, each with a `.old` beside it. */
       files: z.array(z.string()),
       installDir: z.string(),

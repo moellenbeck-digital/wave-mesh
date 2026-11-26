@@ -296,6 +296,25 @@ describe("the listener", () => {
     await expect(ask(port, NAME, pem.ca)).rejects.toBeDefined();
   });
 
+  test("closing ends every connection, also one still in its handshake", async () => {
+    // 26.11.2026: a connection through the pier that had not finished its
+    // handshake held `close()` -- and the daemon's shutdown, and a self-update
+    // waiting for it -- for good.
+    const svc = await service();
+    const pem = pemFor([NAME]);
+    const { set } = await listeners({ [NAME]: pem });
+    await set.reconcile("127.0.0.1", [target(NAME, `http://127.0.0.1:${svc.port}`)]);
+    const port = set.boundPort(0) as number;
+
+    const silent = await Bun.connect({ hostname: "127.0.0.1", port, socket: { data() {} } });
+    await Bun.sleep(50);
+    const started = Date.now();
+    await set.close();
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(set.ports()).toEqual([]);
+    silent.end();
+  });
+
   test("a renewed certificate is used by the next connection without a restart", async () => {
     const svc = await service();
     const first = pemFor([NAME]);

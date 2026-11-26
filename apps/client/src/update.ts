@@ -313,6 +313,8 @@ export interface UpdaterOptions {
   maxDelayMs?: number;
   /** How long a new build has to reach a control server before it is rolled back. */
   trialMs?: number;
+  /** How long a restart waits for the tunnels to go down before it ends anyway. */
+  shutdownTimeoutMs?: number;
   random?: () => number;
   now?: () => Date;
 }
@@ -383,7 +385,15 @@ export class Updater {
     }
 
     const trialMs = this.options.trialMs ?? 5 * 60 * 1000;
-    const left = Date.parse(pending.startedAt) + trialMs - this.now().getTime();
+    // The clock starts with the first start of this build, recorded once: a
+    // build that keeps crashing comes back here and finds its time running out,
+    // while one whose restart came late still gets its full five minutes.
+    let runningSince = pending.runningSince;
+    if (!runningSince) {
+      runningSince = this.now().toISOString();
+      await this.save({ pending: { ...pending, runningSince } });
+    }
+    const left = Date.parse(runningSince) + trialMs - this.now().getTime();
     if (left <= 0) {
       await this.rollBack(
         pending,
@@ -604,7 +614,27 @@ export class Updater {
    * failure exit is the fallback if it does not.
    */
   private async restart(): Promise<void> {
-    await this.options.shutdown().catch((error) => this.options.log(`shutdown: ${describe(error)}`));
+    // Bounded: the new build is on disk, and a shutdown that hangs -- a socket
+    // that never closes -- would otherwise leave this process running the old
+    // code with its tunnels already down, and the swap waiting for a restart
+    // that never comes.
+    const limit = this.options.shutdownTimeoutMs ?? 15_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = await Promise.race([
+      this.options
+        .shutdown()
+        .then(() => true)
+        .catch((error) => {
+          this.options.log(`shutdown: ${describe(error)}`);
+          return true;
+        }),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), limit);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!done)
+      this.options.log(`shutdown did not finish within ${Math.round(limit / 1000)} s; restarting anyway`);
     if (this.os === "win32") {
       try {
         Bun.spawn(

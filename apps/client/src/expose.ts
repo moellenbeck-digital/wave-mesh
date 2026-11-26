@@ -180,6 +180,8 @@ interface Bound {
   port: number;
   server: Server;
   open: Set<Socket>;
+  /** Every accepted socket, handshake finished or not -- what `close()` has to end. */
+  sockets: Set<Socket>;
 }
 
 /**
@@ -283,8 +285,19 @@ export class ExposeListeners {
     const bound = this.bound.get(port);
     if (!bound) return;
     this.bound.delete(port);
+    // Every socket, not only those past the handshake: `close()` waits for all
+    // of them, and one still in its handshake held the daemon's shutdown --
+    // and with it a self-update -- for good (26.11.2026).
     for (const socket of bound.open) socket.destroy();
-    await new Promise<void>((done) => bound.server.close(() => done()));
+    for (const socket of bound.sockets) socket.destroy();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      new Promise<void>((done) => bound.server.close(() => done())),
+      new Promise<void>((done) => {
+        timer = setTimeout(done, 3_000);
+      }),
+    ]);
+    clearTimeout(timer);
     this.log(`expose: closed ${bound.host}:${port}`);
   }
 
@@ -306,6 +319,7 @@ export class ExposeListeners {
     const connectTimeout = this.options.connectTimeoutMs ?? 10_000;
     const idleTimeout = this.options.idleTimeoutMs ?? 5 * 60_000;
     const open = new Set<Socket>();
+    const sockets = new Set<Socket>();
 
     const server = createServer(
       {
@@ -396,14 +410,18 @@ export class ExposeListeners {
     // The limit above counts finished handshakes; this one counts sockets, so
     // connections that never finish one cannot pile up past it either.
     server.maxConnections = maxConnections * 2;
-    server.on("connection", (raw: Socket) => raw.on("error", () => raw.destroy()));
+    server.on("connection", (raw: Socket) => {
+      sockets.add(raw);
+      raw.on("close", () => sockets.delete(raw));
+      raw.on("error", () => raw.destroy());
+    });
 
     return new Promise<Bound>((resolve, reject) => {
       server.once("error", reject);
       server.listen(port, host, () => {
         const address = server.address();
         const actual = typeof address === "object" && address ? address.port : port;
-        const bound: Bound = { host, port: actual, server, open };
+        const bound: Bound = { host, port: actual, server, open, sockets };
         this.bound.set(port, bound);
         resolve(bound);
       });
