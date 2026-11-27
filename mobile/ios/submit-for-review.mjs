@@ -204,14 +204,8 @@ async function run() {
   // 3. The build on that version.
   say(`${dryRun ? "A real run would attach" : "Attaching"} build ${buildNumber} to version ${build.marketingVersion}.`);
   if (!dryRun) {
-    // The version itself is patched with the build relationship (as fastlane does): the
-    // relationship endpoint answers 403 even for an App Manager key.
-    await asc("PATCH", `/v1/appStoreVersions/${versionId}`, {
-      data: {
-        type: "appStoreVersions",
-        id: versionId,
-        relationships: { build: { data: { type: "builds", id: build.id } } },
-      },
+    await asc("PATCH", `/v1/appStoreVersions/${versionId}/relationships/build`, {
+      data: { type: "builds", id: build.id },
     });
   }
 
