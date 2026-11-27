@@ -28,7 +28,7 @@ android {
             .orElse(providers.environmentVariable("WAVE_VERSION_CODE"))
             .map { it.toInt() }
             .getOrElse(1)
-        versionName = "0.8.0"
+        versionName = "0.18.1"
     }
 
     // The upload key, for the Play upload workflow only. It arrives as a file
