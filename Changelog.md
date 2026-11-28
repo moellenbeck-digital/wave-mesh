@@ -6,6 +6,16 @@ Selbst hostbares Mesh-VPN auf WireGuard-Basis.
 
 ## 🔮 In Entwicklung (Ausblick auf nächstes Release)
 
+### Neue Funktionen
+
+- **Connector auf einer Synology, ohne Kubernetes:** Unter `deploy/synology` liegt ein Docker-Projekt für den DSM
+  Container Manager, mit dem ein NAS Dienste aus dem Heimnetz in einen Wave stellt, mit Caddy davor. Die Namen stehen
+  in `WAVE_SERVICES` (ohne TLS zusätzlich in `WAVE_SERVICES_NO_TLS`), ein Operator ist nicht nötig. Auf einem echten
+  NAS ist der Aufbau noch nicht geprüft.
+- **Ohne nftables mit iptables:** Fehlt dem Kernel nftables, setzen Connector und Daemon unter Linux ihre Regeln mit
+  iptables. Damit gelten die Port-Regeln einer Policy auch dort. `WAVE_NETFILTER=auto|nft|iptables` legt die Wahl
+  fest.
+
 ---
 
 ## ✅ Stable v0.18.1 (26.11.2026)
