@@ -1,7 +1,11 @@
+import { existsSync } from "node:fs";
 import type { FilterPorts, FilterRule } from "@wave/proto";
+import type { FilterResult } from "./link.ts";
+import { type ChainSpec, type IptablesNetfilter, type IptablesTool, syncChains } from "./netfilter.ts";
 
 /**
- * The port half of a wave's policy (M7, stage two), as one nftables document.
+ * The port half of a wave's policy (M7, stage two): for Linux as one nftables
+ * document or as iptables chains, for macOS and Windows further down.
  *
  * Who may reach this device at all is already decided by the netmap: a peer
  * the policy hides is not a WireGuard peer here. What is left for the device
@@ -73,6 +77,130 @@ export function nftFilterRuleset(iface: string, rules: FilterRule[] | null): str
     "  }",
     "}",
   ].join("\n")}\n`;
+}
+
+/**
+ * The same rules where the kernel has no nftables, as iptables chains.
+ *
+ * The nft chain sits at prerouting priority -150, which in iptables is exactly
+ * the mangle table's PREROUTING: after conntrack, before the connector's DNAT.
+ * A kernel without that table gets the filter table instead, on INPUT and
+ * FORWARD. There a connector's DNAT has already happened, so the rules name
+ * the address and port a packet was *sent* to, which conntrack remembers.
+ *
+ * What is let in leaves the chain with RETURN, not ACCEPT: an accept here would
+ * also overrule the machine's own firewall further down, which the nft table
+ * never does. What is not let in is dropped here, and that is final.
+ */
+export type FilterTable = "mangle" | "filter";
+
+export const iptablesChainName = (iface: string): string => `WAVE-ACL-${iface}`;
+
+/** Addresses go into a line-based document; anything that is not one stays out. */
+function checked(cidr: string): string {
+  if (!/^[0-9a-fA-F:.]+(\/\d{1,3})?$/.test(cidr)) throw new Error(`not an address: ${JSON.stringify(cidr)}`);
+  return cidr;
+}
+
+export function iptablesFilterRules(rules: FilterRule[], fam: "ip" | "ip6", table: FilterTable): string[] {
+  const lines = [
+    "-m conntrack --ctstate RELATED,ESTABLISHED -j RETURN",
+    `-p ${fam === "ip" ? "icmp" : "ipv6-icmp"} -j RETURN`,
+  ];
+  for (const rule of rules) {
+    const src = rule.src.filter((cidr) => family(cidr) === fam).map(checked);
+    const dst = rule.dst.filter((cidr) => family(cidr) === fam).map(checked);
+    for (const proto of ["tcp", "udp"] as const) {
+      const ports = [
+        ...new Set(
+          rule.ports
+            .filter((range) => range.proto === "any" || range.proto === proto)
+            .map((range) => (range.from === range.to ? `${range.from}` : `${range.from}:${range.to}`)),
+        ),
+      ];
+      for (const from of src) {
+        for (const to of dst) {
+          for (const port of ports) {
+            lines.push(
+              table === "mangle"
+                ? `-s ${from} -d ${to} -p ${proto} -m ${proto} --dport ${port} -j RETURN`
+                : `-s ${from} -p ${proto} -m conntrack --ctorigdst ${to} --ctorigdstport ${port} -j RETURN`,
+            );
+          }
+        }
+      }
+    }
+  }
+  lines.push("-j DROP");
+  return lines;
+}
+
+/** The chain of one interface in one table; with `rules` null, its removal. */
+export function iptablesFilterChain(
+  iface: string,
+  rules: FilterRule[] | null,
+  fam: "ip" | "ip6",
+  table: FilterTable,
+): ChainSpec {
+  if (!/^[\w.-]{1,15}$/.test(iface)) throw new Error(`not an interface name: ${JSON.stringify(iface)}`);
+  const match = `-i ${iface}`;
+  return {
+    chain: iptablesChainName(iface),
+    hooks: (table === "mangle" ? ["PREROUTING"] : ["INPUT", "FORWARD"]).map((from) => ({ from, match })),
+    rules: rules === null ? null : iptablesFilterRules(rules, fam, table),
+  };
+}
+
+/** Whether this machine speaks IPv6 at all; without a stack there is nothing to leave open. */
+export const ipv6Present = (): boolean => existsSync("/proc/net/if_inet6");
+
+async function syncFamily(
+  tool: IptablesTool,
+  iface: string,
+  rules: FilterRule[] | null,
+  fam: "ip" | "ip6",
+): Promise<void> {
+  let wanted: FilterTable | null = null;
+  if (rules !== null) {
+    wanted = (await tool.run(["-t", "mangle", "-S", "PREROUTING"])).code === 0 ? "mangle" : "filter";
+    await syncChains(tool, wanted, [iptablesFilterChain(iface, rules, fam, wanted)]);
+  }
+  // Whatever an earlier run left in the other table -- or in both, without a policy.
+  for (const table of ["mangle", "filter"] as const) {
+    if (table !== wanted) await syncChains(tool, table, [iptablesFilterChain(iface, null, fam, table)]);
+  }
+}
+
+/**
+ * Installs or removes the policy with iptables, one family at a time. Never
+ * throws. A family that cannot be filtered is reported as not enforced, with
+ * the family named -- even though the other one holds, because a half-open
+ * policy must not read as an enforced one.
+ */
+export async function syncIptablesFilter(
+  netfilter: IptablesNetfilter,
+  iface: string,
+  rules: FilterRule[] | null,
+  hasIpv6: () => boolean = ipv6Present,
+): Promise<FilterResult> {
+  const problems: string[] = [];
+  for (const [fam, label, tool] of [
+    ["ip", "IPv4", netfilter.v4],
+    ["ip6", "IPv6", netfilter.v6],
+  ] as const) {
+    if (!tool) {
+      if (rules !== null && hasIpv6()) {
+        problems.push(`${label} is not filtered: ${netfilter.v6Problem ?? "ip6tables is not usable"}`);
+      }
+      continue;
+    }
+    try {
+      await syncFamily(tool, iface, rules, fam);
+    } catch (error) {
+      problems.push(`${label} is not filtered: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return problems.length === 0 ? { enforced: true } : { enforced: false, reason: problems.join("; ") };
 }
 
 /**
