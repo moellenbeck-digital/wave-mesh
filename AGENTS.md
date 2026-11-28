@@ -41,6 +41,8 @@ cd apps/web && bun run typecheck   # eigener Lauf: DOM und JSX, nicht Bun
 ./test/e2e/relay-fallback.sh # symmetrisches NAT → Relay
 ./test/e2e/acl.sh            # eine Policy: Peers über die Netzkarte, Ports über nftables
 ./test/e2e/billing.sh        # Abrechnungs-API: Wave anlegen, pausieren, fortsetzen, Plätze, Löschen
+./test/e2e/iptables.sh       # Connector-Regeln und Portfilter mit echtem iptables-legacy (Docker)
+./test/e2e/synology.sh       # deploy/synology als ganzer Stapel mit Control-Server und zweitem Gerät (Docker)
 
 ./test/e2e/mobile-core.sh    # der Go-Kern an einem echten TUN: zwei Waves, ein Interface
 ./test/e2e/mobile-nat.sh                # derselbe Kern durch zwei NATs, direkter Pfad
@@ -1907,7 +1909,8 @@ nur für Eigentümer und Admins, nur als `application/json`.
    Server allein gemacht.
 2. **Die Ports**, beim *Empfänger*. Die Netzkarte trägt dafür `packetFilter`:
    von wem, an welche eigene Adresse, auf welchen Ports. Unter Linux wird das
-   eine nftables-Tabelle `wave-acl-<iface>`, unter macOS ein pf-Anchor
+   eine nftables-Tabelle `wave-acl-<iface>` (ohne nftables eine iptables-Kette
+   `WAVE-ACL-<iface>`, siehe unten), unter macOS ein pf-Anchor
    `com.apple/wave.<utunN>`, unter Windows eine Firewall-Gruppe
    `wave-acl-<iface>`, im Go-Kern prüft der Demultiplexer.
 
@@ -1959,6 +1962,26 @@ Was daran festliegt:
   `spawnWithInputFile()` legt die Regeln 0600 in ein eigenes Verzeichnis und
   räumt es danach weg. (Der Connector schreibt seine eigene Regel noch über
   stdin; sein Alpine-nft liest die Pipe.)
+- **Ohne nftables tut es iptables** (`netfilter.ts`, `WAVE_NETFILTER=auto|nft|
+  iptables`). Synologys DSM 7 hat auf 4.4 kein `nf_tables`. `auto` fragt den
+  **Kernel** (`nft list tables`), nicht den PATH — ein Image bringt `nft` auch
+  dorthin, wo es nichts kann — und probiert bei iptables erst `iptables`, dann
+  `iptables-legacy`. Fünf Dinge daran:
+  - **`mangle`/`PREROUTING` ist die Stelle der nft-Kette** (−150, nach
+    conntrack, vor dem DNAT). Fehlt dem Kernel die Tabelle, liegt die Kette in
+    `filter` auf `INPUT` und `FORWARD` und vergleicht `--ctorigdst` und
+    `--ctorigdstport`, also wieder die Adresse, an die geschickt wurde.
+  - **`RETURN`, nie `ACCEPT`.** Ein Accept überstimmte die Firewall der
+    Maschine weiter unten; die nft-Tabelle tut das auch nicht.
+  - **Ein Commit je Tabelle** über `iptables-restore --noflush`: eine
+    deklarierte eigene Kette wird dabei geleert, alles andere bleibt. Sprünge
+    in fremden Ketten werden mit ihrem eigenen Wortlaut gelöscht und einmal neu
+    eingefügt (`restoreDocument()`), zweimal angewendet ist einmal angewendet.
+  - **IPv6 bleibt nie still offen.** Geht `ip6tables` nicht, wird IPv4
+    gefiltert und trotzdem „nicht durchgesetzt“ gemeldet, mit der Familie im
+    Grund.
+  - „policy NOT enforced“ heißt damit unter Linux: kein Backend, oder das
+    gewählte hat die Regeln abgelehnt.
 - **Ein Filter, der nicht installiert werden kann, reißt den Tunnel nicht mit —
   er wird gesagt.** `syncFilter()` wirft nie; die Engine schreibt einmal je
   Änderung „policy NOT enforced here (…)“. Wer wen erreicht, begrenzt dann
@@ -2009,6 +2032,10 @@ Was daran festliegt:
   schreibt ihn eine Stelle, `done()`, für jeden Befehl in `CHANGES`: der nächste
   Befehl kann ihn nicht vergessen. Eine Policy wird ganz abgelegt, nicht als
   Diff. Ein gelöschter Wave nimmt sein Log mit.
+
+Die iptables-Ketten sind gegen ein echtes iptables-legacy mit echtem Verkehr
+gefahren (`test/e2e/iptables.sh`, beide Tabellen), auf dem Kernel des
+Docker-Hosts — **nicht auf 4.4 und nicht auf einer Synology**.
 
 **Ungeprüft auf echter Hardware sind pf und die Windows-Firewall.** Beide sind
 als reine Funktionen getestet — Regeltext, Komplemente, Token-Handhabung —, aber
@@ -2235,6 +2262,29 @@ steht als Kommentar daneben; zwei Dinge sind es wert, hier zu stehen:
   einen Endpunkt, den es nicht gibt. Jede Portweiterleitung mit SNAT im Pfad
   stellt dieselbe Falle; ein STUN-Server wird deshalb **immer von außen**
   gemessen, nie über Loopback, sonst prüft man den Proxy statt den Server.
+
+**Und ohne Cluster: der Connector auf einem NAS** (`deploy/synology`, Anleitung
+im Ordner). Was daran festliegt:
+
+- **`WAVE_SERVICES` ersetzt den Operator** (`static-services.ts`): derselbe
+  `POST /v1/services` mit dem Maschinenschlüssel des Connectors, beim Start und
+  alle `WAVE_SYNC_INTERVAL_MS` (60 s), mit wachsendem Abstand nach Fehlern.
+  `WAVE_SERVICES_NO_TLS` nimmt Namen aus `secure`. **Leer heißt aus**, nie
+  „keine Dienste“ — sonst nähme ein Connector im Cluster dem Operator die Menge
+  weg. Nie beides zugleich einschalten.
+- **Die Weiterleitung gibt es auch mit iptables** (`forward.ts`,
+  `iptablesTables()`): `filter` vor `nat`, beim Abräumen umgekehrt. Beim
+  Anhalten nimmt der Connector seine Ketten heraus; die nft-Tabelle bleibt wie
+  bisher. Ein Kernel ohne `TCPMSS` läuft ohne Begrenzung weiter, mit Hinweis.
+  Geht IPv6 nicht zu filtern, wird nur angewendet, solange der Kernel es nicht
+  weiterleitet und kein IPv6-Backend verlangt ist.
+- **Das NAS-Image ist übersetzt, nicht `bun run`.** Auf 4.4 folgt Bun den
+  Symlinks der `node_modules` eines Workspaces nicht (`statx`; fremder Bericht,
+  hier nicht nachgestellt), das übersetzte Binary läuft laut SPK-Probe auf der
+  DS920+ (siehe `docs/DSM.md`).
+- **Ein eigener Container hält den Netzraum** (`net`). Hinge der Connector am
+  Netz des Daemons, bliebe er nach dessen Neustart in einem toten Netzraum
+  zurück.
 
 **Ungeprüft ist alles, was einen Cluster braucht.** Connector-Regeln, Operator
 und Manifeste sind gegen Fakes getestet — die nftables-Regel als Text, der

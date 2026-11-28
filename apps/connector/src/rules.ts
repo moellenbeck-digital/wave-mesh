@@ -1,3 +1,6 @@
+import { isIPv4, isIPv6 } from "node:net";
+import type { ChainSpec } from "@wave/client/netfilter";
+
 /**
  * The forwarding rules of a wave connector (D11).
  *
@@ -98,4 +101,90 @@ export function nftRuleset(rules: ConnectorRules): string {
     "}",
   ];
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * The same ruleset for a kernel without nftables, as chains of our own in the
+ * filter and nat tables (forward.ts writes them).
+ *
+ * One difference in shape, none in effect: iptables cannot reject from a nat
+ * chain, so without an IPv6 backend the v6 service ports are refused in INPUT
+ * and FORWARD, which is where such a packet goes when nothing rewrote it. And
+ * what passes leaves with RETURN, so the machine's own firewall still has its
+ * say -- as it has next to an nft table.
+ */
+export const IPTABLES_CHAINS = {
+  prerouting: "WAVE-CONN-PRE",
+  postrouting: "WAVE-CONN-POST",
+  forward: "WAVE-CONN-FWD",
+  reject: "WAVE-CONN-REJ",
+} as const;
+
+/** What a kernel may lack: the MSS target, and REJECT (a drop refuses too, only slower). */
+export interface IptablesFeatures {
+  clampMss: boolean;
+  reject: boolean;
+}
+
+export interface ConnectorTables {
+  filter: ChainSpec[];
+  nat: ChainSpec[];
+}
+
+export function iptablesTables(
+  rules: ConnectorRules,
+  fam: "ip" | "ip6",
+  features: IptablesFeatures = { clampMss: true, reject: true },
+): ConnectorTables {
+  const iface = rules.interfaceName;
+  if (!/^[\w.-]{1,15}$/.test(iface)) throw new Error(`not an interface name: ${JSON.stringify(iface)}`);
+  const isFamily = fam === "ip" ? isIPv4 : isIPv6;
+  const own = rules.ownAddresses.map(address).filter((entry) => isFamily(entry));
+  const backend = fam === "ip" ? rules.backend.ipv4 : rules.backend.ipv6;
+  if (backend !== undefined && backend !== "" && !isFamily(backend)) {
+    throw new Error(`the backend ${JSON.stringify(backend)} is not an ${fam} address`);
+  }
+  const ports = rules.ports.length > 0 ? rules.ports : DEFAULT_PORTS;
+  const host = fam === "ip" ? 32 : 128;
+  const iif = `-i ${iface}`;
+  const toPort = (port: number) => `${iif} -p tcp -m tcp --dport ${port}`;
+  const notForUs = own.map((entry) => `${iif} -d ${entry}/${host} -j RETURN`);
+  const clamp = (match: string) =>
+    `${match} -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss ${rules.mtu - 40}`;
+
+  const forward: ChainSpec = {
+    chain: IPTABLES_CHAINS.forward,
+    hooks: [{ from: "FORWARD" }],
+    rules: [
+      ...(features.clampMss ? [clamp(iif), clamp(`-o ${iface}`)] : []),
+      ...ports.map((port) => `${toPort(port)} -j RETURN`),
+      `${iif} -j DROP`,
+    ],
+  };
+  const reject: ChainSpec = {
+    chain: IPTABLES_CHAINS.reject,
+    hooks: [{ from: "INPUT" }, { from: "FORWARD" }],
+    // Only the v6 half without a backend has anything to refuse.
+    rules:
+      fam === "ip6" && !backend
+        ? [...notForUs, ...ports.map((port) => `${toPort(port)} -j ${features.reject ? "REJECT" : "DROP"}`)]
+        : null,
+  };
+  return {
+    filter: [forward, reject],
+    nat: [
+      {
+        chain: IPTABLES_CHAINS.prerouting,
+        hooks: [{ from: "PREROUTING" }],
+        rules: backend
+          ? [...notForUs, ...ports.map((port) => `${toPort(port)} -j DNAT --to-destination ${backend}`)]
+          : null,
+      },
+      {
+        chain: IPTABLES_CHAINS.postrouting,
+        hooks: [{ from: "POSTROUTING" }],
+        rules: backend ? [`-d ${backend}/${host} -j MASQUERADE`] : null,
+      },
+    ],
+  };
 }

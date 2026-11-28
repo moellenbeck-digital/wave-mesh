@@ -25,6 +25,7 @@
     ".": "./src/cli.ts",
     "./api": "./src/api.ts",
     "./state": "./src/state.ts",
-    "./certs": "./src/certs.ts"
+    "./certs": "./src/certs.ts",
+    "./netfilter": "./src/netfilter.ts"
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ownAddressesOf } from "../src/main.ts";
-import { nftRuleset } from "../src/rules.ts";
+import { type ConnectorRules, iptablesTables, nftRuleset } from "../src/rules.ts";
 
 /**
  * The connector's one rule, and the reason it needs no list of services:
@@ -59,6 +59,80 @@ describe("the ruleset", () => {
     const ruleset = nftRuleset({ ...rules, ports: [8443] });
     expect(ruleset).toContain("tcp dport { 8443 } dnat ip to 10.43.0.80");
     expect(ruleset).toContain("tcp dport != { 8443 } drop");
+  });
+});
+
+describe("the iptables chains", () => {
+  const chain = (fam: "ip" | "ip6", name: string, overrides: Partial<ConnectorRules> = {}) => {
+    const tables = iptablesTables({ ...rules, ...overrides }, fam);
+    return [...tables.filter, ...tables.nat].find((spec) => spec.chain === name);
+  };
+
+  test("forwards what arrives on the tunnel and is not for us", () => {
+    expect(chain("ip", "WAVE-CONN-PRE")).toEqual({
+      chain: "WAVE-CONN-PRE",
+      hooks: [{ from: "PREROUTING" }],
+      rules: [
+        "-i wave0 -d 10.77.0.9/32 -j RETURN",
+        "-i wave0 -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.43.0.80",
+        "-i wave0 -p tcp -m tcp --dport 443 -j DNAT --to-destination 10.43.0.80",
+      ],
+    });
+    expect(chain("ip", "WAVE-CONN-POST")?.rules).toEqual(["-d 10.43.0.80/32 -j MASQUERADE"]);
+  });
+
+  test("clamps both ways, passes the service ports and drops everything else", () => {
+    expect(chain("ip", "WAVE-CONN-FWD")?.rules).toEqual([
+      "-i wave0 -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240",
+      "-o wave0 -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240",
+      "-i wave0 -p tcp -m tcp --dport 80 -j RETURN",
+      "-i wave0 -p tcp -m tcp --dport 443 -j RETURN",
+      "-i wave0 -j DROP",
+    ]);
+    // IPv6 is as much a way in as IPv4.
+    expect(chain("ip6", "WAVE-CONN-FWD")?.rules?.at(-1)).toBe("-i wave0 -j DROP");
+  });
+
+  test("without an IPv6 backend the v6 half says so instead of hanging", () => {
+    expect(chain("ip6", "WAVE-CONN-REJ")).toEqual({
+      chain: "WAVE-CONN-REJ",
+      hooks: [{ from: "INPUT" }, { from: "FORWARD" }],
+      rules: [
+        "-i wave0 -d fd7a:1:2::9/128 -j RETURN",
+        "-i wave0 -p tcp -m tcp --dport 80 -j REJECT",
+        "-i wave0 -p tcp -m tcp --dport 443 -j REJECT",
+      ],
+    });
+    expect(chain("ip6", "WAVE-CONN-PRE")?.rules).toBeNull();
+    expect(chain("ip6", "WAVE-CONN-POST")?.rules).toBeNull();
+    expect(chain("ip", "WAVE-CONN-REJ")?.rules).toBeNull();
+  });
+
+  test("with one, v6 is forwarded like v4", () => {
+    const backend = { ipv4: "10.43.0.80", ipv6: "fd00::80" };
+    expect(chain("ip6", "WAVE-CONN-PRE", { backend })?.rules).toContain(
+      "-i wave0 -p tcp -m tcp --dport 443 -j DNAT --to-destination fd00::80",
+    );
+    expect(chain("ip6", "WAVE-CONN-POST", { backend })?.rules).toEqual(["-d fd00::80/128 -j MASQUERADE"]);
+    expect(chain("ip6", "WAVE-CONN-REJ", { backend })?.rules).toBeNull();
+  });
+
+  test("a kernel without the extras still gets the doors closed", () => {
+    const tables = iptablesTables(rules, "ip6", { clampMss: false, reject: false });
+    expect(JSON.stringify(tables)).not.toContain("TCPMSS");
+    expect(tables.filter[1]?.rules).toContain("-i wave0 -p tcp -m tcp --dport 80 -j DROP");
+    expect(tables.filter[0]?.rules?.at(-1)).toBe("-i wave0 -j DROP");
+  });
+
+  test("other ports are carried through everywhere they matter", () => {
+    const text = JSON.stringify(iptablesTables({ ...rules, ports: [8443] }, "ip"));
+    expect(text).toContain("--dport 8443 -j DNAT");
+    expect(text).toContain("--dport 8443 -j RETURN");
+    expect(text).not.toContain("--dport 80 ");
+  });
+
+  test("a backend that is not an address is refused", () => {
+    expect(() => iptablesTables({ ...rules, backend: { ipv4: "caddy" } }, "ip")).toThrow("not an ip address");
   });
 });
 

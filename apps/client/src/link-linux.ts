@@ -16,7 +16,8 @@ import {
   spawnRunner,
   spawnWithInputFile,
 } from "./link.ts";
-import { nftFilterRuleset } from "./packet-filter.ts";
+import { type Netfilter, netfilterSelector } from "./netfilter.ts";
+import { ipv6Present, nftFilterRuleset, syncIptablesFilter } from "./packet-filter.ts";
 
 export function parseAddresses(output: string): string[] {
   const found: string[] = [];
@@ -44,6 +45,8 @@ export class LinuxLink implements LinkBackend {
     // C locale: ufw translates its status, and the parser reads the English one.
     private readonly tool: (binary: string) => CommandRunner = (binary) =>
       spawnRunner(binary, { LC_ALL: "C", LANG: "C" }),
+    private readonly netfilter: () => Promise<Netfilter> = netfilterSelector(),
+    private readonly hasIpv6: () => boolean = ipv6Present,
   ) {}
 
   async hostFirewall(iface: string, port: number): Promise<HostFirewallBlock | null> {
@@ -52,6 +55,20 @@ export class LinuxLink implements LinkBackend {
 
   /** Whatever is on the interface is replaced whole; see packet-filter.ts. */
   async syncFilter(iface: string, rules: FilterRule[] | null): Promise<FilterResult> {
+    let backend: Netfilter;
+    try {
+      backend = await this.netfilter();
+    } catch (error) {
+      // A WAVE_NETFILTER nobody understands: the tunnel stays, and it is said.
+      return rules === null
+        ? { enforced: true }
+        : { enforced: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+    if (backend.kind === "iptables") return syncIptablesFilter(backend, iface, rules, this.hasIpv6);
+    if (backend.kind === "none") {
+      // Nothing usable, so nothing an earlier policy could have left behind.
+      return rules === null ? { enforced: true } : { enforced: false, reason: backend.reason };
+    }
     const result = await this.nft(["-f", "-"], nftFilterRuleset(iface, rules));
     if (result.code === 0) return { enforced: true };
     // Without nft there is no table an earlier policy could have left, so

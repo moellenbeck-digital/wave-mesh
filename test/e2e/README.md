@@ -198,6 +198,32 @@ das schon einmal schiefging:
 - Ein Neustart kommt ohne Freigabe zurück, und Stoppen hängt nicht (vorher:
   ein blockierender TUN-Deskriptor hielt die Leseschleife fest).
 
+## `iptables.sh` — ohne nftables
+
+Die iptables-Fassungen der Connector-Regeln und des Portfilters, in einem Container, der
+**nur** iptables-legacy hat (kein `nft`), mit echtem Verkehr zwischen drei Netzräumen. Der
+veth namens `wave0` steht für den Tunnel. Geprüft wird: `auto` wählt iptables-legacy,
+zweimal anwenden ändert in `iptables-save` nichts, Dienstports kommen maskiert beim
+Backend an, alles andere nicht, die Policy in `mangle` wie in `filter`, ein IPv6-Backend
+hin und zurück, und nach dem Anhalten stehen nur noch die fremden Regeln da.
+
+```bash
+./test/e2e/iptables.sh          # braucht Docker und `bun install`
+```
+
+## `synology.sh` — `deploy/synology` als Ganzes
+
+Das Image und das Compose-File des NAS, dazu ein Control-Server, Platzhalter für die
+Dienste und ein zweites Gerät. Anmeldung mit Pre-Auth-Key, Dienste aus `WAVE_SERVICES`,
+Abruf durch Tunnel, Connector und Caddy, eine Policy, die der Connector mit iptables-legacy
+durchsetzt, Neustarts und Abräumen. Der Kernel ist der des Docker-Hosts: ein Lauf hier
+ersetzt keinen auf dem NAS.
+
+```bash
+./test/e2e/synology.sh
+WAVE_SUBNET_PREFIX=172.29.250 ./test/e2e/synology.sh   # wenn 172.31.250.0/24 belegt ist
+```
+
 ## `shared-pier.sh` — M17
 
 Der geteilte Pier (D12a): ein Pier-Knoten in einem Hosting-Wave, zwei Geräte in zwei

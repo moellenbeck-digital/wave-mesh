@@ -1,8 +1,11 @@
 #!/usr/bin/env bun
+import { detectNetfilter, netfilterMode } from "@wave/client/netfilter";
 import { type DnsServer, startDnsServer } from "@wave/dns";
 import { DaemonClient, DEFAULT_SOCKET_PATH, type ProfileStatus } from "@wave/ipc";
 import { type EgressTable, egressResolver, egressTable, egressZone, startEgress } from "./egress.ts";
+import { type Forwarder, forwarderFor } from "./forward.ts";
 import { type ConnectorRules, DEFAULT_PORTS, nftRuleset } from "./rules.ts";
+import { runStaticServices, staticServicesFromEnv } from "./static-services.ts";
 
 /**
  * The wave connector: a cluster's one membership in a wave (D11).
@@ -10,7 +13,8 @@ import { type ConnectorRules, DEFAULT_PORTS, nftRuleset } from "./rules.ts";
  * It runs beside `wave daemon` in the same pod, waits until the tunnel carries
  * addresses, and installs the forwarding rules. That is all it does -- the
  * addresses come from the netmap, and which of them exist is the operator's
- * business, not this program's.
+ * business, not this program's -- except where there is no operator and the
+ * names are configuration (static-services.ts).
  *
  * Deliberately not a second tunnel: a connector is one node with one identity,
  * and the services are addresses routed to it. Twenty ingresses as twenty nodes
@@ -24,7 +28,9 @@ export interface ConnectorOptions {
   ports: number[];
   /** Which wave, when the pod is in more than one. */
   controlUrl?: string;
-  apply: (ruleset: string) => Promise<void>;
+  /** The rules as text; nft's own document unless another backend renders them. */
+  render?: (rules: ConnectorRules) => string;
+  apply: (ruleset: string, rules: ConnectorRules) => Promise<void>;
   log?: (message: string) => void;
   sleep?: (ms: number) => Promise<void>;
   /**
@@ -133,12 +139,12 @@ export async function runConnector(options: ConnectorOptions): Promise<void> {
         ports: options.ports.length > 0 ? options.ports : DEFAULT_PORTS,
         mtu: MTU_FALLBACK,
       };
-      const ruleset = nftRuleset(rules);
+      const ruleset = (options.render ?? nftRuleset)(rules);
 
       // Only on a change: nft is cheap, but a log line every two seconds is
       // how a pod's output stops being worth reading.
       if (ruleset !== applied) {
-        await options.apply(ruleset);
+        await options.apply(ruleset, rules);
         applied = ruleset;
         log(
           `forwarding ${rules.interfaceName} to ${rules.backend.ipv4}, own addresses ${addresses.join(", ")}`,
@@ -182,20 +188,62 @@ export function egressFromEnv(env: Record<string, string | undefined>): EgressCo
   };
 }
 
-/** Hands the ruleset to nft. One document, one call, all or nothing. */
-export async function applyWithNft(ruleset: string): Promise<void> {
-  const child = Bun.spawn(["nft", "-f", "-"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-  child.stdin.write(ruleset);
-  await child.stdin.end();
-  const [code, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-  if (code !== 0) throw new Error(`nft exited ${code}: ${error.trim().slice(0, 300)}`);
+/**
+ * Takes the rules out again on the way down. Only where the backend says there
+ * is something to take: nft's table goes with the pod, as it always has.
+ */
+export function clearOnStop(
+  forwarder: Forwarder,
+  on: (signal: "SIGINT" | "SIGTERM", handler: () => void) => void = (signal, handler) => {
+    process.once(signal, handler);
+  },
+  exit: (code: number) => void = (code) => process.exit(code),
+  log: (message: string) => void = console.log,
+): void {
+  if (!forwarder.clear) return;
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    on(signal, () => {
+      forwarder.clear?.().then(
+        () => {
+          log("forwarding rules removed");
+          exit(0);
+        },
+        (error) => {
+          log(`could not remove the forwarding rules: ${error instanceof Error ? error.message : error}`);
+          exit(1);
+        },
+      );
+    });
+  }
 }
 
 if (import.meta.main) {
   const backendV4 = process.env.WAVE_BACKEND_IPV4;
   if (!backendV4) {
-    console.error("WAVE_BACKEND_IPV4 is required: the ClusterIP of the internal ingress controller");
+    console.error(
+      "WAVE_BACKEND_IPV4 is required: where to forward to -- in a cluster, the ClusterIP of the internal ingress controller",
+    );
     process.exit(1);
+  }
+  let forwarder: Forwarder;
+  let services: ReturnType<typeof staticServicesFromEnv>;
+  try {
+    forwarder = forwarderFor(await detectNetfilter(netfilterMode()));
+    services = staticServicesFromEnv(process.env);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  console.log(`forwarding with ${forwarder.name}`);
+  clearOnStop(forwarder);
+  // Beside the loop below, not part of it: the rules do not wait for the
+  // control server, and the names do not wait for the tunnel.
+  if (services) {
+    void runStaticServices({
+      services,
+      statePath: process.env.WAVE_STATE,
+      controlUrl: process.env.WAVE_CONTROL_URL,
+    });
   }
   await runConnector({
     socketPath: process.env.WAVE_SOCKET ?? DEFAULT_SOCKET_PATH,
@@ -205,7 +253,8 @@ if (import.meta.main) {
       .map((port) => Number(port.trim()))
       .filter((port) => Number.isInteger(port) && port > 0),
     controlUrl: process.env.WAVE_CONTROL_URL,
-    apply: applyWithNft,
+    render: forwarder.render,
+    apply: forwarder.apply,
     egress: egressFromEnv(process.env),
   });
 }

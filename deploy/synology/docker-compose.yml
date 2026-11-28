@@ -1,0 +1,130 @@
+# wave-connector auf einer Synology (DSM 7, Kernel 4.4, ohne nftables), ohne
+# Cluster und ohne wave-operator. Siehe README.md in diesem Ordner.
+#
+# daemon, connector und login teilen sich einen Netzraum, den `net` hält: dort
+# liegen der Tunnel des Daemons und die iptables-Regeln, und ein Neustart von
+# Daemon oder Connector nimmt ihn nicht mit. Netz und Firewall des NAS bleiben
+# unberührt.
+
+name: wave-synology
+
+x-wave: &wave
+  image: ${WAVE_IMAGE:-wave-synology:local}
+
+services:
+  net:
+    <<: *wave
+    command: ["sleep", "infinity"]
+    init: true
+    restart: unless-stopped
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      # IPv6 auf dem Tunnel (der Wave gibt jedem Namen eine Adresse), aber nie
+      # weitergeleitet: es gibt kein IPv6-Backend.
+      net.ipv6.conf.all.disable_ipv6: "0"
+      net.ipv6.conf.default.disable_ipv6: "0"
+      net.ipv6.conf.all.forwarding: "0"
+    networks:
+      wave:
+        ipv4_address: ${WAVE_SUBNET_PREFIX:-172.31.250}.2
+
+  daemon:
+    <<: *wave
+    command: ["wave", "daemon"]
+    restart: unless-stopped
+    network_mode: "service:net"
+    depends_on: [net]
+    cap_add: [NET_ADMIN, NET_RAW]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      WAVE_NETFILTER: ${WAVE_NETFILTER:-auto}
+      # Eine Sperre für beide, die iptables-Regeln schreiben.
+      XTABLES_LOCKFILE: /run/wave/xtables.lock
+    volumes:
+      - state:/var/lib/wave
+      - run:/run/wave
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/wave/waved.sock"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  # Tritt dem Wave bei und endet. Läuft bei jedem Start; ein Gerät, das schon
+  # im Wave ist, verbraucht dabei nichts vom Schlüssel.
+  login:
+    <<: *wave
+    restart: "no"
+    network_mode: "service:net"
+    depends_on:
+      daemon:
+        condition: service_healthy
+    environment:
+      WAVE_CONTROL_URL: ${WAVE_CONTROL_URL:?set WAVE_CONTROL_URL in .env}
+      WAVE_AUTH_KEY: ${WAVE_AUTH_KEY:?set WAVE_AUTH_KEY in .env}
+    volumes:
+      - run:/run/wave
+    command:
+      - sh
+      - -c
+      - |
+        for i in $$(seq 1 60); do
+          if [ -S /run/wave/waved.sock ] &&
+            wave login "$$WAVE_CONTROL_URL" --auth-key "$$WAVE_AUTH_KEY"; then
+            exit 0
+          fi
+          sleep 5
+        done
+        exit 1
+
+  connector:
+    <<: *wave
+    command: ["wave-connector"]
+    restart: unless-stopped
+    network_mode: "service:net"
+    depends_on: [daemon]
+    cap_add: [NET_ADMIN, NET_RAW]
+    environment:
+      WAVE_CONTROL_URL: ${WAVE_CONTROL_URL:?set WAVE_CONTROL_URL in .env}
+      WAVE_NETFILTER: ${WAVE_NETFILTER:-auto}
+      XTABLES_LOCKFILE: /run/wave/xtables.lock
+      # Alles, was für einen Dienst ankommt, geht an Caddy weiter unten.
+      WAVE_BACKEND_IPV4: ${WAVE_SUBNET_PREFIX:-172.31.250}.10
+      WAVE_SERVICES: ${WAVE_SERVICES:?set WAVE_SERVICES in .env}
+      WAVE_SERVICES_NO_TLS: ${WAVE_SERVICES_NO_TLS:-}
+      WAVE_SYNC_INTERVAL_MS: ${WAVE_SYNC_INTERVAL_MS:-60000}
+    volumes:
+      - run:/run/wave
+      # Nur lesend: die Anmeldung gehört dem Daemon, der Connector signiert mit ihr.
+      - state:/var/lib/wave:ro
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # Kein `ports:` -- erreichbar nur aus dem Wave und aus diesem Compose-Netz.
+    environment:
+      WAVE_DOMAIN: ${WAVE_DOMAIN:?set WAVE_DOMAIN in .env}
+      HA_UPSTREAM: ${HA_UPSTREAM:?set HA_UPSTREAM in .env}
+      PAPERLESS_UPSTREAM: ${PAPERLESS_UPSTREAM:?set PAPERLESS_UPSTREAM in .env}
+      OPENCLAW_UPSTREAM: ${OPENCLAW_UPSTREAM:?set OPENCLAW_UPSTREAM in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    networks:
+      wave:
+        ipv4_address: ${WAVE_SUBNET_PREFIX:-172.31.250}.10
+
+volumes:
+  state:
+  run:
+  caddy-data:
+
+networks:
+  wave:
+    ipam:
+      config:
+        # WAVE_SUBNET_PREFIX verschiebt Netz und beide Adressen zusammen, falls
+        # der Bereich schon vergeben ist.
+        - subnet: ${WAVE_SUBNET_PREFIX:-172.31.250}.0/24
+          # Von Docker vergebene Adressen bleiben den beiden festen fern.
+          ip_range: ${WAVE_SUBNET_PREFIX:-172.31.250}.128/25

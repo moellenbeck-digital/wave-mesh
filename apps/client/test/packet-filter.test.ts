@@ -5,9 +5,12 @@ import { spawnWithInputFile, unenforcedFilter } from "../src/link.ts";
 import { DarwinLink } from "../src/link-darwin.ts";
 import { LinuxLink } from "../src/link-linux.ts";
 import { WindowsLink } from "../src/link-windows.ts";
+import type { IptablesNetfilter, IptablesTool, Netfilter } from "../src/netfilter.ts";
 import {
   complementAddresses,
   complementPorts,
+  iptablesFilterChain,
+  iptablesFilterRules,
   nftFilterRuleset,
   pfAnchorName,
   pfAnchorRules,
@@ -73,20 +76,33 @@ describe("the nftables document", () => {
 
 describe("installing it", () => {
   const ok = async () => ({ code: 0, stdout: "", stderr: "" });
+  const nft = async () => ({ kind: "nft" as const });
 
   test("hands the document to nft on stdin", async () => {
     const seen: { args: string[]; input: string }[] = [];
-    const link = new LinuxLink(ok, ok, async (args, input) => {
-      seen.push({ args, input });
-      return { code: 0, stdout: "", stderr: "" };
-    });
+    const link = new LinuxLink(
+      ok,
+      ok,
+      async (args, input) => {
+        seen.push({ args, input });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      undefined,
+      nft,
+    );
     expect(await link.syncFilter("wave0", [nas])).toEqual({ enforced: true });
     expect(seen[0]?.args).toEqual(["-f", "-"]);
     expect(seen[0]?.input).toBe(nftFilterRuleset("wave0", [nas]));
   });
 
   test("says why when it cannot, and does not throw", async () => {
-    const missing = new LinuxLink(ok, ok, async () => ({ code: 127, stdout: "", stderr: "not found" }));
+    const missing = new LinuxLink(
+      ok,
+      ok,
+      async () => ({ code: 127, stdout: "", stderr: "not found" }),
+      undefined,
+      nft,
+    );
     expect(await missing.syncFilter("wave0", [nas])).toEqual({
       enforced: false,
       reason: "nft is not installed",
@@ -94,11 +110,13 @@ describe("installing it", () => {
     // Without a policy there is nothing missing.
     expect(await missing.syncFilter("wave0", null)).toEqual({ enforced: true });
 
-    const refused = new LinuxLink(ok, ok, async () => ({
-      code: 1,
-      stdout: "",
-      stderr: "Error: Operation not permitted\nmore",
-    }));
+    const refused = new LinuxLink(
+      ok,
+      ok,
+      async () => ({ code: 1, stdout: "", stderr: "Error: Operation not permitted\nmore" }),
+      undefined,
+      nft,
+    );
     const result = await refused.syncFilter("wave0", [nas]);
     expect(result.enforced).toBe(false);
     expect(result.reason).toBe("nft refused the rules: Error: Operation not permitted");
@@ -109,6 +127,169 @@ describe("installing it", () => {
     expect(unenforcedFilter("Plan 9", [])).toEqual({
       enforced: false,
       reason: "ports are not enforced on Plan 9 yet",
+    });
+  });
+});
+
+describe("the iptables chain, where there is no nft", () => {
+  test("lets in what a rule names, per family and protocol, and drops the rest", () => {
+    expect(iptablesFilterRules([nas], "ip", "mangle")).toEqual([
+      "-m conntrack --ctstate RELATED,ESTABLISHED -j RETURN",
+      "-p icmp -j RETURN",
+      "-s 10.64.0.1/32 -d 10.64.0.3/32 -p tcp -m tcp --dport 445 -j RETURN",
+      "-s 10.64.0.1/32 -d 10.64.0.3/32 -p tcp -m tcp --dport 5000:5001 -j RETURN",
+      // `any` opens UDP too; tcp:445 does not.
+      "-s 10.64.0.1/32 -d 10.64.0.3/32 -p udp -m udp --dport 5000:5001 -j RETURN",
+      "-j DROP",
+    ]);
+    const v6 = iptablesFilterRules([nas], "ip6", "mangle");
+    expect(v6[1]).toBe("-p ipv6-icmp -j RETURN");
+    expect(v6).toContain("-s fd7a::1/128 -d fd7a::3/128 -p tcp -m tcp --dport 445 -j RETURN");
+    expect(v6.join()).not.toContain("10.64.0.1");
+  });
+
+  // An accept would overrule the machine's own firewall further down.
+  test("never accepts, only returns", () => {
+    expect(iptablesFilterRules([nas], "ip", "mangle").join("\n")).not.toContain("ACCEPT");
+  });
+
+  test("an empty policy still lets replies and ICMP through, and nothing else", () => {
+    expect(iptablesFilterRules([], "ip", "mangle")).toEqual([
+      "-m conntrack --ctstate RELATED,ESTABLISHED -j RETURN",
+      "-p icmp -j RETURN",
+      "-j DROP",
+    ]);
+  });
+
+  test("in mangle, before the DNAT; in filter, by where the packet was sent", () => {
+    expect(iptablesFilterChain("wave0", [nas], "ip", "mangle").hooks).toEqual([
+      { from: "PREROUTING", match: "-i wave0" },
+    ]);
+    const chain = iptablesFilterChain("wave0", [nas], "ip", "filter");
+    expect(chain.chain).toBe("WAVE-ACL-wave0");
+    expect(chain.hooks).toEqual([
+      { from: "INPUT", match: "-i wave0" },
+      { from: "FORWARD", match: "-i wave0" },
+    ]);
+    expect(chain.rules).toContain(
+      "-s 10.64.0.1/32 -p tcp -m conntrack --ctorigdst 10.64.0.3/32 --ctorigdstport 445 -j RETURN",
+    );
+  });
+
+  test("nothing but addresses and interface names reaches the document", () => {
+    expect(() =>
+      iptablesFilterRules([{ ...nas, src: ["10.0.0.1/32\n-A INPUT -j ACCEPT"] }], "ip", "mangle"),
+    ).toThrow("not an address");
+    expect(() => iptablesFilterChain("wave0 -j ACCEPT", [], "ip", "mangle")).toThrow("interface name");
+  });
+});
+
+describe("installing it with iptables", () => {
+  const ok = async () => ({ code: 0, stdout: "", stderr: "" });
+
+  /** A tool that remembers each table it was asked to write. */
+  const fake = (name: string, options: { noMangle?: boolean; refuse?: string; listing?: string } = {}) => {
+    const written: string[] = [];
+    const tool: IptablesTool = {
+      name,
+      run: async (args) =>
+        options.noMangle && args.includes("mangle")
+          ? { code: 3, stdout: "", stderr: "can't initialize iptables table `mangle': Table does not exist" }
+          : { code: 0, stdout: options.listing ?? "", stderr: "" },
+      restore: async (_args, input) => {
+        written.push(input);
+        return options.refuse
+          ? { code: 2, stdout: "", stderr: `${options.refuse}\nmore` }
+          : { code: 0, stdout: "", stderr: "" };
+      },
+    };
+    return { tool, written };
+  };
+
+  const linkWith = (netfilter: Netfilter, ipv6 = true) =>
+    new LinuxLink(
+      ok,
+      ok,
+      async () => {
+        throw new Error("nft must not run here");
+      },
+      undefined,
+      async () => netfilter,
+      () => ipv6,
+    );
+
+  const both = (v4: IptablesTool, v6: IptablesTool | null): IptablesNetfilter => ({
+    kind: "iptables",
+    v4,
+    v6,
+    ...(v6 ? {} : { v6Problem: "ip6tables is not usable (ip6tables: not installed)" }),
+  });
+
+  test("writes both families into mangle and calls it enforced", async () => {
+    const v4 = fake("iptables-legacy");
+    const v6 = fake("ip6tables-legacy");
+    expect(await linkWith(both(v4.tool, v6.tool)).syncFilter("wave0", [nas])).toEqual({ enforced: true });
+    expect(v4.written).toHaveLength(1);
+    expect(v4.written[0]).toStartWith("*mangle\n");
+    expect(v4.written[0]).toContain("-I PREROUTING 1 -i wave0 -j WAVE-ACL-wave0");
+    expect(v6.written[0]).toContain("fd7a::3/128");
+  });
+
+  test("takes the filter table where there is no mangle", async () => {
+    const v4 = fake("iptables-legacy", { noMangle: true });
+    const v6 = fake("ip6tables-legacy", { noMangle: true });
+    expect(await linkWith(both(v4.tool, v6.tool)).syncFilter("wave0", [nas])).toEqual({ enforced: true });
+    expect(v4.written[0]).toStartWith("*filter\n");
+    expect(v4.written[0]).toContain("-I FORWARD 1 -i wave0 -j WAVE-ACL-wave0");
+  });
+
+  test("IPv6 that cannot be filtered is not an enforced policy", async () => {
+    const v4 = fake("iptables-legacy");
+    const result = await linkWith(both(v4.tool, null)).syncFilter("wave0", [nas]);
+    expect(result).toEqual({
+      enforced: false,
+      reason: "IPv6 is not filtered: ip6tables is not usable (ip6tables: not installed)",
+    });
+    // What can be closed is closed anyway.
+    expect(v4.written[0]).toContain("-j DROP");
+    // Without an IPv6 stack there is nothing to leave open.
+    expect(await linkWith(both(v4.tool, null), false).syncFilter("wave0", [nas])).toEqual({ enforced: true });
+    expect(await linkWith(both(v4.tool, null)).syncFilter("wave0", null)).toEqual({ enforced: true });
+  });
+
+  test("says which family was refused, and does not throw", async () => {
+    const v4 = fake("iptables-legacy", { refuse: "iptables-restore: line 4 failed" });
+    const v6 = fake("ip6tables-legacy");
+    const result = await linkWith(both(v4.tool, v6.tool)).syncFilter("wave0", [nas]);
+    expect(result.enforced).toBe(false);
+    expect(result.reason).toBe(
+      "IPv4 is not filtered: iptables-legacy-restore refused the mangle rules: iptables-restore: line 4 failed",
+    );
+  });
+
+  test("no policy removes the chain it finds", async () => {
+    const listing = "-N WAVE-ACL-wave0\n-A PREROUTING -i wave0 -j WAVE-ACL-wave0\n";
+    const v4 = fake("iptables-legacy", { listing });
+    expect(await linkWith(both(v4.tool, null), false).syncFilter("wave0", null)).toEqual({ enforced: true });
+    expect(v4.written[0]).toContain("-X WAVE-ACL-wave0");
+  });
+
+  test("only with no backend at all is the policy not enforced for lack of one", async () => {
+    const none = linkWith({ kind: "none", reason: "neither nft nor iptables is usable" });
+    expect(await none.syncFilter("wave0", [nas])).toEqual({
+      enforced: false,
+      reason: "neither nft nor iptables is usable",
+    });
+    expect(await none.syncFilter("wave0", null)).toEqual({ enforced: true });
+  });
+
+  test("a WAVE_NETFILTER nobody understands keeps the tunnel and says so", async () => {
+    const link = new LinuxLink(ok, ok, undefined, undefined, async () => {
+      throw new Error("WAVE_NETFILTER must be auto, nft or iptables");
+    });
+    expect(await link.syncFilter("wave0", [nas])).toEqual({
+      enforced: false,
+      reason: "WAVE_NETFILTER must be auto, nft or iptables",
     });
   });
 });

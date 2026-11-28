@@ -56,7 +56,9 @@ RUN bun install --frozen-lockfile --production --omit=optional \
 FROM oven/bun:1.4.2-alpine AS runtime
 WORKDIR /app
 # nftables for the forwarding rules, iproute2 for the interface and the routes.
-RUN apk add --no-cache nftables iproute2
+# iptables for hosts whose kernel has no nf_tables (netfilter.ts picks). On a
+# 4.4 kernel use deploy/synology/Dockerfile instead.
+RUN apk add --no-cache nftables iproute2 iptables iptables-legacy
 COPY --from=wireguard /out/wireguard-go /usr/local/bin/wireguard-go
 COPY --from=deps /app ./
 COPY packages packages
@@ -72,7 +74,7 @@ ARG WAVE_BUILD_VERSION=
 ENV WAVE_BUILD_VERSION=${WAVE_BUILD_VERSION}
 
 # Root, and that is the point: the daemon creates a tun device, sets addresses
-# and writes nftables rules. The pod asks for NET_ADMIN and /dev/net/tun and
+# and writes netfilter rules. The pod asks for NET_ADMIN and /dev/net/tun and
 # for nothing else -- above all for no inbound port, because STUN and the relay
 # carry the tunnel out of the cluster.
 CMD ["bun", "apps/client/src/cli.ts", "daemon"]

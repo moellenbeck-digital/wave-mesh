@@ -257,6 +257,13 @@ eingehenden Port, und der interne Ingress-Controller nur eine ClusterIP.
 **Im Cluster gefahren ist das noch nicht** — die Regeln und der Operator sind
 gegen Fakes getestet, nicht gegen echtes Kubernetes.
 
+### Dienste ohne Cluster: Connector auf einer Synology
+
+Der Connector läuft auch als Docker-Projekt auf einem NAS, ohne Kubernetes und
+ohne Operator: die Namen stehen in `WAVE_SERVICES`, gefiltert und
+weitergeleitet wird ohne nftables mit iptables. Anleitung:
+[deploy/synology/README.md](deploy/synology/README.md).
+
 ### Ein Dienst im offenen Netz: der Pier
 
 Ein Gerät kann einen Namen in der Pier-Zone des Waves (`app.pier.meinwave.example.com`)

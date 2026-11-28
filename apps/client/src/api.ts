@@ -129,11 +129,13 @@ export class ControlClient {
   /**
    * Declares the whole set of names this node answers for (D11). Used by the
    * operator, which holds this node's key because the cluster is one member of
-   * the wave, not two.
+   * the wave, not two -- and by a connector with a fixed list (WAVE_SERVICES).
    */
   /** `secure` is the subset of `names` the cluster serves over TLS (D11). */
-  async syncServices(names: string[], secure?: string[]): Promise<ServiceSyncResponse> {
-    return ServiceSyncResponse.parse(await this.request("POST", "/v1/services", { names, secure }));
+  async syncServices(names: string[], secure?: string[], timeoutMs?: number): Promise<ServiceSyncResponse> {
+    return ServiceSyncResponse.parse(
+      await this.request("POST", "/v1/services", { names, secure }, timeoutMs),
+    );
   }
 
   /**
