@@ -38,6 +38,7 @@
         "@wave/client": "workspace:*",
         "@wave/dns": "workspace:*",
         "@wave/ipc": "workspace:*",
+        "@wave/proto": "workspace:*",
         "@wave/sni": "workspace:*",
       },
     },

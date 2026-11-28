@@ -5,6 +5,7 @@ import { DaemonClient, DEFAULT_SOCKET_PATH, type ProfileStatus } from "@wave/ipc
 import { type EgressTable, egressResolver, egressTable, egressZone, startEgress } from "./egress.ts";
 import { type Forwarder, forwarderFor } from "./forward.ts";
 import { type ConnectorRules, DEFAULT_PORTS, nftRuleset } from "./rules.ts";
+import { runStaticServices, staticServicesFromEnv } from "./static-services.ts";
 
 /**
  * The wave connector: a cluster's one membership in a wave (D11).
@@ -12,7 +13,8 @@ import { type ConnectorRules, DEFAULT_PORTS, nftRuleset } from "./rules.ts";
  * It runs beside `wave daemon` in the same pod, waits until the tunnel carries
  * addresses, and installs the forwarding rules. That is all it does -- the
  * addresses come from the netmap, and which of them exist is the operator's
- * business, not this program's.
+ * business, not this program's -- except where there is no operator and the
+ * names are configuration (static-services.ts).
  *
  * Deliberately not a second tunnel: a connector is one node with one identity,
  * and the services are addresses routed to it. Twenty ingresses as twenty nodes
@@ -224,14 +226,25 @@ if (import.meta.main) {
     process.exit(1);
   }
   let forwarder: Forwarder;
+  let services: ReturnType<typeof staticServicesFromEnv>;
   try {
     forwarder = forwarderFor(await detectNetfilter(netfilterMode()));
+    services = staticServicesFromEnv(process.env);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
   console.log(`forwarding with ${forwarder.name}`);
   clearOnStop(forwarder);
+  // Beside the loop below, not part of it: the rules do not wait for the
+  // control server, and the names do not wait for the tunnel.
+  if (services) {
+    void runStaticServices({
+      services,
+      statePath: process.env.WAVE_STATE,
+      controlUrl: process.env.WAVE_CONTROL_URL,
+    });
+  }
   await runConnector({
     socketPath: process.env.WAVE_SOCKET ?? DEFAULT_SOCKET_PATH,
     backend: { ipv4: backendV4, ipv6: process.env.WAVE_BACKEND_IPV6 },
