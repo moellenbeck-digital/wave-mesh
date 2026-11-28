@@ -1,0 +1,19 @@
+# Verteilt nach Host-Namen. Der Connector lässt Host und SNI unangetastet, jede
+# Seite heißt deshalb wie der volle Name des Dienstes im Wave.
+#
+# Alles hier ist HTTP: den Weg vom Gerät zum NAS verschlüsselt schon der Tunnel.
+# Für HTTPS bei einer Seite `http://` streichen, `tls internal` (Caddys eigene
+# Zertifizierungsstelle, der jedes Gerät vertrauen muss) oder
+# `tls <cert> <key>` ergänzen und den Namen aus WAVE_SERVICES_NO_TLS nehmen.
+
+http://ha.{$WAVE_DOMAIN} {
+	reverse_proxy {$HA_UPSTREAM}
+}
+
+http://paperless.{$WAVE_DOMAIN} {
+	reverse_proxy {$PAPERLESS_UPSTREAM}
+}
+
+http://openclaw.{$WAVE_DOMAIN} {
+	reverse_proxy {$OPENCLAW_UPSTREAM}
+}

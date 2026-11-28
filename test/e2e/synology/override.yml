@@ -1,0 +1,56 @@
+# Added to deploy/synology/docker-compose.yml by ../synology.sh: a control
+# server, stand-ins for the services behind Caddy, and a second device.
+
+x-wave: &wave
+  image: wave-e2e-synology:latest
+
+services:
+  control:
+    image: oven/bun:1.4.2-alpine
+    working_dir: /repo
+    command: ["bun", "apps/control/test/e2e-server.ts"]
+    environment:
+      WAVE_PORT: "8080"
+      WAVE_HOST: 0.0.0.0
+      WAVE_BASE_URL: http://control:8080
+    volumes:
+      - ${WAVE_E2E_REPO:?}:/repo:ro
+    networks: [wave]
+
+  tool:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["sleep", "infinity"]
+    networks: [wave]
+
+  stub-ha:
+    image: caddy:2-alpine
+    command: ["caddy", "respond", "--listen", ":8123", "stub-ha"]
+    networks: [wave]
+
+  stub-paperless:
+    image: caddy:2-alpine
+    command: ["caddy", "respond", "--listen", ":8777", "stub-paperless"]
+    networks: [wave]
+
+  peer:
+    <<: *wave
+    command: ["sleep", "infinity"]
+    init: true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "0"
+      net.ipv6.conf.default.disable_ipv6: "0"
+    networks: [wave]
+
+  peer-daemon:
+    <<: *wave
+    command: ["wave", "daemon"]
+    network_mode: "service:peer"
+    cap_add: [NET_ADMIN, NET_RAW]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+  # curl on the second device's network, tunnel included.
+  peer-curl:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["sleep", "infinity"]
+    network_mode: "service:peer"
